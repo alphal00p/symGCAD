@@ -335,6 +335,13 @@ fn univariate_sturm(
     let hi = upper
         .clone()
         .map_or_else(|| radius.clone(), |x| x.min(radius.clone()));
+    // A failed nonvanishing attempt needs no Sturm chain. Exact interior
+    // zeros or opposite signs are inexpensive counterexamples to strict
+    // nonvanishing. This bounded screen only rejects certificate attempts;
+    // it never establishes positivity or removes a projection factor.
+    if univariate_sign_counterexample(&p, &lo, &hi) {
+        return Ok(None);
+    }
     if crate::roots::roots_in_open_interval(&p, &lo, &hi) != 0 {
         return Ok(None);
     }
@@ -352,6 +359,94 @@ fn univariate_sturm(
         "zero sample contradicts the Sturm nonvanishing count"
     );
     Ok(Some((variable, if value.is_negative() { -1 } else { 1 })))
+}
+
+fn univariate_sign_counterexample(
+    p: &symbolica::poly::univariate::UnivariatePolynomial<Q>,
+    lo: &Rational,
+    hi: &Rational,
+) -> bool {
+    let mut previous = 0;
+    let mut check = |x: Rational| {
+        if &x <= lo || &x >= hi {
+            return false;
+        }
+        let value = p.evaluate(&x);
+        if value.is_zero() {
+            return true;
+        }
+        let sign = if value.is_negative() { -1 } else { 1 };
+        if previous != 0 && sign != previous {
+            return true;
+        }
+        previous = sign;
+        false
+    };
+    if check((lo + hi) / Rational::from(2)) || check(Rational::zero()) {
+        return true;
+    }
+    let mut step = Rational::one();
+    for _ in 0..10 {
+        let inverse = Rational::one() / &step;
+        for distance in [&step, &inverse] {
+            // Both original-domain ends and the origin matter for shifted
+            // rays and finite boxes. Endpoint zeros themselves are excluded.
+            for point in [
+                lo + distance,
+                hi - distance,
+                distance.clone(),
+                -distance.clone(),
+            ] {
+                if check(point) {
+                    return true;
+                }
+            }
+        }
+        step *= Rational::from(2);
+    }
+    false
+}
+
+#[cfg(test)]
+mod sturm_screen_tests {
+    use super::*;
+
+    #[test]
+    fn sampled_counterexamples_only_decline_and_respect_open_boundaries() {
+        let algebra = Algebra::new(&["x".into()]).unwrap();
+        let p = |text| {
+            algebra
+                .parse(text)
+                .unwrap()
+                .to_univariate_from_univariate(0)
+        };
+        let zero = Rational::zero();
+        let one = Rational::one();
+        assert!(univariate_sign_counterexample(
+            &p("(x-1)^2"),
+            &zero,
+            &Rational::from(2)
+        ));
+        assert!(univariate_sign_counterexample(
+            &p("x^2-2"),
+            &zero,
+            &Rational::from(3)
+        ));
+        assert!(!univariate_sign_counterexample(&p("x*(x-1)"), &zero, &one));
+        assert!(!univariate_sign_counterexample(
+            &p("(x-1)^2+1/1000000000000"),
+            &zero,
+            &Rational::from(2)
+        ));
+        // A negative pocket can evade every bounded sample. The screen is
+        // deliberately inconclusive; the exact Sturm obligation still finds it.
+        let narrow = p("(x-1/3)^2-1/10000000000000000000000000000000000000000");
+        assert!(!univariate_sign_counterexample(&narrow, &zero, &one));
+        assert_eq!(
+            crate::roots::roots_in_open_interval(&narrow, &zero, &one),
+            2
+        );
+    }
 }
 
 /// Check the expected polynomial, independently reconstruct the domain from

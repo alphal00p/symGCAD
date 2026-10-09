@@ -38,6 +38,12 @@ pub struct SolverOptions {
     /// Omit the default to keep ordinary inputs readable by older workers.
     #[serde(skip_serializing_if = "is_true")]
     pub local_batch_siblings: bool,
+    /// Reuse small completed conditional subtrees within a local solve.
+    #[serde(skip_serializing_if = "is_true")]
+    pub local_reuse_subtrees: bool,
+    /// Bounded leading-term cancellations used to separate positive roots.
+    #[serde(skip_serializing_if = "is_two")]
+    pub local_pair_cancellations: usize,
     pub homogeneous_block: Vec<String>,
     pub homogeneous_anchor: Option<String>,
 }
@@ -58,6 +64,8 @@ impl Default for SolverOptions {
             input_positivity: false,
             prune_operations: false,
             local_batch_siblings: true,
+            local_reuse_subtrees: true,
+            local_pair_cancellations: 2,
             homogeneous_block: vec![],
             homogeneous_anchor: None,
         }
@@ -66,6 +74,9 @@ impl Default for SolverOptions {
 
 fn is_true(value: &bool) -> bool {
     *value
+}
+fn is_two(value: &usize) -> bool {
+    *value == 2
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -94,6 +105,10 @@ impl Problem {
         Ok(problem)
     }
     pub fn validate(&self) -> Result<()> {
+        ensure!(
+            (1..=2).contains(&self.solver.local_pair_cancellations),
+            "local_pair_cancellations must be one or two"
+        );
         let names: BTreeSet<_> = self.variables.iter().collect();
         ensure!(names.len() == self.variables.len(), "duplicate variables");
         ensure!(

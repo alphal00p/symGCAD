@@ -51,6 +51,8 @@ use std::{
 };
 use symbolica::prelude::*;
 
+mod subtree_cache;
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct LocalOptions {
@@ -68,15 +70,25 @@ pub struct LocalOptions {
     /// Use an exact positive-ray theorem only with an original k*x>0 bound.
     /// False retains the full-real local projection for controlled ablations.
     pub positive_ray: bool,
-    /// Try a bounded one-step pseudo-remainder to separate positive roots.
+    /// Try bounded pseudo-remainders to separate positive roots.
     /// Older evidence omitted this field and must replay the original pairs.
     #[serde(default)]
     pub positive_pair_separation: bool,
+    /// Maximum leading-term cancellations per pair, either one or two.
+    /// Missing historical fields retain the original one-cancellation proof.
+    #[serde(default = "one_cancellation")]
+    pub positive_pair_cancellations: usize,
     /// Collect a bounded set of sibling discoveries before restarting a stack.
     /// False restarts after the first discovery, for controlled ablations.
     /// The final proof and its independent replay do not depend on this choice.
     #[serde(default)]
     pub batch_sibling_discovery: bool,
+    /// Reuse exact completed local subtrees at the same rational prefix.
+    #[serde(default)]
+    pub reuse_completed_subtrees: bool,
+}
+fn one_cancellation() -> usize {
+    1
 }
 impl Default for LocalOptions {
     fn default() -> Self {
@@ -88,7 +100,9 @@ impl Default for LocalOptions {
             domain_pruning: true,
             positive_ray: true,
             positive_pair_separation: true,
+            positive_pair_cancellations: 2,
             batch_sibling_discovery: true,
+            reuse_completed_subtrees: true,
         }
     }
 }
@@ -136,6 +150,14 @@ pub struct LocalReport {
     pub descartes_discriminants_omitted: usize,
     pub pair_separation_candidates: usize,
     pub pair_resultants_omitted: usize,
+    pub second_cancellation_pairs_omitted: usize,
+    pub subtree_cache_hits: usize,
+    pub subtree_cache_misses: usize,
+    pub subtree_cache_evictions: usize,
+    pub subtree_cache_retained_bytes: usize,
+    pub subtree_cache_peak_bytes: usize,
+    pub subtree_cache_retained_nodes: usize,
+    pub subtree_cache_peak_nodes: usize,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -164,14 +186,18 @@ pub struct PositiveRayProjection {
 }
 
 /// For deg(p)>=deg(q), the exact identity
-/// R=lc(q)*p-lc(p)*z^shift*q has coefficients of one strict sign on the base.
-/// Thus R cannot vanish on z>0, excluding every common positive root of p,q.
+/// R1=lc(q)*p-lc(p)*z^shift*q. Either R1 or one further leading-term
+/// cancellation of q and R1 has coefficients of one strict sign on the base.
+/// Each remainder is a polynomial combination of p,q, so its nonvanishing
+/// on z>0 excludes every common positive root of p,q without any division.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PositivePairSeparation {
     pub higher: usize,
     pub lower: usize,
     pub shift: u32,
     pub coefficient_sign: i8,
+    #[serde(default = "one_cancellation")]
+    pub cancellations: usize,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -306,12 +332,10 @@ fn prefix_value(p: &Poly, prefix: &[Rational]) -> Result<Rational> {
         highest(p).is_none_or(|i| i < prefix.len()),
         "guard depends on a later coordinate"
     );
-    let mut value = p.clone();
-    for (i, x) in prefix.iter().enumerate() {
-        value = value.replace(i, x);
-    }
-    ensure!(value.is_constant(), "incomplete guard evaluation");
-    Ok(value.get_constant())
+    // The complete-support check above is essential: replace_all evaluates
+    // the supplied coordinates directly and does not require unused trailing
+    // coordinates. Avoid rebuilding a polynomial after each substitution.
+    Ok(p.replace_all(prefix))
 }
 
 struct GuardDomain {
@@ -577,6 +601,7 @@ fn positive_projection_raw(
     constraint: usize,
     coordinate: usize,
     pair_separation: bool,
+    pair_cancellations: usize,
     pair_seconds: &mut f64,
     operations: &mut impl ProjectionOperations,
 ) -> Result<(
@@ -742,7 +767,14 @@ fn positive_projection_raw(
         for &other in &bearing[j + 1..] {
             if pair_separation {
                 let started = Instant::now();
-                let attempt = separate_positive_pair(polynomials, id, other, variable, prefix);
+                let attempt = separate_positive_pair(
+                    polynomials,
+                    id,
+                    other,
+                    variable,
+                    prefix,
+                    pair_cancellations,
+                );
                 *pair_seconds += started.elapsed().as_secs_f64();
                 if let Some((proof, coefficients)) = attempt? {
                     raw.extend(coefficients);
@@ -777,7 +809,12 @@ fn separate_positive_pair(
     second: usize,
     variable: usize,
     prefix: &[Rational],
+    max_cancellations: usize,
 ) -> Result<Option<(PositivePairSeparation, Vec<Poly>)>> {
+    ensure!(
+        (1..=2).contains(&max_cancellations),
+        "positive pair cancellations must be one or two"
+    );
     let (higher, lower) =
         if polynomials[first].degree(variable) >= polynomials[second].degree(variable) {
             (first, second)
@@ -791,23 +828,10 @@ fn separate_positive_pair(
     if p.degree(variable) <= 1 {
         return Ok(None);
     }
-    let a = p.univariate_lcoeff(variable);
-    let b = q.univariate_lcoeff(variable);
-    let estimate = p
-        .nterms()
-        .saturating_mul(b.nterms())
-        .saturating_add(q.nterms().saturating_mul(a.nterms()));
-    if estimate > 4096
-        || (0..p.nvars())
-            .any(|i| p.degree(i) as u64 + q.degree(i) as u64 > crate::algebra::MAX_DEGREE)
-    {
+    let Some(remainder) = pair_cancellation(p, q, variable, 4096) else {
         return Ok(None);
-    }
+    };
     let shift = p.degree(variable) - q.degree(variable);
-    let mut exponents = vec![0; p.nvars()];
-    exponents[variable] = shift;
-    let shifted = q.clone().mul_monomial(&Rational::one(), &exponents);
-    let remainder = &b * p - &a * &shifted;
     if remainder.is_zero() {
         return Ok(None);
     }
@@ -815,7 +839,95 @@ fn separate_positive_pair(
         remainder.degree(variable) < p.degree(variable),
         "pseudo-remainder failed to lower degree"
     );
-    let coefficients = remainder
+    if let Some((coefficient_sign, coefficients)) =
+        same_sign_coefficients(&remainder, variable, prefix)?
+    {
+        return Ok(Some((
+            PositivePairSeparation {
+                higher,
+                lower,
+                shift,
+                coefficient_sign,
+                cancellations: 1,
+            },
+            coefficients,
+        )));
+    }
+    if max_cancellations == 1 || remainder.degree(variable) == 0 {
+        return Ok(None);
+    }
+    // The first remainder may itself have positive roots. One further
+    // polynomial combination can nevertheless have uniformly signed
+    // coefficients. Gate that expansion with exact rational specialization;
+    // this only selects an experiment, and never replaces symbolic evidence.
+    let (next_high, next_low) = if q.degree(variable) >= remainder.degree(variable) {
+        (q, &remainder)
+    } else {
+        (&remainder, q)
+    };
+    if !numeric_cancellation_has_one_sign(next_high, next_low, variable, prefix)? {
+        return Ok(None);
+    }
+    let Some(second_remainder) = pair_cancellation(next_high, next_low, variable, 16_384) else {
+        return Ok(None);
+    };
+    // Do not use this bounded shortcut to compute a full constant PRS endpoint.
+    if second_remainder.is_zero() || second_remainder.degree(variable) == 0 {
+        return Ok(None);
+    }
+    ensure!(
+        second_remainder.degree(variable) < next_high.degree(variable),
+        "second pair cancellation failed to lower degree"
+    );
+    let Some((coefficient_sign, coefficients)) =
+        same_sign_coefficients(&second_remainder, variable, prefix)?
+    else {
+        return Ok(None);
+    };
+    Ok(Some((
+        PositivePairSeparation {
+            higher,
+            lower,
+            shift,
+            coefficient_sign,
+            cancellations: 2,
+        },
+        coefficients,
+    )))
+}
+
+/// Leading-term cancellation without division or primitive normalization.
+/// Both multiplication work and exponent sums are bounded before expansion.
+fn pair_cancellation(
+    high: &Poly,
+    low: &Poly,
+    variable: usize,
+    max_products: usize,
+) -> Option<Poly> {
+    debug_assert!(high.degree(variable) >= low.degree(variable));
+    let a = high.univariate_lcoeff(variable);
+    let b = low.univariate_lcoeff(variable);
+    let estimate = high
+        .nterms()
+        .saturating_mul(b.nterms())
+        .saturating_add(low.nterms().saturating_mul(a.nterms()));
+    if estimate > max_products
+        || (0..high.nvars())
+            .any(|i| high.degree(i) as u64 + low.degree(i) as u64 > crate::algebra::MAX_DEGREE)
+    {
+        return None;
+    }
+    let mut exponents = vec![0; high.nvars()];
+    exponents[variable] = high.degree(variable) - low.degree(variable);
+    Some(&b * high - &a * &low.clone().mul_monomial(&Rational::one(), &exponents))
+}
+
+fn same_sign_coefficients(
+    polynomial: &Poly,
+    variable: usize,
+    prefix: &[Rational],
+) -> Result<Option<(i8, Vec<Poly>)>> {
+    let coefficients = polynomial
         .to_univariate_polynomial_list(variable)
         .into_iter()
         .map(|(coefficient, _)| coefficient)
@@ -828,15 +940,38 @@ fn separate_positive_pair(
     if coefficient_sign == 0 || values.iter().any(|v| sign(v) != coefficient_sign) {
         return Ok(None);
     }
-    Ok(Some((
-        PositivePairSeparation {
-            higher,
-            lower,
-            shift,
-            coefficient_sign,
-        },
-        coefficients,
-    )))
+    Ok(Some((coefficient_sign, coefficients)))
+}
+
+fn numeric_cancellation_has_one_sign(
+    high: &Poly,
+    low: &Poly,
+    variable: usize,
+    prefix: &[Rational],
+) -> Result<bool> {
+    let dense_values = |p: &Poly| -> Result<Vec<Rational>> {
+        let mut values = vec![Rational::zero(); p.degree(variable) as usize + 1];
+        for (coefficient, power) in p.to_univariate_polynomial_list(variable) {
+            values[power as usize] = prefix_value(&coefficient, prefix)?;
+        }
+        Ok(values)
+    };
+    let mut a = dense_values(high)?;
+    let b = dense_values(low)?;
+    let high_leading = a.last().unwrap().clone();
+    let low_leading = b.last().unwrap();
+    let shift = a.len() - b.len();
+    for value in &mut a {
+        *value = &*value * low_leading;
+    }
+    for (power, value) in b.iter().enumerate() {
+        a[power + shift] = &a[power + shift] - &(&high_leading * value);
+    }
+    let mut signs = a.iter().filter(|v| !v.is_zero()).map(sign);
+    let Some(first) = signs.next() else {
+        return Ok(false);
+    };
+    Ok(a.iter().skip(1).any(|v| !v.is_zero()) && signs.all(|next| next == first))
 }
 
 struct Builder<'a> {
@@ -858,7 +993,10 @@ struct Builder<'a> {
     /// This memo only skips repeat bounded certification attempts. Successful
     /// entries reference proof records; no cached omission is trusted by replay.
     guard_certificate_index: HashMap<(usize, usize), Option<usize>>,
+    /// Successful conditional proofs, scoped to this immutable problem/map.
+    completed_subtrees: subtree_cache::CompletedSubtrees,
 }
+#[derive(Serialize, Deserialize)]
 struct Built {
     node: LocalNode,
     required: BTreeSet<usize>,
@@ -881,6 +1019,7 @@ impl Builder<'_> {
         report.cache = self.operations.cache.report.cache.clone();
         report.phases = self.operations.phases.clone();
         report.elapsed_seconds = self.started.elapsed().as_secs_f64();
+        self.completed_subtrees.report(&mut report);
         report
     }
     fn publish(&mut self, force: bool) -> Result<()> {
@@ -1073,6 +1212,7 @@ impl Builder<'_> {
                     constraint,
                     coordinate,
                     self.options.positive_pair_separation,
+                    self.options.positive_pair_cancellations,
                     &mut pair_seconds,
                     &mut self.operations,
                 )?;
@@ -1082,6 +1222,11 @@ impl Builder<'_> {
                         .saturating_mul(bearing.len().saturating_sub(1))
                         / 2;
                     self.report.pair_resultants_omitted += ray.separations.len();
+                    self.report.second_cancellation_pairs_omitted += ray
+                        .separations
+                        .iter()
+                        .filter(|proof| proof.cancellations == 2)
+                        .count();
                 }
                 self.report.positive_ray_stacks += 1;
                 self.report.quadratic_discriminants_omitted += ray
@@ -1143,6 +1288,16 @@ impl Builder<'_> {
         self.check_budget()?;
         if let Some(leaf) = self.leaf(prefix)? {
             return Ok(leaf);
+        }
+        if self.options.reuse_completed_subtrees {
+            if let Some(built) = self.completed_subtrees.get(prefix)? {
+                // The key includes every exact rational coordinate. The tree
+                // remains a conditional proof: return all its obligations so
+                // changed ancestor cuts must still discharge them. No proof
+                // is reused at a different sample or across Builder instances.
+                self.check_budget()?;
+                return Ok(built);
+            }
         }
         let level = prefix.len();
         let mut cuts = self.input_levels[level].clone();
@@ -1266,7 +1421,7 @@ impl Builder<'_> {
                 continue;
             }
             self.guard_nonzero(&required, prefix)?;
-            return Ok(Built {
+            let built = Built {
                 node: LocalNode::Stack {
                     cuts: cut_list,
                     projection,
@@ -1276,7 +1431,11 @@ impl Builder<'_> {
                 },
                 required,
                 cells,
-            });
+            };
+            if self.options.reuse_completed_subtrees {
+                self.completed_subtrees.insert(prefix, &built);
+            }
+            return Ok(built);
         }
     }
 }
@@ -1419,6 +1578,10 @@ fn unfinished(
 
 pub fn solve_local(problem: &Problem, options: &LocalOptions) -> Result<LocalSolveResult> {
     problem.validate()?;
+    ensure!(
+        (1..=2).contains(&options.positive_pair_cancellations),
+        "positive pair cancellations must be one or two"
+    );
     let started = Instant::now();
     let order = match selected_order(problem) {
         Ok(order) => order,
@@ -1475,6 +1638,10 @@ pub fn solve_local(problem: &Problem, options: &LocalOptions) -> Result<LocalSol
         protected: BTreeSet::new(),
         guard_certificates: Vec::new(),
         guard_certificate_index: HashMap::new(),
+        completed_subtrees: subtree_cache::CompletedSubtrees::new(
+            ((problem.limits.memory_mib as usize).saturating_mul(1024 * 1024) / 16)
+                .min(32 * 1024 * 1024),
+        ),
     };
     builder.report.active_phase = "input_factorization".into();
     builder.publish(true)?;
@@ -1611,6 +1778,7 @@ struct Checker<'a> {
     domain_pruning: bool,
     positive_ray: bool,
     positive_pair_separation: bool,
+    positive_pair_cancellations: usize,
 }
 impl Checker<'_> {
     fn check_registry(&self) -> Result<()> {
@@ -1758,6 +1926,7 @@ impl Checker<'_> {
                         ray.constraint,
                         ray.coordinate,
                         self.positive_pair_separation,
+                        self.positive_pair_cancellations,
                         &mut 0.0,
                         &mut IndependentOperations,
                     )?;
@@ -1923,6 +2092,10 @@ pub fn verify_local_parts(
         } => (input_factors, guard_certificates, root, options),
     };
     solution.problem.validate()?;
+    ensure!(
+        (1..=2).contains(&options.positive_pair_cancellations),
+        "positive pair cancellations must be one or two"
+    );
     ensure!(solution.schema_version == 1, "unsupported output schema");
     ensure!(
         solution.order == selected_order(&solution.problem)?,
@@ -2007,6 +2180,7 @@ pub fn verify_local_parts(
         domain_pruning: options.domain_pruning && solution.problem.solver.positivity,
         positive_ray: options.positive_ray,
         positive_pair_separation: options.positive_pair_separation,
+        positive_pair_cancellations: options.positive_pair_cancellations,
     };
     checker.check_registry()?;
     ensure!(
@@ -2075,7 +2249,7 @@ mod pair_separation_tests {
         ] {
             let polynomials = vec![algebra.parse(left).unwrap(), algebra.parse(right).unwrap()];
             assert!(
-                separate_positive_pair(&polynomials, 0, 1, 1, &[Rational::from(x)])
+                separate_positive_pair(&polynomials, 0, 1, 1, &[Rational::from(x)], 1)
                     .unwrap()
                     .is_none()
             );
@@ -2098,9 +2272,56 @@ mod pair_separation_tests {
             algebra.parse(&format!("({b})*z^2-2")).unwrap(),
         ];
         assert!(
-            separate_positive_pair(&polynomials, 0, 1, 70, &vec![Rational::one(); 70])
+            separate_positive_pair(&polynomials, 0, 1, 70, &vec![Rational::one(); 70], 2)
                 .unwrap()
                 .is_none()
         );
+    }
+
+    #[test]
+    fn second_cancellation_can_separate_when_the_first_remainder_has_a_positive_root() {
+        let algebra = Algebra::new(&["x".into(), "z".into()]).unwrap();
+        for (p, q) in [
+            ("z^2-x", "z^2-2*z-1"),
+            ("-z^2+x", "z^2-2*z-1"),
+            ("z^2-x", "-z^2+2*z+1"),
+            ("z^3-x*z-1", "z^2-2*z-1"),
+        ] {
+            let polynomials = vec![algebra.parse(p).unwrap(), algebra.parse(q).unwrap()];
+            assert!(
+                separate_positive_pair(&polynomials, 0, 1, 1, &[Rational::from(2)], 1)
+                    .unwrap()
+                    .is_none()
+            );
+            let (proof, coefficients) =
+                separate_positive_pair(&polynomials, 0, 1, 1, &[Rational::from(2)], 2)
+                    .unwrap()
+                    .unwrap();
+            assert_eq!(proof.cancellations, 2);
+            assert!(coefficients.iter().all(|p| {
+                sign(&prefix_value(p, &[Rational::from(2)]).unwrap()) == proof.coefficient_sign
+            }));
+            assert!(coefficients.iter().any(|p| p.degree(0) > 0));
+        }
+    }
+
+    #[test]
+    fn second_cancellation_rejects_zero_or_mixed_coefficients_and_bounds_products() {
+        let algebra = Algebra::new(&["x".into(), "z".into()]).unwrap();
+        let polynomials = vec![
+            algebra.parse("z^2-x").unwrap(),
+            algebra.parse("z^2-2*z-1").unwrap(),
+        ];
+        // At x=5 the z coefficient is zero; at x=6 it has the opposite
+        // sign from the constant. Neither may be certified from the sample.
+        for x in [5, 6] {
+            assert!(
+                separate_positive_pair(&polynomials, 0, 1, 1, &[Rational::from(x)], 2)
+                    .unwrap()
+                    .is_none()
+            );
+        }
+        assert!(pair_cancellation(&polynomials[0], &polynomials[1], 1, 1).is_none());
+        assert!(separate_positive_pair(&polynomials, 0, 1, 1, &[Rational::from(2)], 3).is_err());
     }
 }

@@ -458,6 +458,8 @@ pub fn solve(problem: &Problem) -> Result<SolveResult> {
             problem,
             &crate::local_projection::LocalOptions {
                 batch_sibling_discovery: problem.solver.local_batch_siblings,
+                reuse_completed_subtrees: problem.solver.local_reuse_subtrees,
+                positive_pair_cancellations: problem.solver.local_pair_cancellations,
                 ..Default::default()
             },
         )?;

@@ -57,6 +57,12 @@ struct Args {
     /// Same-build ablation of bounded sibling discovery in the local engine.
     #[arg(long)]
     no_batch_siblings: bool,
+    /// Same-build ablation of completed conditional-subtree reuse.
+    #[arg(long)]
+    no_reuse_subtrees: bool,
+    /// Same-build ablation of a second exact pair cancellation.
+    #[arg(long, default_value_t = 2, value_parser = clap::value_parser!(u8).range(1..=2))]
+    pair_cancellations: u8,
     #[arg(long)]
     checkpoint_dir: Option<PathBuf>,
     #[arg(long)]
@@ -94,6 +100,8 @@ struct Campaign {
     block: Vec<String>,
     engine: String,
     batch_siblings: bool,
+    reuse_subtrees: bool,
+    pair_cancellations: usize,
 }
 
 fn available_cpus() -> Result<Vec<usize>> {
@@ -148,6 +156,8 @@ fn run_trial(campaign: &Campaign, trial: Trial) -> Result<Record> {
     let mut problem = campaign.problem.clone();
     problem.solver.engine = campaign.engine.clone();
     problem.solver.local_batch_siblings = campaign.batch_siblings;
+    problem.solver.local_reuse_subtrees = campaign.reuse_subtrees;
+    problem.solver.local_pair_cancellations = campaign.pair_cancellations;
     problem.solver.positivity = true;
     problem.solver.homogeneous_block = campaign.block.clone();
     problem.solver.homogeneous_anchor = Some(trial.anchor.clone());
@@ -343,6 +353,8 @@ fn main() -> Result<()> {
         },
         engine: args.engine.clone(),
         batch_siblings: !args.no_batch_siblings,
+        reuse_subtrees: !args.no_reuse_subtrees,
+        pair_cancellations: args.pair_cancellations as usize,
         problem,
         executable,
         output,

@@ -1254,6 +1254,150 @@ fn evidence_without_the_new_pair_option_replays_its_original_resultants() {
 }
 
 #[test]
+fn second_pair_cancellation_matches_one_step_and_global_generic_coverage() {
+    let p = problem(&["x", "z"], &["x>1", "x<4", "z>0"], &["z^2-x", "z^2-2*z-1"]);
+    let second = compare_positive_ray(&p);
+    let first = local_solution(
+        &p,
+        &LocalOptions {
+            positive_pair_cancellations: 1,
+            ..LocalOptions::default()
+        },
+    );
+    assert_eq!(
+        symgcad::comparison::compare_generic(&second, &first, &symgcad::Limits::default())
+            .unwrap()
+            .equivalent,
+        Some(true)
+    );
+    let LocalEvidence::Local { root, report, .. } = second.local.as_deref().unwrap() else {
+        panic!()
+    };
+    let mut proofs = Vec::new();
+    pair_witnesses(root, &mut proofs);
+    assert!(proofs.iter().any(|p| p.cancellations == 2));
+    assert!(report.second_cancellation_pairs_omitted > 0);
+    // Without the upper bound, the two positive graphs really intersect at
+    // x=3+2*sqrt(2). The second cancellation must fall back on that region.
+    compare_positive_ray(&problem(
+        &["x", "z"],
+        &["x>0", "z>0"],
+        &["z^2-x", "z^2-2*z-1"],
+    ));
+}
+
+#[test]
+fn second_pair_replay_rejects_changed_count_sign_and_missing_guards() {
+    let p = problem(&["x", "z"], &["x>1", "x<4", "z>0"], &["z^2-x", "z^2-2*z-1"]);
+    let original = local(&p);
+    fn alter(node: &mut LocalNode, modification: usize) -> bool {
+        if let LocalNode::Stack {
+            projection,
+            sectors,
+            ..
+        } = node
+        {
+            if let Some(ray) = &mut projection.positive_ray {
+                if let Some(proof) = ray.separations.iter_mut().find(|p| p.cancellations == 2) {
+                    match modification {
+                        0 => proof.cancellations = 1,
+                        1 => proof.cancellations = 3,
+                        2 => proof.coefficient_sign *= -1,
+                        3 => projection.guards.clear(),
+                        _ => unreachable!(),
+                    }
+                    return true;
+                }
+            }
+            return sectors
+                .iter_mut()
+                .any(|sector| alter(&mut sector.child, modification));
+        }
+        false
+    }
+    for modification in 0..4 {
+        let mut changed = original.clone();
+        let LocalEvidence::Local { root, .. } = &mut changed.evidence else {
+            panic!()
+        };
+        assert!(alter(root, modification));
+        assert!(verify_local(&changed).is_err());
+    }
+    let mut changed = original;
+    let LocalEvidence::Local { options, .. } = &mut changed.evidence else {
+        panic!()
+    };
+    options.positive_pair_cancellations = 1;
+    assert!(verify_local(&changed).is_err());
+}
+
+#[test]
+fn pair_cancellation_config_roundtrips_and_survives_homogeneous_reduction() {
+    let mut p = problem(
+        &["r", "x", "z"],
+        &["r>0", "x>r", "x<4*r", "z>0"],
+        &["z^2-r*x", "z^2-2*r*z-r^2"],
+    );
+    p.solver.engine = "local".into();
+    p.solver.homogeneous_block = vec!["r".into(), "x".into(), "z".into()];
+    p.solver.homogeneous_anchor = Some("r".into());
+    let value = serde_json::to_value(&p).unwrap();
+    assert!(value["solver"].get("local_pair_cancellations").is_none());
+    let restored: Problem = serde_json::from_value(value).unwrap();
+    assert_eq!(restored.solver.local_pair_cancellations, 2);
+    for count in [1, 2] {
+        p.solver.local_pair_cancellations = count;
+        let restored = Problem::from_toml(&toml::to_string(&p).unwrap()).unwrap();
+        let result = symgcad::solver::solve(&restored).unwrap();
+        assert_eq!(result.status, Status::CompleteGeneric);
+        let reduced = &result.homogeneous.as_ref().unwrap().reduced;
+        assert_eq!(reduced.problem.solver.local_pair_cancellations, count);
+        let LocalEvidence::Local { options, .. } = reduced.local.as_deref().unwrap() else {
+            panic!()
+        };
+        assert_eq!(options.positive_pair_cancellations, count);
+        assert!(symgcad::verify::verify(&result).unwrap().verified);
+    }
+    for count in [0, 3] {
+        p.solver.local_pair_cancellations = count;
+        assert!(p.validate().is_err());
+    }
+}
+
+#[test]
+fn historical_one_cancellation_evidence_replays_without_new_count_fields() {
+    let original = solve_local(
+        &problem(&["x", "z"], &["x>0", "z>0"], &["z^2-x", "z^2-z-x-1"]),
+        &LocalOptions {
+            positive_pair_cancellations: 1,
+            ..LocalOptions::default()
+        },
+    )
+    .unwrap();
+    let mut serialized = serde_json::to_value(&original).unwrap();
+    fn remove_new_fields(value: &mut serde_json::Value) {
+        match value {
+            serde_json::Value::Object(fields) => {
+                fields.remove("positive_pair_cancellations");
+                fields.remove("cancellations");
+                for child in fields.values_mut() {
+                    remove_new_fields(child);
+                }
+            }
+            serde_json::Value::Array(values) => values.iter_mut().for_each(remove_new_fields),
+            _ => {}
+        }
+    }
+    remove_new_fields(&mut serialized);
+    let restored: local_projection::LocalSolveResult = serde_json::from_value(serialized).unwrap();
+    let LocalEvidence::Local { options, .. } = &restored.evidence else {
+        panic!()
+    };
+    assert_eq!(options.positive_pair_cancellations, 1);
+    assert!(verify_local(&restored).unwrap().verified);
+}
+
+#[test]
 fn sibling_discovery_batches_new_cuts_and_matches_unbatched_coverage() {
     let p = problem(&["x", "y"], &[], &["x", "y^2+x", "y^2-x", "y-1", "y-2"]);
     let batched = local_solution(&p, &LocalOptions::default());
@@ -1352,9 +1496,11 @@ fn sibling_batch_config_roundtrips_and_survives_homogeneous_reduction() {
     p.solver.homogeneous_anchor = Some("r".into());
     let default_json = serde_json::to_value(&p).unwrap();
     assert!(default_json["solver"].get("local_batch_siblings").is_none());
+    assert!(default_json["solver"].get("local_reuse_subtrees").is_none());
     let restored: Problem = serde_json::from_value(default_json).unwrap();
     assert!(restored.solver.local_batch_siblings);
     p.solver.local_batch_siblings = false;
+    p.solver.local_reuse_subtrees = false;
     let config = toml::to_string(&p).unwrap();
     let restored = Problem::from_toml(&config).unwrap();
     assert!(!restored.solver.local_batch_siblings);
@@ -1369,6 +1515,127 @@ fn sibling_batch_config_roundtrips_and_survives_homogeneous_reduction() {
         panic!()
     };
     assert!(!options.batch_sibling_discovery);
+    assert!(!options.reuse_completed_subtrees);
     assert_eq!(report.discovery_siblings, 0);
     assert!(symgcad::verify::verify(&result).unwrap().verified);
+}
+
+#[test]
+fn completed_subtree_reuse_preserves_conditional_proofs_and_reduces_restarts() {
+    let p = problem(
+        &["x", "y", "z", "w"],
+        &[],
+        &["x", "y", "z-x", "w^2-z", "w-y", "w-2"],
+    );
+    let cached = solve_local(&p, &LocalOptions::default()).unwrap();
+    let plain_options = LocalOptions {
+        reuse_completed_subtrees: false,
+        ..Default::default()
+    };
+    let plain = solve_local(&p, &plain_options).unwrap();
+    assert!(verify_local(&cached).unwrap().verified);
+    assert!(verify_local(&plain).unwrap().verified);
+    let cached_report = local_report(&cached);
+    let plain_report = local_report(&plain);
+    assert!(cached_report.subtree_cache_hits > 0, "{cached_report:?}");
+    assert!(
+        cached_report.refinements < plain_report.refinements,
+        "{cached_report:?} vs {plain_report:?}"
+    );
+    assert!(cached_report.subtree_cache_peak_bytes <= 32 * 1024 * 1024);
+    assert!(cached_report.subtree_cache_peak_nodes <= 32768);
+    assert_eq!(plain_report.subtree_cache_hits, 0);
+    let budget = cached_report.refinements;
+    let cached_limited = solve_local(
+        &p,
+        &LocalOptions {
+            max_refinements: budget,
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    assert_eq!(cached_limited.solution.status, Status::CompleteGeneric);
+    assert!(verify_local(&cached_limited).unwrap().verified);
+    let plain_limited = solve_local(
+        &p,
+        &LocalOptions {
+            max_refinements: budget,
+            ..plain_options
+        },
+    )
+    .unwrap();
+    assert_eq!(plain_limited.solution.status, Status::Incomplete);
+    assert!(verify_local(&plain_limited).is_err());
+    let cached_solution = local_solution(&p, &LocalOptions::default());
+    let plain_solution = local_solution(
+        &p,
+        &LocalOptions {
+            reuse_completed_subtrees: false,
+            ..Default::default()
+        },
+    );
+    assert_eq!(
+        symgcad::comparison::compare_generic(
+            &cached_solution,
+            &plain_solution,
+            &symgcad::Limits::default()
+        )
+        .unwrap()
+        .equivalent,
+        Some(true)
+    );
+}
+
+#[test]
+fn reused_proofs_remain_exhaustive_and_reject_tampering_or_exhausted_budgets() {
+    let mut p = problem(&["x", "y", "z"], &[], &["z^2-x", "z-y", "x", "y"]);
+    let original = solve_local(&p, &LocalOptions::default()).unwrap();
+    assert!(verify_local(&original).unwrap().verified);
+    let mut changed = original.clone();
+    let LocalEvidence::Local {
+        root: LocalNode::Stack { sectors, .. },
+        ..
+    } = &mut changed.evidence
+    else {
+        panic!()
+    };
+    sectors.pop();
+    assert!(verify_local(&changed).is_err());
+    fn drop_obligations(node: &mut LocalNode) -> bool {
+        if let LocalNode::Stack {
+            required_below,
+            sectors,
+            ..
+        } = node
+        {
+            if !required_below.is_empty() {
+                required_below.clear();
+                return true;
+            }
+            return sectors.iter_mut().any(|s| drop_obligations(&mut s.child));
+        }
+        false
+    }
+    let mut changed = original.clone();
+    let LocalEvidence::Local { root, .. } = &mut changed.evidence else {
+        panic!()
+    };
+    assert!(drop_obligations(root));
+    assert!(verify_local(&changed).is_err());
+    p.limits.max_cells = Some(1);
+    let limited = solve_local(&p, &LocalOptions::default()).unwrap();
+    assert_eq!(limited.solution.status, Status::Incomplete);
+    assert!(limited.solution.cells.is_empty());
+    assert!(verify_local(&limited).is_err());
+    let mut old = serde_json::to_value(&original).unwrap();
+    old["evidence"]["options"]
+        .as_object_mut()
+        .unwrap()
+        .remove("reuse_completed_subtrees");
+    let restored: local_projection::LocalSolveResult = serde_json::from_value(old).unwrap();
+    let LocalEvidence::Local { options, .. } = &restored.evidence else {
+        panic!()
+    };
+    assert!(!options.reuse_completed_subtrees);
+    assert!(verify_local(&restored).unwrap().verified);
 }

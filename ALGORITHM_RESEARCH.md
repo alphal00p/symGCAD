@@ -106,3 +106,44 @@ For `q(z)=a*z^2+b*z+c` on `z>0`, exact certificates establishing `a>0,b>=0` on t
 The implemented engine peels only variables with positive-axis domain constraints and no additional constraints involving them. It solves the endpoint problem exactly, restores variables in reverse elimination order, and independently checks every coefficient certificate and reconstructed sector. The resulting cells remain cylindrical in the requested coordinates. Both fixed A446 topologies admit four such peels and verified eight-cell decompositions after positive-scale reduction.
 
 This argument has a real applicability boundary for unrestricted symbolic kinematics: a negative linear coefficient can produce two positive roots even with a positive endpoint. `examples/symbolic_structure_audit.rs` verifies an exact counterexample and an alternative positive-definite quadratic identity in additive graph coordinates. That additive identity is research evidence; it does not authorize relabeling transformed cells as an original-coordinate CAD or restricting the symbolic domain to its physical region.
+
+## Local positive-ray projection and conditional proof reuse
+
+On an originally constrained positive axis, quadratic coefficient signs and
+Descartes' zero-variation case can certify root counts without a discriminant.
+Every coefficient-sign premise is propagated to the ancestor; root indices
+remain indices among all distinct real roots. Mixed-sign higher-degree cases
+retain their ordinary projection obligations.
+
+For two cuts `p,q`, an exact polynomial combination `R=A*p+B*q` that is nonzero
+for every positive axis value rules out a shared positive root. The implemented
+bounded shortcut uses at most two leading-term cancellations, and certifies R
+through same-sign coefficient guards on the entire ancestor cell. No division
+by a parameter expression is needed. The second cancellation is selected by an
+exact rational diagnostic, then constructed and checked symbolically; the
+diagnostic alone cannot remove a resultant. On a captured stalled quartic pair,
+the first remainder has a positive root, but a second cubic combination has four
+positive coefficients at the current prefix. Its 1,225-term symbolic expansion
+took 2.75 ms in a debug diagnostic and its coefficient factorizations about
+77 ms. These operand measurements justify an experiment, not a completed CAD.
+
+Local saturation can revisit the same exact rational prefix after refining an
+ancestor. A completed subtree is a proof conditional on its full returned
+ancestor guards. Reusing it at the same prefix remains valid when all those
+guards are propagated again; reusing its samples at a different prefix would
+not. The in-process cache therefore stores only completed, bounded-size proof
+trees and preserves every obligation. Independent replay still checks the
+resulting full decomposition without relying on the cache.
+
+The kinematic shear `u=s+t+13/9` has positive unit slope and is triangular when
+s precedes t. Exact substitutions reduce the symbolic A446 polynomial from 78
+to 58 terms and roughly halve some captured projection operands. Bounded
+transformed-coordinate experiments still timed out; no original-coordinate
+decomposition is claimed. Any future use must reconstruct cylindrical root
+boundaries and certify the inverse map over the entire symbolic domain.
+
+Measured fixed-case ordering results are negative for MCTS so far: all seven
+policies solve the six-case cold ablation, while search overhead makes MCTS
+slower than the inexpensive portfolio. Detailed limits, medians and hashes are
+in `BENCHMARKS.md`. A search heuristic's usefulness on the hard symbolic cases
+remains an open empirical question.
