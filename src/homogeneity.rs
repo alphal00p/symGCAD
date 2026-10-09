@@ -444,6 +444,7 @@ fn reconstruct(
         homogeneous: Some(Box::new(evidence)),
         monotone: None,
         local: None,
+        sign_filter: None,
     })
 }
 

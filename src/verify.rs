@@ -209,6 +209,9 @@ impl Checker<'_> {
 }
 
 pub fn verify(result: &SolveResult) -> Result<Verification> {
+    if result.sign_filter.is_some() {
+        return crate::sign_filter::verify(result);
+    }
     if let Some(evidence) = &result.local {
         return crate::local_projection::verify_local_parts(result, evidence);
     }

@@ -16,6 +16,7 @@ pub mod problem;
 pub mod projection;
 pub mod roots;
 pub mod search;
+pub mod sign_filter;
 pub mod solver;
 pub mod verify;
 pub use config::{Limits, Problem, SolverOptions};

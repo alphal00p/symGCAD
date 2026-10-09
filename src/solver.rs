@@ -16,6 +16,9 @@ use std::{collections::HashMap, time::Instant};
 use symbolica::prelude::*;
 
 pub fn selected_order(problem: &Problem) -> Result<Vec<String>> {
+    if problem.solver.engine == "monotone" && problem.split.is_empty() {
+        return crate::sign_filter::selected_order(problem);
+    }
     if problem.solver.homogeneous_anchor.is_some() {
         return crate::homogeneity::selected_order(problem);
     }
@@ -448,6 +451,9 @@ fn prepare_optimized(
 
 pub fn solve(problem: &Problem) -> Result<SolveResult> {
     problem.validate()?;
+    if problem.solver.engine == "monotone" && problem.split.is_empty() {
+        return crate::sign_filter::solve(problem);
+    }
     if problem.solver.homogeneous_anchor.is_some() {
         return crate::homogeneity::solve_homogeneous(problem);
     }
@@ -567,6 +573,7 @@ pub fn solve(problem: &Problem) -> Result<SolveResult> {
         homogeneous: None,
         monotone: None,
         local: None,
+        sign_filter: None,
     })
 }
 

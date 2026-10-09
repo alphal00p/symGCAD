@@ -653,6 +653,7 @@ fn reconstruct(
             base: Box::new(base),
         })),
         local: None,
+        sign_filter: None,
     })
 }
 

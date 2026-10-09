@@ -152,8 +152,10 @@ leading coefficient. For `A*y+B`, degree one over the fraction field and
 `gcd(A,B)=1` prove irreducibility over the rational polynomial ring by Gauss's
 lemma. When A is a monomial, the gcd condition is an exact exponent-map check.
 The shared factoring path uses this bounded sufficient test and otherwise
-retains Symbolica factorization. This targets measured input-factorization
-stalls; it is not a probabilistic irreducibility assumption.
+retains Symbolica factorization. Captured input calls finish in milliseconds;
+their stale progress markers did not establish that factorization caused the
+larger campaign timeouts. The shortcut improves those isolated exact calls,
+without a demonstrated end-to-end hard-case speedup.
 
 The kinematic shear `u=s+t+13/9` has positive unit slope and is triangular when
 s precedes t. Exact substitutions reduce the symbolic A446 polynomial from 78

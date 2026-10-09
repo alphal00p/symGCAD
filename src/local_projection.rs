@@ -1854,6 +1854,7 @@ pub fn solve_local(problem: &Problem, options: &LocalOptions) -> Result<LocalSol
         homogeneous: None,
         monotone: None,
         local: None,
+        sign_filter: None,
     };
     Ok(LocalSolveResult {
         solution,

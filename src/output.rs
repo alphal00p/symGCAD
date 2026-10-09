@@ -118,6 +118,8 @@ pub struct SolveResult {
     pub monotone: Option<Box<crate::monotone::MonotoneEvidence>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub local: Option<Box<crate::local_projection::LocalEvidence>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sign_filter: Option<Box<crate::sign_filter::SignFilterEvidence>>,
 }
 
 impl SolveResult {
@@ -140,6 +142,7 @@ impl SolveResult {
             homogeneous: None,
             monotone: None,
             local: None,
+            sign_filter: None,
         }
     }
 }
