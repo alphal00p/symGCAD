@@ -16,6 +16,18 @@ Three fresh release measurements of captured degree-2-by-degree-8 operands gave 
 
 ## Native baseline, fast core
 
+Fresh measurements with deterministic release `9025e71` and the corrected process supervisor now supersede the historical timing rows for these completed subsets:
+
+| Frozen reference subset | Verified matching branches | Matched-phase geometric mean | Fresh-process geometric mean |
+|---|---:|---:|---:|
+| Fast core | 48 / 48 | 0.0907102 | 0.0421028 |
+| Active fixed ZZ | 162 / 162 | 0.099492 | 0.037431 |
+| Remaining fixed ZZ, batch 1 | 32 / 32 reference completions | 0.37554 | 0.12773 |
+
+Each row uses three fresh-process measurements and independent verification; none has a matched-phase regression above 2×. The remaining-fixed batch also retains eight native timeouts outside its frozen completing denominator. Its 40 branches were selected before reference qualification. These subset results do not establish all-corpus parity. Report hashes, respectively, are `0207ff140fef37b630ca9e36835c6bcb6d08d50d9331717dfefcf456d17fae54`, `b52583b33d6738d6265f7cca074cb1e17651687d950927e1a8dbbb0d2da817a2`, and `8784104ed8fb362664724f3aba631a06c420da2f6d523fa60255c676a2214e80` under `artifacts/bench/{core-fast,zz-fixed-completing,zz-fixed-remaining-batch1}-deterministic-release/report.json`.
+
+The deterministic replay of 23 non-solve API calls again produced 16 ordering matches and one projection match; six ordering calls timed out in both engines at 60 seconds. No completed mismatch was observed. Report SHA-256: `391e0532e42d1d86eb5928e01a0fd3f2d9643285f568699ec843f98a030ec99a` (`artifacts/bench/core-api-deterministic/report.json`).
+
 The frozen M1 implementation (`3125469`) was compiled in release mode and compared with the accelerated native upstream revision recorded in `PROVENANCE.toml`. The reference first qualified all 48 solve invocations from the 39 active, unmarked core test functions. Three fresh-process measurements per engine used identical explicit orders, one CPU, and no merging. Every Rust result passed the independent exhaustive verifier, and all raw cell counts matched upstream.
 
 | Measure | Rust/reference geometric mean |

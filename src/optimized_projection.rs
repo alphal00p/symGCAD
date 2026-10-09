@@ -119,6 +119,9 @@ pub struct OptimizedProjectionReport {
     /// Exact nonvanishing evidence for input factors omitted before projection.
     #[serde(default)]
     pub initial_removals: Vec<DomainCertificate>,
+    /// Whole raw projection obligations proved nonzero before factorization.
+    #[serde(default)]
+    pub operation_removals: Vec<ProjectionOperationRemoval>,
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
@@ -127,6 +130,8 @@ pub struct DomainPruningOptions {
     /// Also remove certified input factors, preserving coordinate-affine ones.
     /// Every accepted lifted cell must still satisfy the original constraints.
     pub prune_input: bool,
+    /// Certify raw projection obligations before invoking factorization.
+    pub prune_operations: bool,
     pub excluded_sign_constraints: Vec<usize>,
     pub certificates: CertificateOptions,
 }
@@ -139,6 +144,14 @@ pub struct ProjectionRemoval {
     /// Variable index in the stable original variable map.
     pub eliminated_variable: usize,
     /// Polynomial and domain in that same original map, not the lifting order.
+    pub certificate: DomainCertificate,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ProjectionOperationRemoval {
+    pub level: usize,
+    pub eliminated_variable: usize,
+    /// Canonical raw LC/discriminant/resultant, before square-free factoring.
     pub certificate: DomainCertificate,
 }
 
@@ -1052,6 +1065,32 @@ impl<'a> ProjectionCache<'a> {
         self.save_progress()
     }
 
+    fn raw_projection(&mut self, polynomials: &[Poly], variable: usize) -> Result<Vec<Poly>> {
+        let mut raw = Vec::new();
+        for (i, p) in polynomials.iter().enumerate() {
+            raw.push(p.univariate_lcoeff(variable));
+            let degree = p.degree(variable);
+            if degree >= 2 {
+                raw.push(self.discriminant(p, variable)?);
+            }
+            for other in &polynomials[i + 1..] {
+                if degree == 0 || other.degree(variable) == 0 {
+                    // Res(c,q)=c^deg(q): c is already present as a leading
+                    // coefficient, so its irreducible factors are retained.
+                    self.report.cache.skipped_degree_zero_pairs += 1;
+                } else {
+                    raw.push(self.resultant(p, other, variable)?);
+                }
+            }
+        }
+        let raw = sorted_unique(
+            raw.into_iter()
+                .filter(|p| !p.is_constant())
+                .map(|p| canonical(&p)),
+        );
+        Ok(raw)
+    }
+
     fn step(&mut self, polynomials: &[Poly], variable: Option<usize>) -> Result<Vec<Poly>> {
         ensure!(
             polynomials
@@ -1085,28 +1124,7 @@ impl<'a> ProjectionCache<'a> {
         }
         self.report.cache.prefix_misses += 1;
         let output = if let Some(variable) = variable {
-            let mut raw = Vec::new();
-            for (i, p) in polynomials.iter().enumerate() {
-                raw.push(p.univariate_lcoeff(variable));
-                let degree = p.degree(variable);
-                if degree >= 2 {
-                    raw.push(self.discriminant(p, variable)?);
-                }
-                for other in &polynomials[i + 1..] {
-                    if degree == 0 || other.degree(variable) == 0 {
-                        // Res(c,q)=c^deg(q): c is already present as a leading
-                        // coefficient, so its irreducible factors are retained.
-                        self.report.cache.skipped_degree_zero_pairs += 1;
-                    } else {
-                        raw.push(self.resultant(p, other, variable)?);
-                    }
-                }
-            }
-            let raw = sorted_unique(
-                raw.into_iter()
-                    .filter(|p| !p.is_constant())
-                    .map(|p| canonical(&p)),
-            );
+            let raw = self.raw_projection(&polynomials, variable)?;
             self.factor_basis(&raw)?
         } else {
             self.factor_basis(&polynomials)?
@@ -1140,6 +1158,7 @@ impl<'a> ProjectionCache<'a> {
             &pruning.excluded_sign_constraints,
         )?;
         self.report.initial_removals.clear();
+        self.report.operation_removals.clear();
         self.report.removals.clear();
         let all = original_constraints
             .iter()
@@ -1177,6 +1196,7 @@ impl<'a> ProjectionCache<'a> {
         validate_projection_input(self.algebra, polynomials, order)?;
         self.report.removals.clear();
         self.report.initial_removals.clear();
+        self.report.operation_removals.clear();
         if order.is_empty() {
             return Ok(Projection {
                 levels: vec![],
@@ -1211,6 +1231,7 @@ impl<'a> ProjectionCache<'a> {
         )?;
         self.report.removals.clear();
         self.report.initial_removals.clear();
+        self.report.operation_removals.clear();
         if order.is_empty() {
             return Ok(Projection {
                 levels: vec![],
@@ -1219,6 +1240,79 @@ impl<'a> ProjectionCache<'a> {
         }
         let initial = self.initial_basis_certified(original_constraints, split, pruning)?;
         let protected = initial.iter().cloned().collect::<HashSet<_>>();
+        if pruning.prune_operations {
+            let n = order.len();
+            let mut levels = vec![vec![]; n];
+            let mut steps = Vec::with_capacity(n.saturating_sub(1));
+            levels[n - 1] = initial;
+            for position in (1..n).rev() {
+                let started = Instant::now();
+                let variable = order[position];
+                let raw = self.raw_projection(&levels[position], variable)?;
+                let mut retained_raw = Vec::new();
+                for polynomial in raw {
+                    if let Some(certificate) =
+                        certify_nonzero(algebra, &polynomial, &domain, &pruning.certificates)?
+                    {
+                        self.report
+                            .operation_removals
+                            .push(ProjectionOperationRemoval {
+                                level: position - 1,
+                                eliminated_variable: variable,
+                                certificate,
+                            });
+                    } else {
+                        retained_raw.push(polynomial);
+                    }
+                }
+                self.save_progress()?;
+                let mut generated = self.factor_basis(&retained_raw)?;
+                // A certified product can contain a protected face even when
+                // the whole product is nonzero inside the original open box.
+                // Carry every surviving input factor supported on this output
+                // space explicitly, including factors from earlier stages.
+                generated.extend(
+                    protected
+                        .iter()
+                        .filter(|p| order[position..].iter().all(|&v| p.degree(v) == 0))
+                        .cloned(),
+                );
+                let mut retained = Vec::new();
+                for polynomial in sorted_unique(generated) {
+                    if !protected.contains(&polynomial)
+                        && let Some(certificate) =
+                            certify_nonzero(algebra, &polynomial, &domain, &pruning.certificates)?
+                    {
+                        self.report.removals.push(ProjectionRemoval {
+                            level: position - 1,
+                            eliminated_variable: variable,
+                            certificate,
+                        });
+                    } else {
+                        retained.push(polynomial);
+                    }
+                }
+                let (key, input_hash) = self.key(&levels[position], Some(variable))?;
+                let key = digest(&(
+                    "whole-operation-certificates-v1",
+                    key,
+                    &self.report.operation_removals,
+                ))?;
+                // Prefix output alone lacks the certificates needed for reuse.
+                // Reuse persisted individual algebra operations instead.
+                self.completed(key, input_hash, Some(variable), &retained, started, false)?;
+                steps.push(ProjectionStep {
+                    variable: position,
+                    input_count: levels[position].len(),
+                    output_count: retained.len(),
+                    input_terms: levels[position].iter().map(Poly::nterms).sum(),
+                    output_terms: retained.iter().map(Poly::nterms).sum(),
+                    elapsed_seconds: started.elapsed().as_secs_f64(),
+                });
+                levels[position - 1] = retained;
+            }
+            return finish_projection(algebra, levels, steps, order);
+        }
         let mut removals = Vec::new();
         let projection =
             self.project_from_initial(initial, order, |level, eliminated_variable, generated| {
@@ -1389,6 +1483,7 @@ pub fn project_ordered_certified(
         split.iter().map(|p| algebra.format(p)).collect::<Vec<_>>(),
         &domain,
         pruning.prune_input,
+        pruning.prune_operations,
         &pruning.certificates,
     ))?;
     let mut cache = ProjectionCache::new(algebra, &options);
@@ -1432,6 +1527,31 @@ pub fn replay_certified_projection_with_inputs(
     initial_removals: &[DomainCertificate],
     removals: &[ProjectionRemoval],
 ) -> Result<Projection> {
+    replay_certified_projection_with_operations(
+        algebra,
+        original_constraints,
+        split,
+        order,
+        excluded_sign_constraints,
+        initial_removals,
+        removals,
+        &[],
+    )
+}
+
+/// Replay whole raw obligations independently, then factor only the obligations
+/// not discharged by exact nonvanishing evidence. Protected input factors are
+/// carried independently of the raw products in which they occur.
+pub fn replay_certified_projection_with_operations(
+    algebra: &Algebra,
+    original_constraints: &[Poly],
+    split: &[Poly],
+    order: &[usize],
+    excluded_sign_constraints: &[usize],
+    initial_removals: &[DomainCertificate],
+    removals: &[ProjectionRemoval],
+    operation_removals: &[ProjectionOperationRemoval],
+) -> Result<Projection> {
     let all = original_constraints
         .iter()
         .chain(split)
@@ -1448,6 +1568,16 @@ pub fn replay_certified_projection_with_inputs(
         ensure!(
             removal.eliminated_variable == order[removal.level + 1],
             "certificate removal names the wrong elimination variable"
+        );
+    }
+    for removal in operation_removals {
+        ensure!(
+            removal.level < n.saturating_sub(1),
+            "raw certificate names an invalid projection level"
+        );
+        ensure!(
+            removal.eliminated_variable == order[removal.level + 1],
+            "raw certificate names the wrong elimination variable"
         );
     }
     if n == 0 {
@@ -1492,10 +1622,63 @@ pub fn replay_certified_projection_with_inputs(
     for position in (1..n).rev() {
         let started = Instant::now();
         let variable = order[position];
-        let generated = factors_checked(&crate::projection::projection_polynomials(
-            &levels[position],
-            variable,
-        )?)?;
+        let raw = if operation_removals.is_empty() {
+            crate::projection::projection_polynomials(&levels[position], variable)?
+        } else {
+            // Independently reconstruct the optimized raw basis: degree-zero
+            // resultants are powers of an already retained leading coefficient.
+            let mut raw = Vec::new();
+            for (i, p) in levels[position].iter().enumerate() {
+                raw.push(p.univariate_lcoeff(variable));
+                if p.degree(variable) >= 2 {
+                    raw.push(discriminant(p, variable)?);
+                }
+                for q in &levels[position][i + 1..] {
+                    if p.degree(variable) > 0 && q.degree(variable) > 0 {
+                        raw.push(exact_resultant(p, q, variable)?);
+                    }
+                }
+            }
+            sorted_unique(
+                raw.into_iter()
+                    .filter(|p| !p.is_constant())
+                    .map(|p| canonical(&p)),
+            )
+        };
+        let mut removed_operations = HashSet::new();
+        for removal in operation_removals
+            .iter()
+            .filter(|r| r.level == position - 1)
+        {
+            let polynomial = algebra.parse(&removal.certificate.polynomial)?;
+            ensure!(
+                raw.contains(&polynomial),
+                "raw certificate removes an absent projection obligation"
+            );
+            ensure!(
+                removed_operations.insert(polynomial.clone()),
+                "duplicate raw projection removal"
+            );
+            verify_certificate(
+                algebra,
+                &polynomial,
+                original_constraints,
+                excluded_sign_constraints,
+                &removal.certificate,
+            )?;
+        }
+        let retained_raw = raw
+            .into_iter()
+            .filter(|p| !removed_operations.contains(p))
+            .collect::<Vec<_>>();
+        let mut generated = factors_checked(&retained_raw)?;
+        generated.extend(
+            protected
+                .iter()
+                .filter(|p| order[position..].iter().all(|&v| p.degree(v) == 0))
+                .cloned(),
+        );
+        let generated = sorted_unique(generated);
         let mut removed = HashSet::new();
         for removal in removals.iter().filter(|r| r.level == position - 1) {
             let polynomial = algebra.parse(&removal.certificate.polynomial)?;

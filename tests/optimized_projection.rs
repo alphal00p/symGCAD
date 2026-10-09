@@ -11,6 +11,7 @@ use symgcad::{
         DomainPruningOptions, OptimizedProjectionOptions, OptimizedProjectionReport,
         ProjectionCache, project_optimized, project_ordered_certified, project_ordered_optimized,
         replay_certified_projection, replay_certified_projection_with_inputs,
+        replay_certified_projection_with_operations,
     },
     projection::project,
 };
@@ -839,4 +840,190 @@ fn input_certificates_survive_restarts_and_plain_projection_clears_them() {
     let full = restarted.project_ordered(&constraints, &[0, 1]).unwrap();
     assert_eq!(full.levels, project(&a, &constraints).unwrap().levels);
     assert!(restarted.report.initial_removals.is_empty());
+}
+
+fn operation_pruning() -> DomainPruningOptions {
+    DomainPruningOptions {
+        prune_operations: true,
+        ..Default::default()
+    }
+}
+
+#[test]
+fn whole_operation_certificates_skip_factoring_and_carry_original_faces() {
+    let a = two_variables();
+    let constraints = ["x", "y"]
+        .iter()
+        .map(|p| a.parse(p).unwrap())
+        .collect::<Vec<_>>();
+    let split = vec![a.parse("y^2+x+1").unwrap()];
+    let (old, old_report) = project_ordered_certified(
+        &a,
+        &constraints,
+        &split,
+        &[0, 1],
+        &Default::default(),
+        &Default::default(),
+    )
+    .unwrap();
+    let (new, report) = project_ordered_certified(
+        &a,
+        &constraints,
+        &split,
+        &[0, 1],
+        &Default::default(),
+        &operation_pruning(),
+    )
+    .unwrap();
+    assert_eq!(new.levels, old.levels);
+    assert_eq!(new.levels[0], vec![a.parse("x").unwrap()]);
+    assert!(!report.operation_removals.is_empty());
+    assert!(
+        report
+            .operation_removals
+            .iter()
+            .any(|r| a.parse(&r.certificate.polynomial).unwrap() == a.parse("x").unwrap())
+    );
+    assert!(report.cache.factor_misses < old_report.cache.factor_misses);
+    let replay = replay_certified_projection_with_operations(
+        &a,
+        &constraints,
+        &split,
+        &[0, 1],
+        &[],
+        &report.initial_removals,
+        &report.removals,
+        &report.operation_removals,
+    )
+    .unwrap();
+    assert_eq!(replay.levels, new.levels);
+}
+
+#[test]
+fn whole_operation_carries_survive_multiple_stages_and_order_remapping() {
+    let a = Algebra::new(&["x".into(), "y".into(), "z".into()]).unwrap();
+    let constraints = ["x", "1-x", "y", "z"]
+        .iter()
+        .map(|p| a.parse(p).unwrap())
+        .collect::<Vec<_>>();
+    let split = ["z^2+x*y+1", "x-1/2"]
+        .iter()
+        .map(|p| a.parse(p).unwrap())
+        .collect::<Vec<_>>();
+    for order in [[0, 1, 2], [1, 0, 2]] {
+        let (new, report) = project_ordered_certified(
+            &a,
+            &constraints,
+            &split,
+            &order,
+            &Default::default(),
+            &operation_pruning(),
+        )
+        .unwrap();
+        let replay = replay_certified_projection_with_operations(
+            &a,
+            &constraints,
+            &split,
+            &order,
+            &[],
+            &report.initial_removals,
+            &report.removals,
+            &report.operation_removals,
+        )
+        .unwrap();
+        assert_eq!(new.levels, replay.levels);
+        let (old, _) = project_ordered_certified(
+            &a,
+            &constraints,
+            &split,
+            &order,
+            &Default::default(),
+            &Default::default(),
+        )
+        .unwrap();
+        assert_eq!(new.levels, old.levels);
+        assert!(
+            !report
+                .operation_removals
+                .iter()
+                .any(|r| a.parse(&r.certificate.polynomial).unwrap() == a.parse("x-1/2").unwrap())
+        );
+    }
+}
+
+#[test]
+fn whole_operation_replay_rejects_changed_missing_and_duplicate_evidence() {
+    let a = two_variables();
+    let constraints = ["x", "y"]
+        .iter()
+        .map(|p| a.parse(p).unwrap())
+        .collect::<Vec<_>>();
+    let split = vec![a.parse("y^2+x+1").unwrap()];
+    let (new, report) = project_ordered_certified(
+        &a,
+        &constraints,
+        &split,
+        &[0, 1],
+        &Default::default(),
+        &operation_pruning(),
+    )
+    .unwrap();
+    let check = |records: &[_]| {
+        replay_certified_projection_with_operations(
+            &a,
+            &constraints,
+            &split,
+            &[0, 1],
+            &[],
+            &[],
+            &report.removals,
+            records,
+        )
+    };
+    let mut wrong = report.operation_removals.clone();
+    wrong[0].level = 99;
+    assert!(check(&wrong).is_err());
+    wrong = report.operation_removals.clone();
+    wrong[0].eliminated_variable = 0;
+    assert!(check(&wrong).is_err());
+    wrong = report.operation_removals.clone();
+    wrong[0].certificate.sign *= -1;
+    assert!(check(&wrong).is_err());
+    wrong = report.operation_removals.clone();
+    wrong[0].certificate.polynomial = "x+777".into();
+    assert!(check(&wrong).is_err());
+    wrong = report.operation_removals.clone();
+    wrong.push(wrong[0].clone());
+    assert!(check(&wrong).is_err());
+    // With all witnesses deleted the checker must restore the missing cuts.
+    assert_ne!(check(&[]).unwrap().levels, new.levels);
+}
+
+#[test]
+fn whole_operation_solver_proof_replays_and_requires_opt_in() {
+    let mut problem = symgcad::Problem {
+        variables: vec!["x".into(), "y".into()],
+        constraints: vec!["x>0".into(), "y>0".into()],
+        split: vec!["y^2+x+1".into()],
+        ..Default::default()
+    };
+    problem.solver.engine = "optimized".into();
+    problem.solver.prune_operations = true;
+    assert!(symgcad::solver::solve(&problem).is_err());
+    problem.solver.positivity = true;
+    let mut result = symgcad::solver::solve(&problem).unwrap();
+    symgcad::verify::verify(&result).unwrap();
+    assert!(
+        !result
+            .statistics
+            .optimized_projection
+            .as_ref()
+            .unwrap()
+            .operation_removals
+            .is_empty()
+    );
+    assert_eq!(result.cells.len(), 1);
+    assert_eq!(result.cells[0].signs, vec![1]);
+    result.problem.solver.prune_operations = false;
+    assert!(symgcad::verify::verify(&result).is_err());
 }

@@ -751,3 +751,329 @@ fn cached_domain_certificates_preserve_registry_and_every_bound_obligation() {
     assert!(verify_local(&cached).unwrap().verified);
     assert!(verify_local(&uncached).unwrap().verified);
 }
+
+fn compare_positive_ray(p: &Problem) -> symgcad::output::SolveResult {
+    let ray = local_solution(p, &LocalOptions::default());
+    let full = local_solution(
+        p,
+        &LocalOptions {
+            positive_ray: false,
+            ..LocalOptions::default()
+        },
+    );
+    let mut baseline_problem = p.clone();
+    baseline_problem.solver.engine = "baseline".into();
+    baseline_problem.solver.positivity = false;
+    let baseline = symgcad::solver::solve(&baseline_problem).unwrap();
+    for other in [&full, &baseline] {
+        let comparison = symgcad::comparison::compare_generic(
+            &ray,
+            other,
+            &symgcad::Limits {
+                wall_time_secs: 30.0,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        assert_eq!(comparison.equivalent, Some(true));
+    }
+    ray
+}
+
+fn ray_cases(node: &LocalNode, cases: &mut Vec<local_projection::PositiveRayCase>) {
+    if let LocalNode::Stack {
+        projection,
+        sectors,
+        ..
+    } = node
+    {
+        if let Some(ray) = &projection.positive_ray {
+            cases.extend(ray.rules.iter().map(|r| r.case.clone()));
+        }
+        for sector in sectors {
+            ray_cases(&sector.child, cases);
+        }
+    }
+}
+
+#[test]
+fn positive_ray_quadratic_sign_cases_match_full_real_and_global_coverage() {
+    use local_projection::PositiveRayCase::*;
+    let mut cases = Vec::new();
+    // Each polynomial is irreducible over the parameter field. This includes
+    // both signs of the leading coefficient and linear endpoint crossings.
+    for expression in [
+        "z^2+x*z-1",
+        "-z^2+x*z+1",
+        "z^2+x*z+1",
+        "x*z^2-z+1",
+        "x*z+1",
+        "z^2+x",
+        "z^3+x*z+1",
+    ] {
+        let result = compare_positive_ray(&problem(&["x", "z"], &["z>0"], &[expression]));
+        let LocalEvidence::Local { root, .. } = result.local.as_deref().unwrap() else {
+            panic!()
+        };
+        ray_cases(root, &mut cases);
+    }
+    assert!(
+        cases
+            .iter()
+            .any(|c| matches!(c, QuadraticOpposite { leading_sign: 1 }))
+    );
+    assert!(
+        cases
+            .iter()
+            .any(|c| matches!(c, QuadraticOpposite { leading_sign: -1 }))
+    );
+    assert!(cases.iter().any(|c| matches!(
+        c,
+        QuadraticPositive {
+            linear_zero: false,
+            ..
+        }
+    )));
+    assert!(cases.iter().any(|c| matches!(
+        c,
+        QuadraticPositive {
+            linear_zero: true,
+            ..
+        }
+    )));
+    assert!(cases.iter().any(|c| matches!(
+        c,
+        QuadraticDiscriminant {
+            discriminant_sign: 1,
+            positive_roots: 2,
+            ..
+        }
+    )));
+    assert!(cases.iter().any(|c| matches!(
+        c,
+        QuadraticDiscriminant {
+            discriminant_sign: -1,
+            positive_roots: 0,
+            ..
+        }
+    )));
+    assert!(cases.iter().any(|c| matches!(c, Linear { .. })));
+    assert!(cases.iter().any(|c| matches!(c, FullReal)));
+}
+
+#[test]
+fn negative_root_collisions_do_not_cut_the_positive_axis() {
+    let p = problem(&["x", "z"], &["x>0", "z>0"], &["z^2+2*z+x"]);
+    let result = compare_positive_ray(&p);
+    assert_eq!(result.cells.len(), 1);
+    assert_eq!(result.cells[0].signs, vec![1]);
+    // D=4-4*x vanishes at x=1, where both roots collide at -1. There is no
+    // positive-root graph and hence no reason to split the requested domain.
+    let algebra = symgcad::algebra::Algebra::new(&result.order).unwrap();
+    let seam = symgcad::algebra::canonical(&algebra.parse("x-1").unwrap());
+    assert!(
+        result
+            .exceptional_polynomials
+            .iter()
+            .all(|&id| algebra.parse(&result.polynomials[id]).unwrap() != seam)
+    );
+    let LocalEvidence::Local { report, .. } = result.local.as_deref().unwrap() else {
+        panic!()
+    };
+    assert!(report.quadratic_discriminants_omitted > 0);
+}
+
+#[test]
+fn positive_ray_preserves_endpoint_crossings_pair_crossings_and_zero_split_annotations() {
+    compare_positive_ray(&problem(&["x", "y", "z"], &["z>0"], &["z^2-x", "z-y", "0"]));
+    compare_positive_ray(&problem(&["x", "z"], &["z>0"], &["z*(z+x)"]));
+    let result = compare_positive_ray(&problem(&["x", "z"], &["z>0"], &["z^2+x"]));
+    assert!(result.cells.iter().all(|c| c.axes[0].sample != "0"));
+    let indexed = compare_positive_ray(&problem(&["x", "z"], &["x>0", "z>0"], &["z^2-x"]));
+    let algebra = symgcad::algebra::Algebra::new(&indexed.order).unwrap();
+    let curve = symgcad::algebra::canonical(&algebra.parse("z^2-x").unwrap());
+    let id = indexed
+        .polynomials
+        .iter()
+        .position(|p| algebra.parse(p).unwrap() == curve)
+        .unwrap();
+    let bounds = indexed
+        .cells
+        .iter()
+        .flat_map(|cell| cell.axes[1].lower.iter().chain(cell.axes[1].upper.iter()))
+        .filter(|bound| bound.polynomial == id)
+        .collect::<Vec<_>>();
+    assert!(!bounds.is_empty());
+    assert!(bounds.iter().all(|bound| bound.index == 1));
+}
+
+#[test]
+fn positive_ray_requires_an_original_strict_positive_coordinate_bound() {
+    for constraints in [vec!["z<0"], vec!["z+1>0"], vec!["x*z>0"], vec![]] {
+        let result = local(&problem(&["x", "z"], &constraints, &["z^2+x"]));
+        let LocalEvidence::Local { root, .. } = &result.evidence else {
+            panic!()
+        };
+        let mut cases = Vec::new();
+        ray_cases(root, &mut cases);
+        assert!(cases.is_empty());
+    }
+    compare_positive_ray(&problem(&["x", "z"], &["3*z/2>0"], &["z^2+x"]));
+}
+
+#[test]
+fn positive_ray_replay_rejects_changed_premise_rule_and_negative_halfline() {
+    let original = local(&problem(&["x", "z"], &["x>0", "z>0"], &["z^2+2*z+x"]));
+    fn change(node: &mut LocalNode, modification: usize) -> bool {
+        if let LocalNode::Stack {
+            projection,
+            sectors,
+            ..
+        } = node
+        {
+            if let Some(ray) = &mut projection.positive_ray {
+                if ray.rules.iter().any(|r| {
+                    matches!(
+                        r.case,
+                        local_projection::PositiveRayCase::QuadraticPositive { .. }
+                    )
+                }) {
+                    match modification {
+                        0 => ray.constraint = 0,
+                        1 => ray.coordinate = usize::MAX,
+                        2 => ray.rules.clear(),
+                        3 => sectors[0].child = LocalNode::Rejected { constraint: 0 },
+                        _ => unreachable!(),
+                    }
+                    return true;
+                }
+            }
+            return sectors
+                .iter_mut()
+                .any(|s| change(&mut s.child, modification));
+        }
+        false
+    }
+    for modification in 0..4 {
+        let mut changed = original.clone();
+        let LocalEvidence::Local { root, .. } = &mut changed.evidence else {
+            panic!()
+        };
+        assert!(change(root, modification));
+        assert!(
+            verify_local(&changed).is_err(),
+            "modification {modification}"
+        );
+    }
+    let mut changed = original;
+    let LocalEvidence::Local { options, .. } = &mut changed.evidence else {
+        panic!()
+    };
+    options.positive_ray = false;
+    assert!(verify_local(&changed).is_err());
+}
+
+#[test]
+fn positive_ray_and_sturm_guard_proofs_preserve_independent_obligations() {
+    let p = domain_problem(&["x", "z"], &["x>0", "z>0"], &["(x^4-x^2+1)*z-1"]);
+    let original = compare_positive_ray(&p);
+    let LocalEvidence::Local {
+        guard_certificates,
+        root,
+        ..
+    } = original.local.as_deref().unwrap()
+    else {
+        panic!()
+    };
+    let record = guard_certificates
+        .iter()
+        .find(|r| {
+            matches!(
+                r.certificate.method,
+                symgcad::domain::CertificateMethod::UnivariateSturm { variable: 0 }
+            )
+        })
+        .unwrap();
+    assert_eq!(record.supporting_constraints, vec![0]);
+    assert!(!record.supporting_factors.is_empty());
+    let mut cases = Vec::new();
+    ray_cases(root, &mut cases);
+    assert!(
+        cases
+            .iter()
+            .any(|c| matches!(c, local_projection::PositiveRayCase::Linear { .. }))
+    );
+    let mut changed = original;
+    let LocalEvidence::Local {
+        guard_certificates, ..
+    } = changed.local.as_deref_mut().unwrap()
+    else {
+        panic!()
+    };
+    let record = guard_certificates
+        .iter_mut()
+        .find(|r| {
+            matches!(
+                r.certificate.method,
+                symgcad::domain::CertificateMethod::UnivariateSturm { .. }
+            )
+        })
+        .unwrap();
+    record.certificate.sign *= -1;
+    assert!(symgcad::verify::verify(&changed).is_err());
+}
+
+#[test]
+fn descartes_zero_variations_omit_only_negative_root_collisions() {
+    for expression in ["z^3+3*z^2+3*z+x", "z^4+4*z^3+6*z^2+4*z+x"] {
+        let result = compare_positive_ray(&problem(&["x", "z"], &["x>0", "z>0"], &[expression]));
+        assert_eq!(result.cells.len(), 1);
+        assert_eq!(result.cells[0].signs, vec![1]);
+        let LocalEvidence::Local { root, report, .. } = result.local.as_deref().unwrap() else {
+            panic!()
+        };
+        let mut cases = Vec::new();
+        ray_cases(root, &mut cases);
+        assert!(cases.iter().any(|c| matches!(
+            c,
+            local_projection::PositiveRayCase::DescartesZero {
+                coefficient_sign: 1
+            }
+        )));
+        assert!(report.descartes_discriminants_omitted > 0);
+    }
+    // A nonconstant coefficient vanishing at the tentative x=0 prefix must
+    // become an explicit ancestor cut, not silently count as an absent term.
+    let result = compare_positive_ray(&problem(&["x", "z"], &["z>0"], &["z^3+x*z^2+z+1"]));
+    assert!(result.cells.iter().all(|cell| cell.axes[0].sample != "0"));
+    let mut changed = result;
+    fn alter(node: &mut LocalNode) -> bool {
+        if let LocalNode::Stack {
+            projection,
+            sectors,
+            ..
+        } = node
+        {
+            if let Some(ray) = &mut projection.positive_ray {
+                if let Some(rule) = ray.rules.iter_mut().find(|rule| {
+                    matches!(
+                        rule.case,
+                        local_projection::PositiveRayCase::DescartesZero { .. }
+                    )
+                }) {
+                    rule.case = local_projection::PositiveRayCase::DescartesZero {
+                        coefficient_sign: -1,
+                    };
+                    return true;
+                }
+            }
+            return sectors.iter_mut().any(|sector| alter(&mut sector.child));
+        }
+        false
+    }
+    let LocalEvidence::Local { root, .. } = changed.local.as_deref_mut().unwrap() else {
+        panic!()
+    };
+    assert!(alter(root));
+    assert!(symgcad::verify::verify(&changed).is_err());
+}

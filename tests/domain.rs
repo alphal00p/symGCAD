@@ -83,6 +83,74 @@ fn polya_does_not_remove_an_interior_zero() {
 }
 
 #[test]
+fn sturm_certifies_mixed_coefficient_univariate_factors_on_unbounded_domains() {
+    for (bounds, expression, sign) in [
+        (vec![], "x^4-x^2+1", 1),
+        (vec!["x"], "-x^4+x^2-1", -1),
+        (vec!["x-100"], "x^4-x^2+1", 1),
+        (vec!["-100-x"], "x^4-x^2+1", 1),
+    ] {
+        let c = certify(&["unused", "x"], &bounds, expression).unwrap();
+        assert_eq!(c.sign, sign);
+        // Shifting far outside the roots can also expose a coefficient proof.
+        if bounds.is_empty() || bounds == ["x"] {
+            assert!(matches!(
+                c.method,
+                CertificateMethod::UnivariateSturm { variable: 1 }
+            ));
+        }
+    }
+}
+
+#[test]
+fn sturm_keeps_repeated_and_close_roots_and_checks_strict_endpoints() {
+    let (a, constraints) = setup(&["x"], &["x", "1-x"]);
+    let domain = derive_domain(&a, &constraints, &[]).unwrap();
+    // Force replay of the Sturm method to test endpoint conventions directly,
+    // independently of the earlier coefficient/Bernstein portfolio choices.
+    for (expression, valid, sign) in [
+        ("x*(1-x)", true, 1),
+        ("-x^2*(1-x)^2", true, -1),
+        ("(x-1/3)^2", false, 1),
+        ("(x-1/3)*(x-1/3-1/1000000000000)", false, 1),
+    ] {
+        let p = a.parse(expression).unwrap();
+        let certificate = DomainCertificate {
+            version: 1,
+            polynomial: a.format(&p),
+            domain: domain.clone(),
+            sign,
+            method: CertificateMethod::UnivariateSturm { variable: 0 },
+            limits: CertificateOptions::default(),
+        };
+        assert_eq!(
+            verify_certificate(&a, &p, &constraints, &[], &certificate).is_ok(),
+            valid
+        );
+    }
+}
+
+#[test]
+fn sturm_replay_rejects_wrong_axis_sign_and_budget() {
+    let (a, constraints) = setup(&["x", "y"], &[]);
+    let p = a.parse("y^4-y^2+1").unwrap();
+    let domain = derive_domain(&a, &constraints, &[]).unwrap();
+    let certificate = certify_nonzero(&a, &p, &domain, &CertificateOptions::default())
+        .unwrap()
+        .unwrap();
+    let mut wrong = certificate.clone();
+    wrong.method = CertificateMethod::UnivariateSturm { variable: 0 };
+    assert!(verify_certificate(&a, &p, &constraints, &[], &wrong).is_err());
+    wrong = certificate.clone();
+    wrong.sign = -1;
+    assert!(verify_certificate(&a, &p, &constraints, &[], &wrong).is_err());
+    wrong = certificate;
+    wrong.limits.work_limit = 1;
+    assert!(verify_certificate(&a, &p, &constraints, &[], &wrong).is_err());
+    assert!(certify(&["x"], &[], "x^66-x^2+1").is_none());
+}
+
+#[test]
 fn bernstein_allows_zeros_only_on_original_strict_endpoints() {
     let c = certify(&["x"], &["x", "1-x"], "x*(1-x)").unwrap();
     assert!(matches!(
@@ -162,6 +230,7 @@ fn insufficient_certificate_budget_is_inconclusive() {
     let domain = derive_domain(&a, &constraints, &[]).unwrap();
     let options = CertificateOptions {
         bernstein_depth: 0,
+        univariate_sturm_degree: 0,
         ..CertificateOptions::default()
     };
     assert!(

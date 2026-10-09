@@ -106,6 +106,13 @@ pub struct CertificateOptions {
     pub bernstein_nodes: usize,
     pub bernstein_coefficients: usize,
     pub work_limit: usize,
+    /// Zero disables this independent portfolio member for ablations.
+    #[serde(default = "default_sturm_degree")]
+    pub univariate_sturm_degree: usize,
+}
+
+fn default_sturm_degree() -> usize {
+    64
 }
 
 impl Default for CertificateOptions {
@@ -117,12 +124,17 @@ impl Default for CertificateOptions {
             bernstein_nodes: 63,
             bernstein_coefficients: 4096,
             work_limit: 1_000_000,
+            univariate_sturm_degree: default_sturm_degree(),
         }
     }
 }
 
 impl CertificateOptions {
     fn validate(&self) -> Result<()> {
+        ensure!(
+            self.univariate_sturm_degree <= 64,
+            "Sturm degree budget is capped at 64"
+        );
         ensure!(
             self.max_terms > 0 && self.max_terms <= 100_000,
             "certificate term budget must be in 1..=100000"
@@ -176,6 +188,11 @@ pub enum CertificateMethod {
     },
     Bernstein {
         proof: BernsteinProof,
+    },
+    /// Exact open-interval Sturm count, with a strict Cauchy bound replacing
+    /// infinite endpoints. All polynomial arithmetic is performed by Symbolica.
+    UnivariateSturm {
+        variable: usize,
     },
 }
 
@@ -274,7 +291,67 @@ pub fn certify_nonzero(
             return Ok(Some(make(sign, CertificateMethod::Bernstein { proof })));
         }
     }
+    if let Some((variable, sign)) = univariate_sturm(polynomial, domain, options)? {
+        return Ok(Some(make(
+            sign,
+            CertificateMethod::UnivariateSturm { variable },
+        )));
+    }
     Ok(None)
+}
+
+fn univariate_sturm(
+    polynomial: &Poly,
+    domain: &Domain,
+    options: &CertificateOptions,
+) -> Result<Option<(usize, i8)>> {
+    let active = support(polynomial);
+    if active.len() != 1 || polynomial.nterms() > options.max_terms {
+        return Ok(None);
+    }
+    let variable = active[0];
+    let degree = polynomial.degree(variable) as usize;
+    // Rational Sturm remainders can grow rapidly. This is a conservative
+    // portfolio attempt; the process supervisor still enforces hard limits.
+    if degree > options.univariate_sturm_degree || degree.saturating_pow(3) > options.work_limit {
+        return Ok(None);
+    }
+    let p = polynomial.to_univariate_from_univariate(variable);
+    let leading = p.coefficients().last().unwrap().abs();
+    let radius = p
+        .coefficients()
+        .iter()
+        .take(degree)
+        .map(|c| c.abs() / &leading)
+        .max()
+        .unwrap_or_else(Rational::zero)
+        + Rational::from(2);
+    let bounds = &domain.bounds[variable];
+    let lower = bounds.lower.as_deref().map(rational).transpose()?;
+    let upper = bounds.upper.as_deref().map(rational).transpose()?;
+    let lo = lower
+        .clone()
+        .map_or_else(|| -radius.clone(), |x| x.max(-radius.clone()));
+    let hi = upper
+        .clone()
+        .map_or_else(|| radius.clone(), |x| x.min(radius.clone()));
+    if crate::roots::roots_in_open_interval(&p, &lo, &hi) != 0 {
+        return Ok(None);
+    }
+    // Endpoint zeros are permitted only at the original strict boundaries.
+    // The artificial Cauchy endpoints lie strictly outside every real root.
+    let sample = match (lower, upper) {
+        (Some(l), Some(u)) => (l + u) / Rational::from(2),
+        (Some(l), None) => l + Rational::one(),
+        (None, Some(u)) => u - Rational::one(),
+        (None, None) => Rational::zero(),
+    };
+    let value = p.evaluate(&sample);
+    ensure!(
+        !value.is_zero(),
+        "zero sample contradicts the Sturm nonvanishing count"
+    );
+    Ok(Some((variable, if value.is_negative() { -1 } else { 1 })))
 }
 
 /// Check the expected polynomial, independently reconstruct the domain from
@@ -372,6 +449,10 @@ pub fn verify_certificate(
                 &certificate.limits,
                 &mut budget,
             )?
+        }
+        CertificateMethod::UnivariateSturm { variable } => {
+            univariate_sturm(polynomial, &domain, &certificate.limits)?
+                == Some((*variable, certificate.sign))
         }
     };
     ensure!(valid, "exact domain nonvanishing certificate failed");

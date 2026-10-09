@@ -20,6 +20,13 @@
 //! Protected original factors make those premises sign-invariant on the whole
 //! ancestor cell. No certificate borrows an unassigned coordinate's bounds,
 //! and no input split factor or coordinate boundary is removed.
+//!
+//! With an original positive coordinate bound, a separate positive-ray theorem
+//! retains the endpoint and leading coefficient of each cut. Quadratics use
+//! exact coefficient signs to omit discriminants governing only negative roots;
+//! other cases retain the ordinary discriminant. Pair resultants are then
+//! needed only between positive-root-bearing cuts. One explicit rejected
+//! negative half-line and every positive sector prove exhaustive coverage.
 use crate::{
     Problem,
     algebra::{Algebra, Poly, canonical, factors_checked},
@@ -31,7 +38,7 @@ use crate::{
     output::{Axis, Cell, RootBound, SolveResult, Statistics, Status},
     problem::{NormalizedProblem, normalize},
     projection::{discriminant, exact_resultant},
-    roots::{isolate_union, sector_sample},
+    roots::{FiberRoot, isolate_union, sector_sample},
     solver::{bound, evaluate, merge, sign},
     verify::Verification,
 };
@@ -58,6 +65,9 @@ pub struct LocalOptions {
     /// Permit original-domain guard certificates when solver.positivity is on.
     /// Setting this false gives a local projection ablation with the same input.
     pub domain_pruning: bool,
+    /// Use an exact positive-ray theorem only with an original k*x>0 bound.
+    /// False retains the full-real local projection for controlled ablations.
+    pub positive_ray: bool,
 }
 impl Default for LocalOptions {
     fn default() -> Self {
@@ -67,6 +77,7 @@ impl Default for LocalOptions {
             fallback_to_global: true,
             cache_enabled: true,
             domain_pruning: true,
+            positive_ray: true,
         }
     }
 }
@@ -97,11 +108,14 @@ pub struct LocalReport {
     pub guard_certificate_attempts: usize,
     pub guard_certificate_hits: usize,
     pub certified_guard_removals: usize,
+    pub positive_ray_stacks: usize,
+    pub quadratic_discriminants_omitted: usize,
+    pub descartes_discriminants_omitted: usize,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct LocalProjectionCertificate {
-    /// Exactly those cuts with at least one real root on this sample fiber.
+    /// Cuts with real roots, or strictly positive roots for a positive-ray proof.
     pub root_bearing: Vec<usize>,
     /// Square-free irreducible factors of all required lc, disc and resultants.
     pub guards: Vec<usize>,
@@ -109,6 +123,57 @@ pub struct LocalProjectionCertificate {
     /// factors replace the removed guards as explicit ancestor obligations.
     #[serde(default)]
     pub removals: Vec<usize>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub positive_ray: Option<PositiveRayProjection>,
+}
+
+/// A separate delineability theorem on x>0. The omitted negative half-line
+/// must have one child rejected by this exact original coordinate constraint.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PositiveRayProjection {
+    pub constraint: usize,
+    pub coordinate: usize,
+    pub rules: Vec<PositiveRayRule>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PositiveRayRule {
+    pub polynomial: usize,
+    pub case: PositiveRayCase,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum PositiveRayCase {
+    Coordinate,
+    Linear {
+        leading_sign: i8,
+        endpoint_sign: i8,
+    },
+    /// After orienting the leading coefficient positively, the endpoint is
+    /// negative: one simple positive root, with full-real root index one.
+    QuadraticOpposite {
+        leading_sign: i8,
+    },
+    /// Oriented a,c>0 and b>0 (or identically zero): no positive roots.
+    QuadraticPositive {
+        leading_sign: i8,
+        linear_zero: bool,
+    },
+    /// The discriminant is retained. For a*c>0, D>0 prevents b crossing zero,
+    /// so the root count and full-real indices follow from the sample sign.
+    QuadraticDiscriminant {
+        leading_sign: i8,
+        discriminant_sign: i8,
+        positive_roots: u8,
+    },
+    /// Every nonzero coefficient has one sign, so Descartes' rule excludes
+    /// positive roots without any claim about the number of negative roots.
+    DescartesZero {
+        coefficient_sign: i8,
+    },
+    /// Higher degrees retain ordinary lc/discriminant guards plus p(0).
+    FullReal,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -369,6 +434,249 @@ fn local_projection_raw(
     Ok((bearing, raw, pairs, all_pairs - pairs, root_seconds))
 }
 
+fn positive_coordinate(normalized: &NormalizedProblem, variable: usize) -> Option<usize> {
+    normalized.positives.iter().position(|p| {
+        p.nterms() == 1
+            && p.degree(variable) == 1
+            && p.exponents_iter().all(|e| {
+                e.iter()
+                    .enumerate()
+                    .all(|(i, &degree)| degree == u32::from(i == variable))
+            })
+            && p.coefficients[0] > Rational::zero()
+    })
+}
+
+/// Isolate exactly the boundary 0 and the positive roots. Full-real root
+/// ordinals are retained by isolating before discarding negative roots.
+fn stack_roots(
+    algebra: &Algebra,
+    polynomials: &[Poly],
+    cuts: &[usize],
+    level: usize,
+    prefix: &[Rational],
+    ray: Option<&PositiveRayProjection>,
+    bearing: &[usize],
+) -> Result<Vec<FiberRoot>> {
+    let fibers = cuts
+        .iter()
+        .copied()
+        .filter(|id| ray.is_none_or(|r| *id == r.coordinate || bearing.contains(id)))
+        .map(|id| {
+            Ok((
+                id,
+                algebra.specialize_univariate(&polynomials[id], level, prefix)?,
+            ))
+        })
+        .collect::<Result<Vec<_>>>()?;
+    let mut roots = isolate_union(fibers)?;
+    if let Some(ray) = ray {
+        let zero = roots
+            .iter()
+            .position(|r| r.polynomial == ray.coordinate)
+            .ok_or_else(|| anyhow!("positive-ray stack omitted its zero boundary"))?;
+        ensure!(
+            roots[zero].interval == (Rational::zero(), Rational::zero()),
+            "coordinate root is not zero"
+        );
+        roots.drain(..zero);
+        ensure!(
+            roots
+                .iter()
+                .skip(1)
+                .all(|r| r.interval.0 > Rational::zero()),
+            "positive-ray roots were not separated from zero"
+        );
+    }
+    Ok(roots)
+}
+
+/// Generic positive-ray delineability. All coefficient signs used here are
+/// returned as ancestor obligations; a sample alone is never a certificate.
+/// Quadratic negative-root collisions are harmless only in the explicitly
+/// rootless case. Full-real boundary indices are invariant in every other case.
+fn positive_projection_raw(
+    algebra: &Algebra,
+    polynomials: &[Poly],
+    cuts: &[usize],
+    variable: usize,
+    prefix: &[Rational],
+    constraint: usize,
+    coordinate: usize,
+    operations: &mut impl ProjectionOperations,
+) -> Result<(
+    Vec<usize>,
+    Vec<Poly>,
+    usize,
+    usize,
+    f64,
+    PositiveRayProjection,
+)> {
+    ensure!(
+        cuts.contains(&coordinate),
+        "positive coordinate factor is not protected"
+    );
+    let mut raw = Vec::new();
+    let mut bearing = Vec::new();
+    let mut rules = Vec::new();
+    let mut root_seconds = 0.0;
+    for &id in cuts {
+        let p = polynomials
+            .get(id)
+            .ok_or_else(|| anyhow!("invalid cut id"))?;
+        ensure!(
+            highest(p) == Some(variable),
+            "cut has the wrong highest variable"
+        );
+        if id == coordinate {
+            rules.push(PositiveRayRule {
+                polynomial: id,
+                case: PositiveRayCase::Coordinate,
+            });
+            continue;
+        }
+        let a = p.univariate_lcoeff(variable);
+        let c = p.replace(variable, &Rational::zero());
+        ensure!(
+            !c.is_zero(),
+            "a non-coordinate irreducible cut has a zero endpoint polynomial"
+        );
+        raw.extend([a.clone(), c.clone()]);
+        let av = prefix_value(&a, prefix)?;
+        let cv = prefix_value(&c, prefix)?;
+        // Return the endpoint/degree-drop obstruction without expensive work.
+        if av.is_zero() || cv.is_zero() {
+            break;
+        }
+        let leading_sign = sign(&av);
+        let endpoint_sign = sign(&cv);
+        let same_sign = leading_sign == endpoint_sign;
+        let case = match p.degree(variable) {
+            1 => {
+                if !same_sign {
+                    bearing.push(id);
+                }
+                PositiveRayCase::Linear {
+                    leading_sign,
+                    endpoint_sign,
+                }
+            }
+            2 if !same_sign => {
+                bearing.push(id);
+                PositiveRayCase::QuadraticOpposite { leading_sign }
+            }
+            2 => {
+                let b = p.derivative(variable).replace(variable, &Rational::zero());
+                let bv = prefix_value(&b, prefix)?;
+                if b.is_zero() || sign(&bv) == leading_sign {
+                    if !b.is_zero() {
+                        raw.push(b);
+                    }
+                    PositiveRayCase::QuadraticPositive {
+                        leading_sign,
+                        linear_zero: bv.is_zero(),
+                    }
+                } else {
+                    // Preserve the signed discriminant: operation caches store
+                    // canonical zero-set representatives and discard its sign.
+                    let d = &b * &b - (&a * &c).mul_coeff(Rational::from(4));
+                    ensure!(!d.is_zero(), "local cut is not square-free");
+                    let dv = prefix_value(&d, prefix)?;
+                    raw.push(d);
+                    if dv.is_zero() {
+                        break;
+                    }
+                    let positive_roots = if dv > Rational::zero() { 2 } else { 0 };
+                    if positive_roots != 0 {
+                        bearing.push(id);
+                    }
+                    PositiveRayCase::QuadraticDiscriminant {
+                        leading_sign,
+                        discriminant_sign: sign(&dv),
+                        positive_roots,
+                    }
+                }
+            }
+            _ => {
+                let coefficients = p.to_univariate_polynomial_list(variable);
+                let values = coefficients
+                    .iter()
+                    .map(|(coefficient, _)| prefix_value(coefficient, prefix))
+                    .collect::<Result<Vec<_>>>()?;
+                if values.iter().any(|v| v.is_zero()) {
+                    raw.extend(coefficients.into_iter().map(|(coefficient, _)| coefficient));
+                    break;
+                }
+                if values.iter().all(|v| sign(v) == leading_sign) {
+                    raw.extend(coefficients.into_iter().map(|(coefficient, _)| coefficient));
+                    rules.push(PositiveRayRule {
+                        polynomial: id,
+                        case: PositiveRayCase::DescartesZero {
+                            coefficient_sign: leading_sign,
+                        },
+                    });
+                    continue;
+                }
+                let d = operations.discriminant(p, variable)?;
+                ensure!(!d.is_zero(), "local cut is not square-free");
+                raw.push(d);
+                if raw
+                    .last()
+                    .is_some_and(|d| prefix_value(d, prefix).is_ok_and(|v| v.is_zero()))
+                {
+                    break;
+                }
+                let started = Instant::now();
+                let fiber = algebra.specialize_univariate(p, variable, prefix)?;
+                let mut roots = isolate_union(vec![(id, fiber)])?;
+                let mut positive = false;
+                for root in &mut roots {
+                    while root.interval.0 <= Rational::zero() && root.interval.1 >= Rational::zero()
+                    {
+                        // p(0) is nonzero, so exact refinement eventually separates.
+                        crate::roots::refine_once(root);
+                    }
+                    positive |= root.interval.0 > Rational::zero();
+                }
+                if positive {
+                    bearing.push(id);
+                }
+                root_seconds += started.elapsed().as_secs_f64();
+                PositiveRayCase::FullReal
+            }
+        };
+        rules.push(PositiveRayRule {
+            polynomial: id,
+            case,
+        });
+    }
+    let ray = PositiveRayProjection {
+        constraint,
+        coordinate,
+        rules,
+    };
+    if raw
+        .iter()
+        .any(|p| prefix_value(p, prefix).is_ok_and(|v| v.is_zero()))
+    {
+        return Ok((bearing, raw, 0, 0, root_seconds, ray));
+    }
+    let mut pairs = 0;
+    for (j, &id) in bearing.iter().enumerate() {
+        for &other in &bearing[j + 1..] {
+            let r = operations.resultant(&polynomials[id], &polynomials[other], variable)?;
+            ensure!(
+                !r.is_zero(),
+                "distinct irreducible cuts have zero resultant"
+            );
+            raw.push(r);
+            pairs += 1;
+        }
+    }
+    let all_pairs = cuts.len().saturating_mul(cuts.len().saturating_sub(1)) / 2;
+    Ok((bearing, raw, pairs, all_pairs - pairs, root_seconds, ray))
+}
+
 struct Builder<'a> {
     problem: &'a Problem,
     normalized: &'a NormalizedProblem,
@@ -573,14 +881,55 @@ impl Builder<'_> {
         self.report.current_level = Some(level);
         self.report.active_phase = "local_projection".into();
         self.publish(false)?;
-        let (root_bearing, raw, pairs, omitted, root_seconds) = local_projection_raw(
-            &self.normalized.algebra,
-            &self.polynomials,
-            cuts,
-            level,
-            prefix,
-            &mut self.operations,
-        )?;
+        let ray_constraint = self
+            .options
+            .positive_ray
+            .then(|| positive_coordinate(self.normalized, level))
+            .flatten();
+        let (root_bearing, raw, pairs, omitted, root_seconds, positive_ray) =
+            if let Some(constraint) = ray_constraint {
+                let coordinate = *self.input_factors[constraint]
+                    .first()
+                    .ok_or_else(|| anyhow!("missing coordinate factor"))?;
+                let (bearing, raw, pairs, omitted, seconds, ray) = positive_projection_raw(
+                    &self.normalized.algebra,
+                    &self.polynomials,
+                    cuts,
+                    level,
+                    prefix,
+                    constraint,
+                    coordinate,
+                    &mut self.operations,
+                )?;
+                self.report.positive_ray_stacks += 1;
+                self.report.quadratic_discriminants_omitted += ray
+                    .rules
+                    .iter()
+                    .filter(|r| {
+                        matches!(
+                            r.case,
+                            PositiveRayCase::QuadraticOpposite { .. }
+                                | PositiveRayCase::QuadraticPositive { .. }
+                        )
+                    })
+                    .count();
+                self.report.descartes_discriminants_omitted += ray
+                    .rules
+                    .iter()
+                    .filter(|r| matches!(r.case, PositiveRayCase::DescartesZero { .. }))
+                    .count();
+                (bearing, raw, pairs, omitted, seconds, Some(ray))
+            } else {
+                let (bearing, raw, pairs, omitted, seconds) = local_projection_raw(
+                    &self.normalized.algebra,
+                    &self.polynomials,
+                    cuts,
+                    level,
+                    prefix,
+                    &mut self.operations,
+                )?;
+                (bearing, raw, pairs, omitted, seconds, None)
+            };
         self.operations.phases.root_classification_seconds += root_seconds;
         self.report.projected_pairs += pairs;
         self.report.omitted_rootless_pairs += omitted;
@@ -603,6 +952,7 @@ impl Builder<'_> {
             root_bearing,
             guards: guards.into_iter().collect(),
             removals,
+            positive_ray,
         })
     }
     fn visit(&mut self, prefix: &mut Vec<Rational>) -> Work<Built> {
@@ -620,20 +970,15 @@ impl Builder<'_> {
             self.report.active_phase = "root_isolation".into();
             self.publish(false)?;
             let root_started = Instant::now();
-            let fibers = cut_list
-                .iter()
-                .map(|&id| {
-                    Ok((
-                        id,
-                        self.normalized.algebra.specialize_univariate(
-                            &self.polynomials[id],
-                            level,
-                            prefix,
-                        )?,
-                    ))
-                })
-                .collect::<Result<Vec<_>>>()?;
-            let roots = isolate_union(fibers)?;
+            let roots = stack_roots(
+                &self.normalized.algebra,
+                &self.polynomials,
+                &cut_list,
+                level,
+                prefix,
+                projection.positive_ray.as_ref(),
+                &projection.root_bearing,
+            )?;
             self.operations.phases.root_isolation_seconds += root_started.elapsed().as_secs_f64();
             self.publish(false)?;
             let mut required = self.projection_requirements(&projection);
@@ -645,7 +990,21 @@ impl Builder<'_> {
                 let sample =
                     sector_sample(if i > 0 { roots.get(i - 1) } else { None }, roots.get(i));
                 prefix.push(sample.clone());
-                let child = self.visit(prefix);
+                let child = if i == 0 {
+                    if let Some(ray) = &projection.positive_ray {
+                        Ok(Built {
+                            node: LocalNode::Rejected {
+                                constraint: ray.constraint,
+                            },
+                            required: self.input_factors[ray.constraint].iter().copied().collect(),
+                            cells: 0,
+                        })
+                    } else {
+                        self.visit(prefix)
+                    }
+                } else {
+                    self.visit(prefix)
+                };
                 prefix.pop();
                 match child {
                     Err(Stop::Guard(id)) if highest(&self.polynomials[id]) == Some(level) => {
@@ -1032,6 +1391,7 @@ struct Checker<'a> {
     guard_domains: Vec<GuardDomain>,
     protected: BTreeSet<usize>,
     domain_pruning: bool,
+    positive_ray: bool,
 }
 impl Checker<'_> {
     fn check_registry(&self) -> Result<()> {
@@ -1160,14 +1520,42 @@ impl Checker<'_> {
                     cuts == &cut_set.iter().copied().collect::<Vec<_>>(),
                     "cuts are not unique and sorted"
                 );
-                let (bearing, raw, _, _, _) = local_projection_raw(
-                    &self.normalized.algebra,
-                    self.polynomials,
-                    cuts,
-                    level,
-                    prefix,
-                    &mut IndependentOperations,
-                )?;
+                let (bearing, raw) = if let Some(ray) = &projection.positive_ray {
+                    ensure!(self.positive_ray, "positive-ray projection is disabled");
+                    ensure!(
+                        positive_coordinate(self.normalized, level) == Some(ray.constraint),
+                        "positive-ray premise is not the original positive coordinate constraint"
+                    );
+                    ensure!(
+                        self.input_factors[ray.constraint] == vec![ray.coordinate],
+                        "positive-ray coordinate factor is incorrect"
+                    );
+                    let (bearing, raw, _, _, _, expected) = positive_projection_raw(
+                        &self.normalized.algebra,
+                        self.polynomials,
+                        cuts,
+                        level,
+                        prefix,
+                        ray.constraint,
+                        ray.coordinate,
+                        &mut IndependentOperations,
+                    )?;
+                    ensure!(
+                        *ray == expected,
+                        "positive-ray delineability witness is incorrect"
+                    );
+                    (bearing, raw)
+                } else {
+                    let (bearing, raw, _, _, _) = local_projection_raw(
+                        &self.normalized.algebra,
+                        self.polynomials,
+                        cuts,
+                        level,
+                        prefix,
+                        &mut IndependentOperations,
+                    )?;
+                    (bearing, raw)
+                };
                 ensure!(
                     projection.root_bearing == bearing,
                     "incorrect root-bearing cut subset"
@@ -1224,20 +1612,15 @@ impl Checker<'_> {
                     "local projection obligations omitted or changed"
                 );
                 self.nonzero(&projected, prefix)?;
-                let fibers = cuts
-                    .iter()
-                    .map(|&id| {
-                        Ok((
-                            id,
-                            self.normalized.algebra.specialize_univariate(
-                                &self.polynomials[id],
-                                level,
-                                prefix,
-                            )?,
-                        ))
-                    })
-                    .collect::<Result<Vec<_>>>()?;
-                let actual_roots = isolate_union(fibers)?;
+                let actual_roots = stack_roots(
+                    &self.normalized.algebra,
+                    self.polynomials,
+                    cuts,
+                    level,
+                    prefix,
+                    projection.positive_ray.as_ref(),
+                    &projection.root_bearing,
+                )?;
                 let expected_roots: Vec<_> = actual_roots.iter().map(bound).collect();
                 ensure!(
                     roots == &expected_roots,
@@ -1248,6 +1631,14 @@ impl Checker<'_> {
                     "local stack omits an open sector"
                 );
                 for (i, sector) in sectors.iter().enumerate() {
+                    if i == 0 {
+                        if let Some(ray) = &projection.positive_ray {
+                            ensure!(
+                                matches!(sector.child, LocalNode::Rejected { constraint } if constraint == ray.constraint),
+                                "negative half-line must be rejected by its positive coordinate premise"
+                            );
+                        }
+                    }
                     let expected = sector_sample(
                         if i > 0 { actual_roots.get(i - 1) } else { None },
                         actual_roots.get(i),
@@ -1393,6 +1784,7 @@ pub fn verify_local_parts(
             .collect::<Result<_>>()?,
         protected: input_factors.iter().flatten().copied().collect(),
         domain_pruning: options.domain_pruning && solution.problem.solver.positivity,
+        positive_ray: options.positive_ray,
     };
     checker.check_registry()?;
     ensure!(

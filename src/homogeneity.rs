@@ -273,58 +273,69 @@ fn reconstructed_cells(
     reduced
         .cells
         .iter()
-        .map(|cell| {
-            ensure!(
-                cell.axes.len() + 1 == order.len(),
-                "reduced cell has incorrect dimension"
-            );
-            let mut axes = Vec::with_capacity(order.len());
-            let mut next = 0;
-            for (i, variable) in order.iter().enumerate() {
-                if i == anchor {
-                    axes.push(Axis {
-                        variable: variable.clone(),
-                        sample: "1".into(),
-                        lower: Some(RootBound {
-                            polynomial: 0,
-                            index: 0,
-                            lower: "0".into(),
-                            upper: "0".into(),
-                        }),
-                        upper: None,
-                    });
-                } else {
-                    let axis = &cell.axes[next];
-                    ensure!(
-                        &axis.variable == variable,
-                        "reduced cell order does not match the original order"
-                    );
-                    for bound in [&axis.lower, &axis.upper].into_iter().flatten() {
-                        ensure!(
-                            bound.polynomial < reduced.polynomials.len(),
-                            "invalid reduced bound polynomial id"
-                        );
-                    }
-                    axes.push(Axis {
-                        variable: variable.clone(),
-                        // Scale sample is exactly 1: all ratio/nonblock samples,
-                        // isolating intervals and distinct root indices coincide.
-                        sample: axis.sample.clone(),
-                        lower: shifted_bound(&axis.lower),
-                        upper: shifted_bound(&axis.upper),
-                    });
-                    next += 1;
-                }
-            }
-            Ok(Cell {
-                axes,
-                signs: cell.signs.clone(),
-            })
-        })
+        .map(|cell| reconstructed_cell(cell, reduced.polynomials.len(), order, anchor))
         .collect()
 }
 
-fn reconstruct(problem: &Problem, order: Vec<String>, mut reduced: SolveResult) -> Result<SolveResult> {
+fn reconstructed_cell(
+    cell: &Cell,
+    polynomial_count: usize,
+    order: &[String],
+    anchor: usize,
+) -> Result<Cell> {
+    ensure!(
+        cell.axes.len() + 1 == order.len(),
+        "reduced cell has incorrect dimension"
+    );
+    let mut axes = Vec::with_capacity(order.len());
+    let mut next = 0;
+    for (i, variable) in order.iter().enumerate() {
+        if i == anchor {
+            axes.push(Axis {
+                variable: variable.clone(),
+                sample: "1".into(),
+                lower: Some(RootBound {
+                    polynomial: 0,
+                    index: 0,
+                    lower: "0".into(),
+                    upper: "0".into(),
+                }),
+                upper: None,
+            });
+        } else {
+            let axis = &cell.axes[next];
+            ensure!(
+                &axis.variable == variable,
+                "reduced cell order does not match the original order"
+            );
+            for bound in [&axis.lower, &axis.upper].into_iter().flatten() {
+                ensure!(
+                    bound.polynomial < polynomial_count,
+                    "invalid reduced bound polynomial id"
+                );
+            }
+            axes.push(Axis {
+                variable: variable.clone(),
+                // Scale sample is exactly 1: all ratio/nonblock samples,
+                // isolating intervals and distinct root indices coincide.
+                sample: axis.sample.clone(),
+                lower: shifted_bound(&axis.lower),
+                upper: shifted_bound(&axis.upper),
+            });
+            next += 1;
+        }
+    }
+    Ok(Cell {
+        axes,
+        signs: cell.signs.clone(),
+    })
+}
+
+fn reconstruct(
+    problem: &Problem,
+    order: Vec<String>,
+    mut reduced: SolveResult,
+) -> Result<SolveResult> {
     let data = reconstruction(problem, &order)?;
     let algebra = &data.normalized.algebra;
     let reduced_order: Vec<_> = order
@@ -340,8 +351,13 @@ fn reconstruct(problem: &Problem, order: Vec<String>, mut reduced: SolveResult) 
     // projection or any cells. Preserve that incomplete status and evidence;
     // an absent partial projection is not a malformed complete certificate.
     if reduced.status != Status::CompleteGeneric && reduced.projection_levels.is_empty() {
-        ensure!(reduced.cells.is_empty(), "partial cells lack projection levels");
-        reduced.projection_levels.resize(reduced_order.len(), vec![]);
+        ensure!(
+            reduced.cells.is_empty(),
+            "partial cells lack projection levels"
+        );
+        reduced
+            .projection_levels
+            .resize(reduced_order.len(), vec![]);
     }
     ensure!(
         reduced.projection_levels.len() == reduced_order.len(),
@@ -468,11 +484,18 @@ pub fn verify_homogeneous(result: &SolveResult) -> Result<Verification> {
         "unexpected nested homogeneous reduction"
     );
     let verified = crate::verify::verify(&evidence.reduced)?;
-    let expected = reconstruct(
-        &result.problem,
-        result.order.clone(),
-        (*evidence.reduced).clone(),
-    )?;
+    // Replay the small projection metadata without cloning the already
+    // verified exhaustive trace. Cell reconstruction is checked one cell at a
+    // time below, so large exports do not need several extra resident copies.
+    let mut projection_view = SolveResult::failure(
+        evidence.reduced.problem.clone(),
+        evidence.reduced.status.clone(),
+        "internal projection-only reconstruction view",
+    );
+    projection_view.order = evidence.reduced.order.clone();
+    projection_view.polynomials = evidence.reduced.polynomials.clone();
+    projection_view.projection_levels = evidence.reduced.projection_levels.clone();
+    let expected = reconstruct(&result.problem, result.order.clone(), projection_view)?;
     let expected_evidence = expected.homogeneous.as_ref().unwrap();
     ensure!(
         evidence.anchor == expected_evidence.anchor
@@ -497,11 +520,29 @@ pub fn verify_homogeneous(result: &SolveResult) -> Result<Verification> {
         "reconstructed exceptional set or scale seam was modified"
     );
     ensure!(
-        result.cells == expected.cells,
-        "reconstructed cells are missing or modified"
+        result.cells.len() == evidence.reduced.cells.len(),
+        "reconstructed cells are missing or duplicated"
     );
+    let anchor = result
+        .order
+        .iter()
+        .position(|v| v == &evidence.anchor)
+        .unwrap();
+    for (actual, reduced) in result.cells.iter().zip(&evidence.reduced.cells) {
+        ensure!(
+            *actual
+                == reconstructed_cell(
+                    reduced,
+                    evidence.reduced.polynomials.len(),
+                    &result.order,
+                    anchor
+                )?,
+            "reconstructed cell was modified"
+        );
+    }
     ensure!(
-        result.merged_cells == expected.merged_cells,
+        result.merged_cells
+            == (result.problem.solver.merge == "aggressive").then(|| merge(&result.cells)),
         "reconstructed compatibility merge was modified"
     );
     ensure!(
@@ -511,11 +552,6 @@ pub fn verify_homogeneous(result: &SolveResult) -> Result<Verification> {
     // A new positive-scale stack is inserted once per distinct reduced prefix
     // preceding the anchor. This statistic is descriptive; coverage is proved
     // by the reduced trace plus the bijection, independent of these counts.
-    let anchor = result
-        .order
-        .iter()
-        .position(|v| v == &evidence.anchor)
-        .unwrap();
     let prefixes = result
         .cells
         .iter()

@@ -398,7 +398,11 @@ fn attach_search(result: &mut SolveResult, report: Value) {
 
 fn worker(operation: &str, input: &Path, output: &Path) -> Result<()> {
     if operation == "verify" {
-        let result: SolveResult = serde_json::from_slice(&fs::read(input)?)?;
+        // Large lifting traces can exceed a gigabyte. Stream their JSON so the
+        // verifier does not retain a second, complete copy of the serialized
+        // evidence alongside the parsed cell/trace structures.
+        let result: SolveResult =
+            serde_json::from_reader(io::BufReader::new(fs::File::open(input)?))?;
         let verification = symgcad::verify::verify(&result)?;
         emit(&verification, Some(output))?;
         return emit(&verification, None);
@@ -541,7 +545,7 @@ fn main() -> Result<()> {
                 .arg("--output")
                 .arg(&output);
             let outcome = benchmark::run_bounded(&mut command, &symgcad::Limits::default())?;
-            fs::remove_file(output)?;
+            let _ = fs::remove_file(output);
             anyhow::ensure!(
                 outcome.status == "completed",
                 "verification {}: {}",

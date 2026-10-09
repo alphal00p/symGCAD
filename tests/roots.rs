@@ -60,6 +60,24 @@ fn bisection_uses_one_sided_signs_at_other_roots() {
 }
 
 #[test]
+fn simple_real_roots_refine_correctly_with_repeated_nonreal_factors() {
+    let p = polynomial("(x^2+1)^3*(x^2-2)");
+    let mut roots = isolate_union(vec![(0, p.clone())]).unwrap();
+    assert_eq!(roots.len(), 2);
+    for root in &mut roots {
+        assert_eq!(root.fiber, p);
+        for _ in 0..16 {
+            refine_once(root);
+            assert_eq!(
+                roots_in_open_interval(&p, &root.interval.0, &root.interval.1),
+                1
+            );
+        }
+        assert!(root.interval.1.clone() - root.interval.0.clone() < q("1/1000"));
+    }
+}
+
+#[test]
 fn root_union_deduplicates_coincident_irrational_roots() {
     let roots = isolate_union(vec![
         (8, polynomial("(x^2-2)^2*(x-5)")),

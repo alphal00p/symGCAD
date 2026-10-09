@@ -33,6 +33,7 @@ pub struct SolverOptions {
     pub cache_memory_mib: usize,
     pub positivity: bool,
     pub input_positivity: bool,
+    pub prune_operations: bool,
     pub homogeneous_block: Vec<String>,
     pub homogeneous_anchor: Option<String>,
 }
@@ -51,6 +52,7 @@ impl Default for SolverOptions {
             cache_memory_mib: 128,
             positivity: false,
             input_positivity: false,
+            prune_operations: false,
             homogeneous_block: vec![],
             homogeneous_anchor: None,
         }
@@ -164,6 +166,10 @@ impl Problem {
         ensure!(
             !self.solver.input_positivity || self.solver.positivity,
             "input_positivity requires positivity"
+        );
+        ensure!(
+            !self.solver.prune_operations || self.solver.positivity,
+            "prune_operations requires positivity"
         );
         ensure!(
             self.solver

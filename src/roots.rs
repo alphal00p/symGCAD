@@ -125,11 +125,22 @@ pub fn isolate_union(polynomials: Vec<(usize, UnivariatePolynomial<Q>)>) -> Resu
             polynomial.degree() <= MAX_ROOT_DEGREE,
             "univariate degree exceeds the certified isolator's u16 exponent range"
         );
-        // Make square-free for sign-based bisection, keeping the same real roots.
-        let gcd = polynomial.gcd(&polynomial.derivative());
-        let (fiber, remainder) = polynomial.quot_rem(&gcd);
-        ensure!(remainder.is_zero(), "square-free division failed");
-        let mut intervals = fiber.isolate_real_root_intervals();
+        // The certified isolator already computes square-free factors and
+        // reports multiplicities. Avoid repeating its gcd on generic fibers.
+        // Sign bisection only requires the *real* roots to be simple; repeated
+        // nonreal factors never vanish on the real line and are harmless.
+        let mut intervals = polynomial.isolate_real_root_intervals();
+        let fiber = if intervals
+            .iter()
+            .any(|(_, _, multiplicity)| *multiplicity != 1)
+        {
+            let gcd = polynomial.gcd(&polynomial.derivative());
+            let (fiber, remainder) = polynomial.quot_rem(&gcd);
+            ensure!(remainder.is_zero(), "square-free division failed");
+            fiber
+        } else {
+            polynomial
+        };
         intervals.sort_by(|a, b| a.0.cmp(&b.0));
         for (index, (lo, hi, _)) in intervals.into_iter().enumerate() {
             let interval = open_or_exact_interval(&fiber, index, lo, hi)?;

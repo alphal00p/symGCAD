@@ -83,6 +83,7 @@ fn projection_options(problem: &Problem) -> Result<OptimizedProjectionOptions> {
             &problem.split,
             problem.solver.positivity,
             problem.solver.input_positivity,
+            problem.solver.prune_operations,
             &problem.solver.homogeneous_block,
             &problem.solver.homogeneous_anchor,
         ))?,
@@ -176,6 +177,7 @@ fn select_cached(
 fn pruning_options(problem: &Problem) -> DomainPruningOptions {
     DomainPruningOptions {
         prune_input: problem.solver.input_positivity,
+        prune_operations: problem.solver.prune_operations,
         ..Default::default()
     }
 }
