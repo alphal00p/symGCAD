@@ -1,0 +1,23 @@
+schema_version = 1
+
+[gcad]
+source = "https://github.com/magv/gcad"
+revision = "fb6ebe3aa0e3fdd073f410d01050a4ed7e235f4e"
+local_path = "DO_NOT_PUSH_REFERENCES/gcad"
+
+[symbolica]
+source = "https://github.com/symbolica-dev/symbolica"
+revision = "75f8350094b90254ee71dc2a391fde0d14b0204a"
+local_path = "DO_NOT_PUSH_REFERENCES/symbolica"
+version = "3.0.1"
+
+[corpus]
+collected_tests = 177
+disabled_core_tests = 3
+literal_two_loop_fixtures = 265
+generated_one_loop_fixtures = 12
+zz_tests_sha256 = "3f1471ae8120d706eba09366de5624e3f75367f44b0a1e650172d2980a3337ef"
+core_tests_sha256 = "c430f10b61505a44558ec6103f1ddb0c1d393ebc8134b89e1c35708a36a11bcf"
+
+[literature]
+no_contour_deformation_sha256 = "77dad837197fca429740a4cf8919dd387b3152038a58097814718b0407c4b70e"

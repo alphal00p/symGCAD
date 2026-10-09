@@ -1,0 +1,7 @@
+/DO_NOT_PUSH_REFERENCES/
+/target/
+/artifacts/
+/corpus/
+/.reference/
+/.direnv/
+*.profraw

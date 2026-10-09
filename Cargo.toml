@@ -1,0 +1,29 @@
+[package]
+name = "symgcad"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.96"
+description = "Exact generic cylindrical algebraic decomposition using Symbolica"
+
+[dependencies]
+anyhow = "1"
+clap = { version = "4", features = ["derive"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+toml = "0.9"
+sha2 = "0.10"
+libc = "0.2"
+rand = "0.9"
+symbolica = { path = "DO_NOT_PUSH_REFERENCES/symbolica", default-features = false, features = ["integer-gmp", "float-mpfr", "tracing_max_level_info"] }
+
+[patch.crates-io]
+numerica = { path = "DO_NOT_PUSH_REFERENCES/symbolica/lib/numerica" }
+graphica = { path = "DO_NOT_PUSH_REFERENCES/symbolica/lib/graphica" }
+
+[profile.release]
+codegen-units = 1
+lto = "thin"
+debug = 1
+
+[profile.dev.package."*"]
+opt-level = 2

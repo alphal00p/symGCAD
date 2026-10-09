@@ -1,0 +1,4 @@
+name = "unit square split by a diagonal"
+variables = ["x", "y"]
+constraints = ["x > 0", "1-x > 0", "y > 0", "1-y > 0"]
+split = ["x+y-1"]
