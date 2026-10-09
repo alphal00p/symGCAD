@@ -256,6 +256,17 @@ floating-point comparison participates in root equality or ordering.
 
 ## Two-coordinate simplex chart experiment
 
+The projective normalization is established in
+[Panzer, *Feynman integrals and hyperlogarithms*, §2.1.3,
+eqs. (2.1.19)–(2.1.21)](https://arxiv.org/pdf/1506.07243): a nonzero
+linear form with nonnegative coefficients separates the positive scale
+from the positive projective coordinates.
+[Artico and Magnea, §4, Theorem 2 and its Cheng–Wu discussion](https://arxiv.org/pdf/2310.03939)
+explain why a subset of Feynman parameters can define the normalization
+hyperplane. Choosing `H=a+b` motivates the chart below. Their integral
+identities do not establish cylindrical CAD reconstruction; its triangular
+map and root-ordinal obligations are separate requirements here.
+
 For a positive homogeneous block, set `a=1-r`, `b=r` and leave its other
 coordinates as `z` to construct a reduced polynomial `q`. If the original
 polynomial has block degree D and `L=a+b`, the exact identity is
