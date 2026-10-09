@@ -6,7 +6,7 @@
 //!
 //! Store bounded serialized payloads, not nested cloned trees. Every entry has
 //! at most 128 nodes, 16 levels and 1 MiB of payload; retained payload/key accounting
-//! is capped at the caller's <=32 MiB budget and 32768 nodes. FIFO eviction is
+//! defaults to 32 MiB and 32768 nodes; larger budgets scale the node cap. FIFO eviction is
 //! deliberate: a hit does not grow an unbounded access queue.
 use super::{Built, LocalNode, LocalReport};
 use anyhow::Result;
@@ -22,6 +22,7 @@ const MAX_ENTRY_NODES: usize = 128;
 const MAX_ENTRY_DEPTH: usize = 16;
 const MAX_ENTRY_BYTES: usize = 1024 * 1024;
 const MAX_RETAINED_NODES: usize = 32768;
+const DEFAULT_BUDGET: usize = 32 * 1024 * 1024;
 
 struct Entry {
     payload: Box<[u8]>,
@@ -33,6 +34,7 @@ pub(super) struct CompletedSubtrees {
     entries: HashMap<Arc<[Rational]>, Entry>,
     fifo: VecDeque<Arc<[Rational]>>,
     budget: usize,
+    node_limit: usize,
     bytes: usize,
     nodes: usize,
     peak_bytes: usize,
@@ -78,6 +80,11 @@ impl CompletedSubtrees {
             entries: HashMap::new(),
             fifo: VecDeque::new(),
             budget,
+            // Small budgets retain the original count ceiling; the byte cap
+            // is authoritative. u128 avoids an intermediate usize overflow.
+            node_limit: ((budget as u128 * MAX_RETAINED_NODES as u128 / DEFAULT_BUDGET as u128)
+                .min(usize::MAX as u128) as usize)
+                .max(MAX_RETAINED_NODES),
             bytes: 0,
             nodes: 0,
             peak_bytes: 0,
@@ -134,7 +141,15 @@ impl CompletedSubtrees {
             return;
         }
         let charged_bytes = key_bytes + output.bytes.len();
-        while self.bytes + charged_bytes > self.budget || self.nodes + nodes > MAX_RETAINED_NODES {
+        while self
+            .bytes
+            .checked_add(charged_bytes)
+            .is_none_or(|sum| sum > self.budget)
+            || self
+                .nodes
+                .checked_add(nodes)
+                .is_none_or(|sum| sum > self.node_limit)
+        {
             let Some(key) = self.fifo.pop_front() else {
                 return;
             };
@@ -166,6 +181,8 @@ impl CompletedSubtrees {
         report.subtree_cache_peak_bytes = self.peak_bytes;
         report.subtree_cache_retained_nodes = self.nodes;
         report.subtree_cache_peak_nodes = self.peak_nodes;
+        report.subtree_cache_budget_bytes = self.budget;
+        report.subtree_cache_node_limit = self.node_limit;
     }
 }
 
@@ -200,6 +217,23 @@ mod tests {
             cells: children,
         }
     }
+    #[test]
+    fn larger_budgets_scale_node_capacity_without_relaxing_entry_bounds() {
+        let mut cache = CompletedSubtrees::new(2 * DEFAULT_BUDGET);
+        assert_eq!(cache.node_limit, 2 * MAX_RETAINED_NODES);
+        for i in 0..=MAX_RETAINED_NODES / MAX_ENTRY_NODES {
+            cache.insert(&[Rational::from(i as i64)], &built(MAX_ENTRY_NODES - 1));
+        }
+        assert!(cache.nodes > MAX_RETAINED_NODES);
+        assert_eq!(cache.evictions, 0);
+        assert!(cache.bytes <= cache.budget);
+        let entries = cache.entries.len();
+        cache.insert(&[Rational::from(-1)], &built(MAX_ENTRY_NODES));
+        assert_eq!(cache.entries.len(), entries);
+        assert_eq!(CompletedSubtrees::new(0).node_limit, MAX_RETAINED_NODES);
+        assert!(CompletedSubtrees::new(usize::MAX).node_limit >= MAX_RETAINED_NODES);
+    }
+
     #[test]
     fn exact_prefix_and_complete_obligations_survive_roundtrip() {
         let mut cache = CompletedSubtrees::new(8192);

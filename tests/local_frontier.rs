@@ -140,3 +140,102 @@ fn learned_cut_option_is_explicit_and_survives_homogeneous_reduction() {
     assert!(!options.reuse_learned_cuts);
     assert_eq!(report.learned_cut_cache_hits, 0);
 }
+
+#[test]
+fn configurable_cache_budgets_preserve_proofs_and_generic_coverage() {
+    let p = Problem {
+        variables: vec!["x".into(), "y".into(), "z".into()],
+        split: vec!["z^2-x".into(), "z-y".into(), "z-2".into()],
+        ..Default::default()
+    };
+    let large = LocalOptions {
+        subtree_cache_mib: 256,
+        learned_cut_cache_mib: 32,
+        adjacent_pairs: true,
+        ..Default::default()
+    };
+    let cached = certified(&p, &large);
+    let disabled = certified(
+        &p,
+        &LocalOptions {
+            subtree_cache_mib: 0,
+            learned_cut_cache_mib: 0,
+            ..large.clone()
+        },
+    );
+    assert_eq!(
+        symgcad::comparison::compare_generic(&cached, &disabled, &symgcad::Limits::default())
+            .unwrap()
+            .equivalent,
+        Some(true)
+    );
+    let mut changed = solve_local(&p, &large).unwrap();
+    let LocalEvidence::Local { options, .. } = &mut changed.evidence else {
+        panic!()
+    };
+    // The budgets are exploration settings, never proof assumptions.
+    options.subtree_cache_mib = 0;
+    options.learned_cut_cache_mib = 0;
+    assert!(verify_local(&changed).unwrap().verified);
+    let LocalEvidence::Local { report, .. } = disabled.local.as_deref().unwrap() else {
+        panic!()
+    };
+    assert_eq!(report.subtree_cache_budget_bytes, 0);
+    assert_eq!(report.learned_cut_cache_budget_bytes, 0);
+    assert_eq!(report.subtree_cache_peak_bytes, 0);
+    assert_eq!(report.learned_cut_cache_peak_bytes, 0);
+}
+
+#[test]
+fn requested_cache_budgets_are_clipped_to_process_memory_and_defaults_roundtrip() {
+    let mut p = Problem {
+        variables: vec!["r".into(), "x".into()],
+        constraints: vec!["r>0".into(), "x>0".into()],
+        split: vec!["x-r".into()],
+        ..Default::default()
+    };
+    assert!(
+        !toml::to_string(&p)
+            .unwrap()
+            .contains("local_subtree_cache_mib")
+    );
+    assert!(
+        !toml::to_string(&p)
+            .unwrap()
+            .contains("local_learned_cut_cache_mib")
+    );
+    p.limits.memory_mib = 16;
+    p.solver.engine = "local".into();
+    p.solver.local_subtree_cache_mib = 256;
+    p.solver.local_learned_cut_cache_mib = 32;
+    p.solver.homogeneous_anchor = Some("r".into());
+    p.solver.homogeneous_block = p.variables.clone();
+    let restored = Problem::from_toml(&toml::to_string(&p).unwrap()).unwrap();
+    let result = symgcad::solver::solve(&restored).unwrap();
+    assert!(symgcad::verify::verify(&result).unwrap().verified);
+    let LocalEvidence::Local {
+        report, options, ..
+    } = result
+        .homogeneous
+        .as_ref()
+        .unwrap()
+        .reduced
+        .local
+        .as_deref()
+        .unwrap()
+    else {
+        panic!()
+    };
+    assert_eq!(options.subtree_cache_mib, 256);
+    assert_eq!(options.learned_cut_cache_mib, 32);
+    assert_eq!(report.subtree_cache_budget_bytes, 1024 * 1024);
+    assert_eq!(report.learned_cut_cache_budget_bytes, 128 * 1024);
+    assert!(report.subtree_cache_peak_bytes <= report.subtree_cache_budget_bytes);
+    assert!(report.learned_cut_cache_peak_bytes <= report.learned_cut_cache_budget_bytes);
+    let old_options: LocalOptions = serde_json::from_str("{}").unwrap();
+    assert_eq!(old_options.subtree_cache_mib, 32);
+    assert_eq!(old_options.learned_cut_cache_mib, 8);
+    let mut invalid = restored;
+    invalid.solver.local_subtree_cache_mib = usize::MAX;
+    assert!(invalid.validate().is_err());
+}

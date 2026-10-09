@@ -580,6 +580,8 @@ fn solve_impl(problem: &Problem) -> Result<SolveResult> {
                 descartes_one: problem.solver.local_descartes_one,
                 base_point_projection: problem.solver.local_base_point_projection,
                 adjacent_pairs: problem.solver.local_adjacent_pairs,
+                subtree_cache_mib: problem.solver.local_subtree_cache_mib,
+                learned_cut_cache_mib: problem.solver.local_learned_cut_cache_mib,
                 max_refinements: problem
                     .solver
                     .local_max_refinements

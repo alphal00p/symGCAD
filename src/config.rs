@@ -59,6 +59,10 @@ pub struct SolverOptions {
     /// Experimental projection through adjacent relevant root branches only.
     #[serde(skip_serializing_if = "is_false")]
     pub local_adjacent_pairs: bool,
+    #[serde(skip_serializing_if = "is_thirty_two")]
+    pub local_subtree_cache_mib: usize,
+    #[serde(skip_serializing_if = "is_eight")]
+    pub local_learned_cut_cache_mib: usize,
     /// Per-problem local search limits; omitted values keep LocalOptions defaults.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub local_max_refinements: Option<usize>,
@@ -91,6 +95,8 @@ impl Default for SolverOptions {
             local_descartes_one: true,
             local_base_point_projection: true,
             local_adjacent_pairs: false,
+            local_subtree_cache_mib: 32,
+            local_learned_cut_cache_mib: 8,
             local_max_refinements: None,
             local_max_nodes: None,
             homogeneous_block: vec![],
@@ -104,6 +110,12 @@ fn is_true(value: &bool) -> bool {
 }
 fn is_false(value: &bool) -> bool {
     !*value
+}
+fn is_thirty_two(value: &usize) -> bool {
+    *value == 32
+}
+fn is_eight(value: &usize) -> bool {
+    *value == 8
 }
 fn is_two(value: &usize) -> bool {
     *value == 2
@@ -218,6 +230,11 @@ impl Problem {
         ensure!(
             self.solver.cache_memory_mib <= 65536,
             "cache_memory_mib exceeds memory ceiling"
+        );
+        ensure!(
+            self.solver.local_subtree_cache_mib <= 65536
+                && self.solver.local_learned_cut_cache_mib <= 65536,
+            "local cache budget exceeds memory ceiling"
         );
         ensure!(
             !self.solver.positivity

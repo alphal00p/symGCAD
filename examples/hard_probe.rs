@@ -88,6 +88,10 @@ struct Args {
     /// Experimental adjacent-root pair projection, with exact proof replay.
     #[arg(long)]
     adjacent_pairs: bool,
+    #[arg(long, default_value_t = 32)]
+    subtree_cache_mib: usize,
+    #[arg(long, default_value_t = 8)]
+    learned_cut_cache_mib: usize,
     /// Same-build ablation of a second exact pair cancellation.
     #[arg(long, default_value_t = 2, value_parser = clap::value_parser!(u8).range(1..=2))]
     pair_cancellations: u8,
@@ -141,6 +145,8 @@ struct Campaign {
     descartes_one: bool,
     base_point_projection: bool,
     adjacent_pairs: bool,
+    subtree_cache_mib: usize,
+    learned_cut_cache_mib: usize,
     pair_cancellations: usize,
     local_max_refinements: Option<usize>,
     local_max_nodes: Option<usize>,
@@ -206,6 +212,8 @@ fn run_trial(campaign: &Campaign, trial: Trial) -> Result<Record> {
     problem.solver.local_descartes_one = campaign.descartes_one;
     problem.solver.local_base_point_projection = campaign.base_point_projection;
     problem.solver.local_adjacent_pairs = campaign.adjacent_pairs;
+    problem.solver.local_subtree_cache_mib = campaign.subtree_cache_mib;
+    problem.solver.local_learned_cut_cache_mib = campaign.learned_cut_cache_mib;
     problem.solver.local_pair_cancellations = campaign.pair_cancellations;
     problem.solver.local_max_refinements = campaign
         .local_max_refinements
@@ -482,6 +490,8 @@ fn main() -> Result<()> {
         descartes_one: !args.no_descartes_one,
         base_point_projection: !args.no_base_point_projection,
         adjacent_pairs: args.adjacent_pairs,
+        subtree_cache_mib: args.subtree_cache_mib,
+        learned_cut_cache_mib: args.learned_cut_cache_mib,
         pair_cancellations: args.pair_cancellations as usize,
         local_max_refinements: args.local_max_refinements,
         local_max_nodes: args.local_max_nodes,

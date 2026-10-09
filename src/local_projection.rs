@@ -114,6 +114,11 @@ pub struct LocalOptions {
     /// their individual delineability guards have been established.
     #[serde(default)]
     pub adjacent_pairs: bool,
+    /// Retained conditional-proof payload budget, clipped to 1/16 of the
+    /// process memory limit. Count caps grow with budgets above the default.
+    pub subtree_cache_mib: usize,
+    /// Retained cut-hint budget, clipped to 1/128 of process memory.
+    pub learned_cut_cache_mib: usize,
 }
 fn one_cancellation() -> usize {
     1
@@ -135,6 +140,8 @@ impl Default for LocalOptions {
             descartes_one: true,
             base_point_projection: true,
             adjacent_pairs: false,
+            subtree_cache_mib: 32,
+            learned_cut_cache_mib: 8,
         }
     }
 }
@@ -206,6 +213,11 @@ pub struct LocalReport {
     pub adjacent_pair_stacks: usize,
     pub nonadjacent_pairs_omitted: usize,
     pub coincident_pair_fallbacks: usize,
+    pub subtree_cache_budget_bytes: usize,
+    pub subtree_cache_node_limit: usize,
+    pub learned_cut_cache_budget_bytes: usize,
+    pub learned_cut_cache_entry_limit: usize,
+    pub learned_cut_cache_id_limit: usize,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -1943,6 +1955,10 @@ pub fn solve_local(problem: &Problem, options: &LocalOptions) -> Result<LocalSol
         (1..=2).contains(&options.positive_pair_cancellations),
         "positive pair cancellations must be one or two"
     );
+    ensure!(
+        options.subtree_cache_mib <= 65536 && options.learned_cut_cache_mib <= 65536,
+        "local cache budget exceeds memory ceiling"
+    );
     let started = Instant::now();
     let order = match selected_order(problem) {
         Ok(order) => order,
@@ -2001,11 +2017,11 @@ pub fn solve_local(problem: &Problem, options: &LocalOptions) -> Result<LocalSol
         guard_certificate_index: HashMap::new(),
         completed_subtrees: subtree_cache::CompletedSubtrees::new(
             ((problem.limits.memory_mib as usize).saturating_mul(1024 * 1024) / 16)
-                .min(32 * 1024 * 1024),
+                .min(options.subtree_cache_mib.saturating_mul(1024 * 1024)),
         ),
         learned_cuts: learned_cuts::LearnedCuts::new(
             ((problem.limits.memory_mib as usize).saturating_mul(1024 * 1024) / 128)
-                .min(8 * 1024 * 1024),
+                .min(options.learned_cut_cache_mib.saturating_mul(1024 * 1024)),
         ),
     };
     builder.report.active_phase = "input_factorization".into();

@@ -184,6 +184,15 @@ their discovery. Reusing a cut set entails no sign or coverage assertion: the
 entire seeded set is projected again and every sector regenerated. FIFO bounds
 apply to entry count, polynomial IDs, prefix bit size, and retained bytes.
 
+The default retained budgets remain 32 MiB for completed subtrees and 8 MiB
+for learned cuts. `solver.local_subtree_cache_mib` and
+`solver.local_learned_cut_cache_mib` permit larger controlled experiments,
+clipped respectively to 1/16 and 1/128 of the process memory limit. Node,
+entry and ID ceilings scale upward with the effective byte budget; per-entry
+size/depth and prefix-bit bounds remain fixed. Reports expose the effective
+budgets and count ceilings. Changing these exploration settings does not
+change proof replay or allow reuse at a different rational prefix.
+
 Some large symbolic inputs are linear in a kinematic parameter with a monomial
 leading coefficient. For `A*y+B`, degree one over the fraction field and
 `gcd(A,B)=1` prove irreducibility over the rational polynomial ring by Gauss's

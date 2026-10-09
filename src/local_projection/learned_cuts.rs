@@ -13,6 +13,7 @@ const MAX_ENTRIES: usize = 4096;
 const MAX_IDS: usize = 65_536;
 const MAX_ENTRY_IDS: usize = 4096;
 const MAX_PREFIX_BITS: u64 = 65_536;
+const DEFAULT_BUDGET: usize = 8 * 1024 * 1024;
 
 struct Entry {
     ids: Box<[usize]>,
@@ -24,6 +25,8 @@ pub(super) struct LearnedCuts {
     entries: HashMap<Arc<[Rational]>, Entry>,
     fifo: VecDeque<Arc<[Rational]>>,
     budget: usize,
+    entry_limit: usize,
+    id_limit: usize,
     bytes: usize,
     ids: usize,
     peak_bytes: usize,
@@ -57,6 +60,12 @@ impl LearnedCuts {
             entries: HashMap::new(),
             fifo: VecDeque::new(),
             budget,
+            entry_limit: ((budget as u128 * MAX_ENTRIES as u128 / DEFAULT_BUDGET as u128)
+                .min(usize::MAX as u128) as usize)
+                .max(MAX_ENTRIES),
+            id_limit: ((budget as u128 * MAX_IDS as u128 / DEFAULT_BUDGET as u128)
+                .min(usize::MAX as u128) as usize)
+                .max(MAX_IDS),
             bytes: 0,
             ids: 0,
             peak_bytes: 0,
@@ -106,9 +115,17 @@ impl LearnedCuts {
             let previous_bytes = previous.map_or(0, |entry| entry.charged_bytes);
             let previous_ids = previous.map_or(0, |entry| entry.ids.len());
             let extra_entry = usize::from(previous.is_none());
-            if self.bytes - previous_bytes + charged_bytes <= self.budget
-                && self.ids - previous_ids + ids.len() <= MAX_IDS
-                && self.entries.len() + extra_entry <= MAX_ENTRIES
+            if (self.bytes - previous_bytes)
+                .checked_add(charged_bytes)
+                .is_some_and(|sum| sum <= self.budget)
+                && (self.ids - previous_ids)
+                    .checked_add(ids.len())
+                    .is_some_and(|sum| sum <= self.id_limit)
+                && self
+                    .entries
+                    .len()
+                    .checked_add(extra_entry)
+                    .is_some_and(|sum| sum <= self.entry_limit)
             {
                 break;
             }
@@ -156,12 +173,38 @@ impl LearnedCuts {
         report.learned_cut_cache_peak_bytes = self.peak_bytes;
         report.learned_cut_cache_retained_ids = self.ids;
         report.learned_cut_cache_retained_entries = self.entries.len();
+        report.learned_cut_cache_budget_bytes = self.budget;
+        report.learned_cut_cache_entry_limit = self.entry_limit;
+        report.learned_cut_cache_id_limit = self.id_limit;
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn larger_budgets_scale_entry_and_id_caps_without_relaxing_per_entry_bounds() {
+        let mut cache = LearnedCuts::new(2 * DEFAULT_BUDGET);
+        assert_eq!(cache.entry_limit, 2 * MAX_ENTRIES);
+        assert_eq!(cache.id_limit, 2 * MAX_IDS);
+        for i in 0..=MAX_ENTRIES {
+            cache.remember(&[Rational::from(i as i64)], &BTreeSet::from([0]));
+        }
+        assert_eq!(cache.entries.len(), MAX_ENTRIES + 1);
+        assert_eq!(cache.evictions, 0);
+        let mut cache = LearnedCuts::new(2 * DEFAULT_BUDGET);
+        for i in 0..18 {
+            cache.remember(&[Rational::from(i)], &(0..MAX_ENTRY_IDS).collect());
+        }
+        assert!(cache.ids > MAX_IDS && cache.ids <= cache.id_limit);
+        assert_eq!(cache.evictions, 0);
+        let entries = cache.entries.len();
+        cache.remember(&[Rational::from(-1)], &(0..=MAX_ENTRY_IDS).collect());
+        assert_eq!(cache.entries.len(), entries);
+        assert!(cache.bytes <= cache.budget);
+        assert!(LearnedCuts::new(usize::MAX).id_limit >= MAX_IDS);
+    }
 
     #[test]
     fn hints_union_only_at_the_exact_prefix_and_do_not_omit_existing_cuts() {
