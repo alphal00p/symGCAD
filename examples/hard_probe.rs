@@ -54,6 +54,9 @@ struct Args {
     order: Vec<String>,
     #[arg(long, default_value = "optimized")]
     engine: String,
+    /// Same-build ablation of bounded sibling discovery in the local engine.
+    #[arg(long)]
+    no_batch_siblings: bool,
     #[arg(long)]
     checkpoint_dir: Option<PathBuf>,
     #[arg(long)]
@@ -90,6 +93,7 @@ struct Campaign {
     memory_mib: u64,
     block: Vec<String>,
     engine: String,
+    batch_siblings: bool,
 }
 
 fn available_cpus() -> Result<Vec<usize>> {
@@ -143,6 +147,7 @@ fn run_trial(campaign: &Campaign, trial: Trial) -> Result<Record> {
     let progress_path = directory.join("progress.json");
     let mut problem = campaign.problem.clone();
     problem.solver.engine = campaign.engine.clone();
+    problem.solver.local_batch_siblings = campaign.batch_siblings;
     problem.solver.positivity = true;
     problem.solver.homogeneous_block = campaign.block.clone();
     problem.solver.homogeneous_anchor = Some(trial.anchor.clone());
@@ -337,6 +342,7 @@ fn main() -> Result<()> {
             args.block.clone()
         },
         engine: args.engine.clone(),
+        batch_siblings: !args.no_batch_siblings,
         problem,
         executable,
         output,

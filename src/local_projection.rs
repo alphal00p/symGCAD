@@ -72,6 +72,11 @@ pub struct LocalOptions {
     /// Older evidence omitted this field and must replay the original pairs.
     #[serde(default)]
     pub positive_pair_separation: bool,
+    /// Collect a bounded set of sibling discoveries before restarting a stack.
+    /// False restarts after the first discovery, for controlled ablations.
+    /// The final proof and its independent replay do not depend on this choice.
+    #[serde(default)]
+    pub batch_sibling_discovery: bool,
 }
 impl Default for LocalOptions {
     fn default() -> Self {
@@ -83,6 +88,7 @@ impl Default for LocalOptions {
             domain_pruning: true,
             positive_ray: true,
             positive_pair_separation: true,
+            batch_sibling_discovery: true,
         }
     }
 }
@@ -104,6 +110,14 @@ pub struct LocalPhaseCosts {
 pub struct LocalReport {
     pub speculative_nodes: usize,
     pub refinements: usize,
+    /// New stack cuts retained across all speculative refinement rounds.
+    pub refinement_cuts: usize,
+    /// Refinement rounds which discovered more than one new cut.
+    pub multi_cut_refinements: usize,
+    /// Tentative siblings visited after another sibling invalidated the stack.
+    pub discovery_siblings: usize,
+    /// Largest number of new cuts collected in one refinement round.
+    pub max_refinement_cuts: usize,
     pub projected_pairs: usize,
     pub omitted_rootless_pairs: usize,
     pub cache: CacheMetrics,
@@ -1154,8 +1168,13 @@ impl Builder<'_> {
             let mut sectors = Vec::new();
             let mut cells = 0usize;
             let mut additions = BTreeSet::new();
+            let mut discovery_siblings = 0usize;
             for i in 0..=roots.len() {
                 self.check_budget()?;
+                if !additions.is_empty() {
+                    discovery_siblings += 1;
+                    self.report.discovery_siblings += 1;
+                }
                 let sample =
                     sector_sample(if i > 0 { roots.get(i - 1) } else { None }, roots.get(i));
                 prefix.push(sample.clone());
@@ -1177,8 +1196,12 @@ impl Builder<'_> {
                 prefix.pop();
                 match child {
                     Err(Stop::Guard(id)) if highest(&self.polynomials[id]) == Some(level) => {
+                        if cuts.contains(&id) {
+                            return Err(Stop::Unsupported(
+                                "nongeneric sample remained on an existing stack cut".into(),
+                            ));
+                        }
                         additions.insert(id);
-                        break;
                     }
                     Err(stop) => return Err(stop),
                     Ok(child) => {
@@ -1199,23 +1222,39 @@ impl Builder<'_> {
                                 }
                             }
                         }
-                        if !additions.is_empty() {
-                            break;
+                        if additions.is_empty() {
+                            cells = cells
+                                .checked_add(child.cells)
+                                .ok_or_else(|| Stop::Resource("cell count overflow".into()))?;
+                            if self.problem.limits.max_cells.is_some_and(|max| cells > max) {
+                                return Err(Stop::Resource("local projection cell limit".into()));
+                            }
+                            sectors.push(LocalSector {
+                                sample: sample.to_string(),
+                                child: child.node,
+                            });
                         }
-                        cells = cells
-                            .checked_add(child.cells)
-                            .ok_or_else(|| Stop::Resource("cell count overflow".into()))?;
-                        if self.problem.limits.max_cells.is_some_and(|max| cells > max) {
-                            return Err(Stop::Resource("local projection cell limit".into()));
-                        }
-                        sectors.push(LocalSector {
-                            sample: sample.to_string(),
-                            child: child.node,
-                        });
+                    }
+                }
+                if !additions.is_empty() {
+                    // These sectors cannot be emitted: their boundary set has
+                    // changed. Discard them now while collecting a bounded
+                    // number of additional same-axis obligations. Earlier-axis
+                    // guards and all failures still return immediately above.
+                    sectors.clear();
+                    if !self.options.batch_sibling_discovery
+                        || additions.len() >= 8
+                        || discovery_siblings >= 32
+                    {
+                        break;
                     }
                 }
             }
             if !additions.is_empty() {
+                self.report.refinement_cuts += additions.len();
+                self.report.multi_cut_refinements += usize::from(additions.len() > 1);
+                self.report.max_refinement_cuts =
+                    self.report.max_refinement_cuts.max(additions.len());
                 let before = cuts.len();
                 cuts.extend(additions);
                 if cuts.len() == before {

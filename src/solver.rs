@@ -454,7 +454,13 @@ pub fn solve(problem: &Problem) -> Result<SolveResult> {
         return crate::monotone::solve_monotone(problem);
     }
     if problem.solver.engine == "local" {
-        let local = crate::local_projection::solve_local(problem, &Default::default())?;
+        let local = crate::local_projection::solve_local(
+            problem,
+            &crate::local_projection::LocalOptions {
+                batch_sibling_discovery: problem.solver.local_batch_siblings,
+                ..Default::default()
+            },
+        )?;
         let mut result = local.solution;
         result.local = Some(Box::new(local.evidence));
         return Ok(result);

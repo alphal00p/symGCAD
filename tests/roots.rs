@@ -40,6 +40,27 @@ fn sturm_excludes_endpoint_roots_and_counts_repeated_roots_once() {
 }
 
 #[test]
+fn sturm_with_large_mixed_coefficients_matches_independent_real_isolation() {
+    let base = polynomial("x^12-2*x^11+3*x^9-1001*x^7+17003*x^4-30001*x+11");
+    let intervals = base.isolate_real_root_intervals();
+    let positive = intervals.iter().filter(|(lo, _, _)| *lo >= q("0")).count();
+    let negative = intervals.iter().filter(|(_, hi, _)| *hi <= q("0")).count();
+    assert_eq!(positive + negative, intervals.len());
+    // A strict Cauchy bound; denominators and negative scaling must not alter
+    // the one-sided signs of a primitive Sturm remainder sequence.
+    for scale in [
+        "1",
+        "-1",
+        "137/10000000000000000000000001",
+        "-29/100000000000000000000003",
+    ] {
+        let p = base.clone().mul_coeff(&q(scale));
+        assert_eq!(roots_in_open_interval(&p, &q("0"), &q("30003")), positive);
+        assert_eq!(roots_in_open_interval(&p, &q("-30003"), &q("0")), negative);
+    }
+}
+
+#[test]
 fn bisection_uses_one_sided_signs_at_other_roots() {
     let mut root = FiberRoot {
         polynomial: 0,

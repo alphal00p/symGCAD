@@ -1252,3 +1252,123 @@ fn evidence_without_the_new_pair_option_replays_its_original_resultants() {
     assert!(!options.positive_pair_separation);
     assert!(verify_local(&restored).unwrap().verified);
 }
+
+#[test]
+fn sibling_discovery_batches_new_cuts_and_matches_unbatched_coverage() {
+    let p = problem(&["x", "y"], &[], &["x", "y^2+x", "y^2-x", "y-1", "y-2"]);
+    let batched = local_solution(&p, &LocalOptions::default());
+    let unbatched = local_solution(
+        &p,
+        &LocalOptions {
+            batch_sibling_discovery: false,
+            ..LocalOptions::default()
+        },
+    );
+    let report = |result: &symgcad::output::SolveResult| {
+        let LocalEvidence::Local { report, .. } = result.local.as_deref().unwrap() else {
+            panic!()
+        };
+        report.clone()
+    };
+    let batch = report(&batched);
+    let plain = report(&unbatched);
+    assert!(batch.discovery_siblings > 0);
+    assert!(batch.multi_cut_refinements > 0);
+    assert!(
+        batch.refinements < plain.refinements,
+        "{batch:?} vs {plain:?}"
+    );
+    assert_eq!(plain.discovery_siblings, 0);
+    let comparison =
+        symgcad::comparison::compare_generic(&batched, &unbatched, &symgcad::Limits::default())
+            .unwrap();
+    assert_eq!(comparison.equivalent, Some(true));
+}
+
+#[test]
+fn sibling_batching_propagates_earlier_axis_guards_and_never_accepts_partial_stacks() {
+    let p = problem(
+        &["a", "x", "y"],
+        &[],
+        &["x", "y^2+a*x", "y^2-a*x", "y-1", "y-2"],
+    );
+    let batched = local_solution(&p, &LocalOptions::default());
+    let unbatched = local_solution(
+        &p,
+        &LocalOptions {
+            batch_sibling_discovery: false,
+            ..LocalOptions::default()
+        },
+    );
+    assert!(batched.cells.iter().all(|c| c.axes[0].sample != "0"));
+    assert_eq!(
+        symgcad::comparison::compare_generic(&batched, &unbatched, &symgcad::Limits::default(),)
+            .unwrap()
+            .equivalent,
+        Some(true),
+    );
+    for options in [
+        LocalOptions {
+            max_refinements: 0,
+            ..Default::default()
+        },
+        LocalOptions {
+            max_nodes: 3,
+            ..Default::default()
+        },
+    ] {
+        let interrupted = solve_local(&p, &options).unwrap();
+        assert_eq!(interrupted.solution.status, Status::Incomplete);
+        assert!(interrupted.solution.cells.is_empty());
+        assert!(matches!(
+            interrupted.evidence,
+            LocalEvidence::Unfinished { .. }
+        ));
+        assert!(verify_local(&interrupted).is_err());
+    }
+}
+
+#[test]
+fn old_local_evidence_without_batching_option_still_replays() {
+    let original = local(&problem(&["x", "y"], &[], &["y^2+x"]));
+    let mut value = serde_json::to_value(&original).unwrap();
+    value["evidence"]["options"]
+        .as_object_mut()
+        .unwrap()
+        .remove("batch_sibling_discovery");
+    let restored: local_projection::LocalSolveResult = serde_json::from_value(value).unwrap();
+    let LocalEvidence::Local { options, .. } = &restored.evidence else {
+        panic!()
+    };
+    assert!(!options.batch_sibling_discovery);
+    assert!(verify_local(&restored).unwrap().verified);
+}
+
+#[test]
+fn sibling_batch_config_roundtrips_and_survives_homogeneous_reduction() {
+    let mut p = problem(&["r", "x", "y"], &["r>0", "x>0", "y>0"], &["y^2-r*x"]);
+    p.solver.engine = "local".into();
+    p.solver.homogeneous_block = vec!["r".into(), "x".into(), "y".into()];
+    p.solver.homogeneous_anchor = Some("r".into());
+    let default_json = serde_json::to_value(&p).unwrap();
+    assert!(default_json["solver"].get("local_batch_siblings").is_none());
+    let restored: Problem = serde_json::from_value(default_json).unwrap();
+    assert!(restored.solver.local_batch_siblings);
+    p.solver.local_batch_siblings = false;
+    let config = toml::to_string(&p).unwrap();
+    let restored = Problem::from_toml(&config).unwrap();
+    assert!(!restored.solver.local_batch_siblings);
+    let result = symgcad::solver::solve(&restored).unwrap();
+    assert_eq!(result.status, Status::CompleteGeneric);
+    let reduced = &result.homogeneous.as_ref().unwrap().reduced;
+    assert!(!reduced.problem.solver.local_batch_siblings);
+    let LocalEvidence::Local {
+        options, report, ..
+    } = reduced.local.as_deref().unwrap()
+    else {
+        panic!()
+    };
+    assert!(!options.batch_sibling_discovery);
+    assert_eq!(report.discovery_siblings, 0);
+    assert!(symgcad::verify::verify(&result).unwrap().verified);
+}

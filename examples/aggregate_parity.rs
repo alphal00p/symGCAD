@@ -102,8 +102,30 @@ fn main() -> Result<()> {
         );
         worker_hash = Some(hash.into());
         ensure!(report["repeats"] == 3, "parity requires three repetitions");
-        report_sources.push(json!({"path":path,"sha256":digest(&bytes)}));
+        let frozen_path = path
+            .parent()
+            .context("report directory missing")?
+            .join("frozen-reference-set.json");
+        let qualification_limit = fs::read(&frozen_path)
+            .ok()
+            .and_then(|bytes| serde_json::from_slice::<Value>(&bytes).ok())
+            .and_then(|frozen| {
+                frozen["problems"]
+                    .as_array()
+                    .map(|problems| {
+                        problems
+                            .iter()
+                            .filter_map(|p| positive_number(&p["limits"]["wall_time_secs"]))
+                            .max_by(f64::total_cmp)
+                    })
+                    .flatten()
+            });
+        report_sources.push(json!({"path":path,"sha256":digest(&bytes),"qualification_timeout_secs":qualification_limit,"paired_solve_timeout_secs":report["provenance"]["solve_timeout_secs"],"verification_timeout_secs":report["provenance"]["verification_timeout_secs"],"memory_mib":report["provenance"]["memory_mib"],"workers":report["provenance"]["workers"]}));
         for case in report["cases"].as_array().context("report cases missing")? {
+            ensure!(
+                case["merged_cells_match"].is_null(),
+                "aggressive-merge replay is a separate assertion cohort"
+            );
             let name = case["name"].as_str().context("case identifier missing")?;
             let key = names
                 .get(name)

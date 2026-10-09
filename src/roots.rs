@@ -65,15 +65,51 @@ pub fn roots_in_open_interval(
     if lo >= hi || poly.is_zero() || poly.degree() == 0 {
         return 0;
     }
-    let mut sequence = vec![poly.clone(), poly.derivative()];
+    // Remove rational content by a positive scale, then form an integer
+    // primitive pseudo-remainder sequence using Symbolica throughout. Ordinary
+    // rational division can generate much larger intermediate denominators.
+    let content = poly.content().abs();
+    let first = poly.clone().div_coeff(&content);
+    let first = first.map_coeff(
+        |c| {
+            assert!(
+                c.is_integer(),
+                "rational content did not clear denominators"
+            );
+            c.numerator()
+        },
+        Z,
+    );
+    let primitive = |p: UnivariatePolynomial<Z>| {
+        let content = p.content().abs();
+        p.div_coeff(&content)
+    };
+    let second = primitive(first.derivative());
+    let mut sequence = vec![first, second];
     loop {
         let n = sequence.len();
-        let remainder = sequence[n - 2].rem(&sequence[n - 1]);
+        // Symbolica multiplies by the divisor's leading coefficient once
+        // per actual elimination, which may skip degrees. Making that LC
+        // positive ensures a positive multiple of the field remainder without
+        // assuming a fixed exponent or changing the stored Sturm signs.
+        let divisor = &sequence[n - 1];
+        let positive_divisor;
+        let divisor = if divisor.lcoeff().is_negative() {
+            positive_divisor = -divisor.clone();
+            &positive_divisor
+        } else {
+            divisor
+        };
+        let remainder = sequence[n - 2].pseudo_remainder(divisor);
         if remainder.is_zero() {
             break;
         }
-        sequence.push(-remainder);
+        sequence.push(primitive(-remainder));
     }
+    let sequence: Vec<_> = sequence
+        .iter()
+        .map(|p| p.map_coeff(|c| Rational::from(c.clone()), Q))
+        .collect();
     variations(&sequence, lo, true) - variations(&sequence, hi, false)
 }
 

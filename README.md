@@ -61,6 +61,8 @@ On an axis with an original strict positivity constraint, local projection can u
 
 For two positive-root-bearing polynomials, local projection also tests the exact leading-term cancellation identity. If every remaining coefficient has the same certified sign throughout the ancestor cell, the polynomials cannot share a positive root and their pair resultant can be omitted. The attempt has a fixed algebra-work bound, and inconclusive cases retain the resultant. The verifier reconstructs the identity and all sign obligations. Set `LocalOptions::positive_pair_separation = false` for the corresponding ablation.
 
+Local discovery can collect obligations from several siblings before rebuilding a stack. Every tentative stack with new cuts is discarded; only a fully saturated pass can produce certified cells. `solver.local_batch_siblings = false` restores one-sibling discovery for comparisons. Exact Sturm counts use a signed integer primitive pseudo-remainder sequence to control coefficient growth; positive normalization preserves every required one-sided endpoint sign.
+
 ## Results and verification
 
 JSON results retain the normalized input, variable order, canonical polynomial table, projection levels, rational sample points, and algebraic boundaries. A boundary references a polynomial and its zero-based index among distinct real roots on the current fiber, with a rational isolating interval at the sample point. Missing lower/upper boundaries mean negative/positive infinity.

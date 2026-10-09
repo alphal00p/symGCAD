@@ -34,6 +34,10 @@ pub struct SolverOptions {
     pub positivity: bool,
     pub input_positivity: bool,
     pub prune_operations: bool,
+    /// Batch tentative sibling discoveries in the experimental local engine.
+    /// Omit the default to keep ordinary inputs readable by older workers.
+    #[serde(skip_serializing_if = "is_true")]
+    pub local_batch_siblings: bool,
     pub homogeneous_block: Vec<String>,
     pub homogeneous_anchor: Option<String>,
 }
@@ -53,10 +57,15 @@ impl Default for SolverOptions {
             positivity: false,
             input_positivity: false,
             prune_operations: false,
+            local_batch_siblings: true,
             homogeneous_block: vec![],
             homogeneous_anchor: None,
         }
     }
+}
+
+fn is_true(value: &bool) -> bool {
+    *value
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
