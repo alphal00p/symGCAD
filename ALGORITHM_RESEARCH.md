@@ -254,6 +254,22 @@ Refinement only shrinks intervals, so finalized roots cannot be crossed later.
 Shared roots retain the smallest source-polynomial identifier. No tolerance or
 floating-point comparison participates in root equality or ordering.
 
+A matched 90-second release diagnostic on the fixed A381 `x8=1` chart does
+not isolate the cost of this root-union phase. Both `7629a91` and `e43a2c4`
+loaded the same six completed projection checkpoints and timed out on one CPU
+with a 4 GiB address-space cap. The newer release published 2,004 domain
+nonvanishing certificates and reached lifting, recording 79,138 visited stacks
+and 66,657 partial cells at 89.07 seconds. The older release published neither
+the completed certificate list nor a lifting diagnostic. Its empty removals
+array is stale: that list is accumulated privately until certified projection
+finishes. An additional bounded eight-second replay sampled the old release
+inside domain certification, univariate Sturm counting, and rational
+evaluation/GMP gcd. Root sign routines are also used by these pre-lifting
+proofs. Thus the evidence shows different progress under a fixed deadline,
+without establishing a root-separation speedup, a completed solve ratio, or
+certified coverage from the partial cells. Detailed hashes and observations
+are in `artifacts/profile/a381-root-reuse-release-comparison/summary.json`.
+
 ## Two-coordinate simplex chart experiment
 
 The projective normalization is established in
