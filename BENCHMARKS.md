@@ -4,6 +4,20 @@ The all-corpus goal remains unfinished. Results below identify the measured subs
 
 **Certification update:** the historical measurements below used Symbolica's automatic resultant dispatcher. Source review found probabilistic CRT early termination on sufficiently large operands. Production construction and verification now use deterministic integer Ducos and invalidate the old algebra caches. Historical reports retain their compatibility evidence and measured timings; fresh deterministic verification is required before those artifacts count toward exact all-corpus completion.
 
+## M2: full reference-completing baseline passes
+
+The completed deterministic baseline audit covers all **331 equivalence groups / 579 sign-expanded solve problems**, with no missing identifiers. Native GCAD completed 483 problems under qualification limits; symGCAD reproduced all 483 raw cell counts and independently verified each result. Three fresh paired measurements give a Rust/native matched-phase geometric mean of **0.146556677** (6.82× faster), below the required 1.25. The fresh-process geometric mean, including startup and export, is **0.062026078** (16.12× faster). The 96 native timeouts remain explicit; this benchmark does not certify them as solved.
+
+| Workload | Native completing and Rust verified | Native timeouts |
+|---|---:|---:|
+| Fixed ZZ sign branches | 231 | 17 |
+| Symbolic ZZ sign branches | 180 | 68 |
+| Distinct core solves, including ordering-only inputs | 72 | 11 |
+
+All timing cohorts use the same immutable `9025e71` release worker, explicit frozen orders, one CPU, and no merging. Qualification used 60 seconds, except the initial fast-core qualification at 300 seconds. Paired solves used 60 seconds except the **entire unchanged 31-case remaining-fixed batch 2**, rerun at 120 seconds for both engines. Its D251 negative branch originally hit Rust's 60-second cutoff; those failures are preserved. Under the longer paired limit it produced 191,205 verified cells, with median matched phases 60.696/53.649 seconds (ratio 1.13136) and fresh-process times 62.917/54.920 seconds. This is a disclosed limit change, not a removed case.
+
+The three core regressions above 2× are investigated below. A later optimized release improves them but is not mixed into the baseline aggregate. The full machine-audited report `artifacts/bench/parity-aggregate-9025.json` has SHA-256 `e28c66b9b8440dbe796469107916c739707e5ec1426ea298875022df13641989`; it retains every cohort manifest, alias, deadline, worker hash, and incomplete qualification outcome. M2 is achieved; all-corpus mathematical completion remains unfinished.
+
 ## Deterministic completion checkpoint
 
 The `9025e71` engine solved and independently verified **122 of 124 distinct fixed-kinematics problems** in a fresh completion campaign, including both A446 and Ax12 and the previously difficult B469/D373 cases. Each solve and verification had a 30-second limit, one CPU and 4 GiB; the campaign took 77.961 seconds. The two timeouts are A381 and its Ax12 crossing and remain unresolved. This is a completion run, not a three-repetition release timing benchmark. The exact corpus aliases, normalization identities, input hashes, result hashes and verification hashes are in `artifacts/completion-deterministic/fixed/results/ledger.json`, SHA-256 `5d7d52dbf936ee78d80cb1a7db1704c3888059cc4059adaf2762fee8f23ee400`.
@@ -42,6 +56,23 @@ On the captured Ax12 quartic discriminant (642 input terms; 69,474 output terms)
 Three rotated same-debug measurements of specialization on 2,000 recorded prefixes found 0.40136/0.25165/0.25177 seconds for sequential replacement/single-pass replacement/shared-power batch replacement in `ex_e5/solve/2`; the corresponding `ex38` measurements were 0.07895/0.05717/0.05191 seconds. All specialized polynomials matched exactly. These isolate substitution costs and do not predict the full solve ratio. The summary `artifacts/profile/core-outliers-9025/specialization-summary.json` has SHA-256 `193409e27d8e20dc434641bf2ca8d4602112b5c3e2af79fc82be3b8d407cc2bd`.
 
 A captured degree-12 A381 guard illustrates Sturm coefficient growth. Three fresh same-debug measurements gave medians of 3.184 ms for rational division, 1.690 ms after positive primitive normalization, and 0.602 ms for a signed integer primitive pseudo-remainder chain. All counted the same two positive roots; the largest stored coefficient fell from 2,281 to 555 bits. This small operand profile supports the implementation choice but is not a hard-case solve result. Summary SHA-256: `6042f31865af923fd62d13f50958217f647120acdd5880803e0eaa48665cf80d` (`artifacts/profile/a381-sturm/summary.json`).
+
+The subsequent `1d15d03` release remeasured the three baseline outliers with three fresh paired measurements and independent verification. Matched-phase ratios were 2.09392 (`ex_e5/2`), 1.61189 (`ex_e5/3`), and 2.74854 (`ex38`), with Rust medians 7.1445, 7.2338, and 48.1637 seconds. Deferred redundant GCDs, single-pass/batched specialization, and borrowed root-sign evaluation improve these workloads but do not remove every >2× regression. Report SHA-256 `7b1c2f075c360c110554b0d515e20ca7160c959686e1924fd0469f01379cd48b` (`artifacts/bench/core-outliers-fast-lifting-release/report.json`).
+
+## Cold ordering ablation
+
+Release `1d15d03` compared seven ordering policies on six fixed problems, with three fresh repetitions each: **all 126 solves independently verified**. Each repetition received a new disk-cache directory; work was shared only among that repetition's ordering trials and final solve. Timings include public CLI startup, normalization, scale/positivity preprocessing, ordering search, final solve, and export. Each process used one CPU, 4 GiB, and a 60-second limit; MCTS used seed 0, at most 256 rollouts, and the default search budget of at most 12 seconds. The 339.615-second campaign remained within its one-hour cap.
+
+| Fixed problem | MODS | SOTD | T1 | Brown | Sparsity | MCTS | MCTS without growth pruning |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| A376 | 0.082 | 0.102 | 0.085 | 0.082 | 0.082 | 0.880 | 0.918 |
+| Ax12 376 | 0.125 | 0.103 | 0.104 | 0.082 | 0.082 | 0.940 | 0.940 |
+| B469 | 0.123 | 1.094 | 0.124 | 0.103 | 0.105 | 12.298 | 12.240 |
+| D373 | 0.103 | 0.144 | 0.103 | 0.103 | 0.104 | 12.111 | 12.202 |
+| A446 | 0.144 | 0.124 | 0.083 | 0.083 | 0.083 | 12.178 | 12.223 |
+| Ax12 446 | 0.083 | 0.123 | 0.083 | 0.083 | 0.083 | 12.229 | 12.283 |
+
+Entries are median wall seconds. These cases show **no end-to-end MCTS benefit**: cheap orders already solve rapidly and search overhead dominates. Some MCTS orders reduce cell counts, but that does not compensate for their search time. Growth pruning also has no demonstrated benefit on this subset. Hard symbolic searches remain separate incomplete experiments; a benefit there has not yet been established. Ledger `artifacts/bench/ordering-cold-1d15d03/results/ledger.json` SHA-256 `3ef50cf891db46b78c329827057cf9e97610e446fd165edf5a6ee52bc9342344`; immutable release SHA-256 `226dd91f454967ecccec5b8213ee4a30de608627939d6e0b335f12b3d92b1bea`.
 
 The frozen M1 implementation (`3125469`) was compiled in release mode and compared with the accelerated native upstream revision recorded in `PROVENANCE.toml`. The reference first qualified all 48 solve invocations from the 39 active, unmarked core test functions. Three fresh-process measurements per engine used identical explicit orders, one CPU, and no merging. Every Rust result passed the independent exhaustive verifier, and all raw cell counts matched upstream.
 
