@@ -46,6 +46,125 @@ struct Args {
         requires = "inspect_only"
     )]
     prefix: Vec<String>,
+    /// Certify positive-root counts and inspect (1+x)^k, k=0..16, at the prefix.
+    #[arg(long, requires = "inspect_only")]
+    positive_root_diagnostics: bool,
+}
+
+fn positive_root_diagnostics(
+    algebra: &Algebra,
+    polynomial: &Poly,
+    variable: usize,
+    prefix: &[Rational],
+    fiber: &UnivariatePolynomial<Q>,
+) -> Result<serde_json::Value> {
+    let started = Instant::now();
+    if fiber.is_zero() {
+        return Ok(json!({"zero_fiber":true,"positive_roots_distinct":null,
+            "certificate_candidate":false,"reason":"zero fiber has no finite root count"}));
+    }
+    ensure!(
+        fiber.degree() <= 64,
+        "positive-root diagnostic degree limit is 64"
+    );
+    let original_degree = polynomial.degree(variable) as usize;
+    let degree_preserved = original_degree == fiber.degree();
+    let endpoint = fiber.evaluate(&Rational::zero());
+    let leading = fiber.coefficients().last().expect("nonzero fiber");
+    let upper = fiber
+        .coefficients()
+        .iter()
+        .take(fiber.degree())
+        .map(|c| c.abs() / leading.abs())
+        .max()
+        .unwrap_or_else(Rational::zero)
+        + Rational::from(2);
+    // This strict Cauchy bound excludes both zero and the upper endpoint.
+    ensure!(
+        !fiber.evaluate(&upper).is_zero(),
+        "Cauchy endpoint unexpectedly vanishes"
+    );
+    let sturm_count = symgcad::roots::roots_in_open_interval(fiber, &Rational::zero(), &upper);
+    let isolated = symgcad::roots::isolate_union(vec![(0, fiber.clone())])?;
+    let isolation_count = isolated
+        .iter()
+        .map(|root| {
+            let (lo, hi) = &root.interval;
+            if lo == hi {
+                usize::from(lo > &Rational::zero())
+            } else if lo >= &Rational::zero() {
+                1
+            } else if hi <= &Rational::zero() {
+                0
+            } else {
+                symgcad::roots::roots_in_open_interval(&root.fiber, &Rational::zero(), hi)
+            }
+        })
+        .sum::<usize>();
+    ensure!(
+        sturm_count == isolation_count,
+        "Sturm and certified isolation disagree"
+    );
+    let linear = algebra.parse(&format!("1+{}", algebra.names[variable]))?;
+    let univariate_linear = fiber.constant(Rational::one()) + fiber.monomial(Rational::one(), 1);
+    let mut symbolic = polynomial.clone();
+    let mut multiplied = fiber.clone();
+    let mut rows = Vec::new();
+    for power in 0..=16 {
+        ensure!(
+            multiplied.degree() == fiber.degree() + power,
+            "multiplier changed expected degree"
+        );
+        ensure!(
+            multiplied.evaluate(&Rational::zero()) == endpoint,
+            "multiplier changed zero endpoint"
+        );
+        ensure!(
+            multiplied.coefficients().last() == Some(leading),
+            "multiplier changed leading coefficient"
+        );
+        let signs = multiplied
+            .coefficients()
+            .iter()
+            .map(symgcad::solver::sign)
+            .collect::<Vec<_>>();
+        let nonzero = signs
+            .iter()
+            .copied()
+            .filter(|&s| s != 0)
+            .collect::<Vec<_>>();
+        let variations = nonzero.windows(2).filter(|w| w[0] != w[1]).count();
+        let vanished = symbolic
+            .to_univariate_polynomial_list(variable)
+            .iter()
+            .filter_map(|(c, degree)| c.replace_all(prefix).is_zero().then_some(*degree))
+            .collect::<Vec<_>>();
+        let candidate = degree_preserved
+            && !endpoint.is_zero()
+            && vanished.is_empty()
+            && variations <= 1
+            && variations == sturm_count;
+        rows.push(json!({"power":power,"degree":multiplied.degree(),
+            "signs_low_to_high":signs,"positive_sign_variations":variations,
+            "vanishing_nonzero_symbolic_coefficient_degrees":vanished,
+            "degree_and_endpoint_checked":true,"certificate_candidate":candidate}));
+        if power < 16 {
+            symbolic = &symbolic * &linear;
+            multiplied = &multiplied * &univariate_linear;
+        }
+    }
+    Ok(
+        json!({"zero_fiber":false,"original_degree":original_degree,"fiber_degree":fiber.degree(),
+        "original_degree_preserved":degree_preserved,"zero_endpoint":endpoint.to_string(),
+        "zero_endpoint_nonzero":!endpoint.is_zero(),"strict_cauchy_upper_bound":upper.to_string(),
+        "cauchy_endpoint_nonzero_checked":true,"positive_roots_distinct_sturm":sturm_count,
+        "positive_roots_distinct_isolation":isolation_count,
+        "isolation_intervals":isolated.iter().map(|r|json!({"index":r.index,
+            "lower":r.interval.0.to_string(),"upper":r.interval.1.to_string()})).collect::<Vec<_>>(),
+        "first_candidate_power":rows.iter().find(|r|r["certificate_candidate"] == true).map(|r|r["power"].clone()),
+        "multipliers":rows,"seconds":started.elapsed().as_secs_f64(),
+        "note":"Exact fiber diagnostic only; no symbolic-domain certificate or original completion is claimed."}),
+    )
 }
 
 fn resultant(left: &Poly, right: &Poly, variable: usize, strategy: Strategy) -> Poly {
@@ -59,6 +178,60 @@ fn resultant(left: &Poly, right: &Poly, variable: usize, strategy: Strategy) -> 
         Strategy::Primitive => left.resultant_primitive(&right),
         Strategy::Crt => left.resultant_crt(&right),
         Strategy::Formula => unreachable!("formula strategy is discriminant-only"),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn inspect(expression: &str, prefix: &[Rational]) -> serde_json::Value {
+        let names = if prefix.is_empty() {
+            vec!["x".into()]
+        } else {
+            vec!["a".into(), "x".into()]
+        };
+        let algebra = Algebra::new(&names).unwrap();
+        let p = algebra.parse(expression).unwrap();
+        let variable = prefix.len();
+        let fiber = algebra.specialize_univariate(&p, variable, prefix).unwrap();
+        positive_root_diagnostics(&algebra, &p, variable, prefix, &fiber).unwrap()
+    }
+
+    #[test]
+    fn positive_root_counts_exclude_zero_and_detect_repeated_positive_roots() {
+        let two = inspect("(x-1)*(x-2)", &[]);
+        assert_eq!(two["positive_roots_distinct_sturm"], 2);
+        assert_eq!(two["positive_roots_distinct_isolation"], 2);
+        assert!(two["first_candidate_power"].is_null());
+        let repeated = inspect("(x-1)^2", &[]);
+        assert_eq!(repeated["positive_roots_distinct_sturm"], 1);
+        assert!(repeated["first_candidate_power"].is_null());
+        let endpoint = inspect("x*(x-1)", &[]);
+        assert_eq!(endpoint["positive_roots_distinct_sturm"], 1);
+        assert_eq!(endpoint["zero_endpoint_nonzero"], false);
+        assert!(endpoint["first_candidate_power"].is_null());
+    }
+
+    #[test]
+    fn multiplier_certificate_requires_nonvanishing_symbolic_coefficients() {
+        let fixed = inspect("x^2-x+1", &[]);
+        assert_eq!(fixed["positive_roots_distinct_sturm"], 0);
+        assert_eq!(fixed["first_candidate_power"], 1);
+        let parameter = inspect("a*x^2-x+1", &[Rational::one()]);
+        assert_eq!(parameter["multipliers"][1]["positive_sign_variations"], 0);
+        assert_eq!(parameter["multipliers"][1]["certificate_candidate"], false);
+        assert_eq!(parameter["first_candidate_power"], 3);
+    }
+
+    #[test]
+    fn degree_drop_and_zero_fiber_are_not_certificate_candidates() {
+        let dropped = inspect("a*x^2+x+1", &[Rational::zero()]);
+        assert_eq!(dropped["original_degree_preserved"], false);
+        assert!(dropped["first_candidate_power"].is_null());
+        let zero = inspect("a*(x^2+1)", &[Rational::zero()]);
+        assert_eq!(zero["zero_fiber"], true);
+        assert_eq!(zero["certificate_candidate"], false);
     }
 }
 
@@ -81,7 +254,7 @@ fn main() -> Result<()> {
         .collect::<Result<Vec<_>>>()?;
     if args.inspect_only {
         let mut coefficient_signs = Vec::new();
-        if !args.prefix.is_empty() {
+        if !args.prefix.is_empty() || args.positive_root_diagnostics {
             let variable = capture
                 .variable
                 .ok_or_else(|| anyhow::anyhow!("prefix inspection requires a variable"))?;
@@ -102,7 +275,14 @@ fn main() -> Result<()> {
                     .to_univariate_polynomial_list(variable)
                     .iter()
                     .any(|(coefficient, _)| coefficient.replace_all(&prefix).is_zero());
-                coefficient_signs.push(json!({"signs_low_to_high":signs,"positive_sign_variations":nonzero.windows(2).filter(|w|w[0]!=w[1]).count(),"nonzero_symbolic_coefficient_vanishes":vanished_coefficient}));
+                let diagnostics = if args.positive_root_diagnostics {
+                    Some(positive_root_diagnostics(
+                        &algebra, polynomial, variable, &prefix, &fiber,
+                    )?)
+                } else {
+                    None
+                };
+                coefficient_signs.push(json!({"signs_low_to_high":signs,"positive_sign_variations":nonzero.windows(2).filter(|w|w[0]!=w[1]).count(),"nonzero_symbolic_coefficient_vanishes":vanished_coefficient,"positive_root_diagnostics":diagnostics}));
             }
         }
         let report = json!({
