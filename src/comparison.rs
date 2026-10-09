@@ -4,6 +4,10 @@
 //! projection includes every boundary and exceptional polynomial of both
 //! inputs. They are consequently constant on each connected refinement cell;
 //! this is not a random-sampling comparison.
+//!
+//! The in-process wall budget is checked between verification phases and cell
+//! membership checks. A single algebra or verification call cannot be preempted;
+//! callers needing a hard deadline must run this API in a bounded worker.
 use crate::{
     Limits, Problem,
     algebra::{Algebra, rational},
@@ -149,29 +153,40 @@ pub fn compare_generic(
     if report.refinement.status != Status::CompleteGeneric {
         return Ok(report);
     }
+    let expired = || started.elapsed().as_secs_f64() >= limits.wall_time_secs;
+    if expired() {
+        return Ok(report);
+    }
     verify(&report.refinement)?;
     let left_algebra = Algebra::new(&left.order)?;
     let right_algebra = Algebra::new(&right.order)?;
     for cell in &report.refinement.cells {
+        if expired() {
+            return Ok(report);
+        }
         let point = cell
             .axes
             .iter()
             .map(|axis| Ok((axis.variable.clone(), rational(&axis.sample)?)))
             .collect::<Result<BTreeMap<_, _>>>()?;
-        let matching = |result: &SolveResult, algebra: &Algebra| -> Result<Vec<usize>> {
-            result
-                .cells
-                .iter()
-                .enumerate()
-                .filter_map(|(i, c)| match contains(result, algebra, c, &point) {
-                    Ok(true) => Some(Ok(i)),
-                    Ok(false) => None,
-                    Err(e) => Some(Err(e)),
-                })
-                .collect()
+        let matching = |result: &SolveResult, algebra: &Algebra| -> Result<Option<Vec<usize>>> {
+            let mut ids = vec![];
+            for (i, candidate) in result.cells.iter().enumerate() {
+                if expired() {
+                    return Ok(None);
+                }
+                if contains(result, algebra, candidate, &point)? {
+                    ids.push(i);
+                }
+            }
+            Ok(Some(ids))
         };
-        let left_ids = matching(left, &left_algebra)?;
-        let right_ids = matching(right, &right_algebra)?;
+        let Some(left_ids) = matching(left, &left_algebra)? else {
+            return Ok(report);
+        };
+        let Some(right_ids) = matching(right, &right_algebra)? else {
+            return Ok(report);
+        };
         if left_ids.len() != 1
             || right_ids.len() != 1
             || left.cells[left_ids[0]].signs != right.cells[right_ids[0]].signs
@@ -184,6 +199,8 @@ pub fn compare_generic(
         report.corresponding_cells.push((left_ids[0], right_ids[0]));
         report.common_regions += 1;
     }
-    report.equivalent = Some(true);
+    if !expired() {
+        report.equivalent = Some(true);
+    }
     Ok(report)
 }

@@ -379,6 +379,7 @@ fn same_mathematical_result(
     let LocalEvidence::Local {
         root: left_tree,
         input_factors: left_inputs,
+        guard_certificates: left_certificates,
         ..
     } = &left.evidence
     else {
@@ -387,12 +388,14 @@ fn same_mathematical_result(
     let LocalEvidence::Local {
         root: right_tree,
         input_factors: right_inputs,
+        guard_certificates: right_certificates,
         ..
     } = &right.evidence
     else {
         panic!()
     };
     assert_eq!(left_inputs, right_inputs);
+    assert_eq!(left_certificates, right_certificates);
     assert_eq!(
         serde_json::to_value(left_tree).unwrap(),
         serde_json::to_value(right_tree).unwrap()
@@ -486,4 +489,265 @@ fn interrupted_local_work_retains_cache_and_phase_metrics_without_a_complete_pro
     assert!(report.cache.factor_misses > 0);
     assert!(report.elapsed_seconds > 0.0);
     assert_eq!(report.active_phase, "incomplete");
+}
+
+fn domain_problem(variables: &[&str], constraints: &[&str], split: &[&str]) -> Problem {
+    let mut p = problem(variables, constraints, split);
+    p.solver.engine = "local".into();
+    p.solver.positivity = true;
+    p
+}
+
+fn local_solution(p: &Problem, options: &LocalOptions) -> symgcad::output::SolveResult {
+    let result = solve_local(p, options).unwrap();
+    assert_eq!(result.solution.status, Status::CompleteGeneric);
+    let mut solution = result.solution;
+    solution.local = Some(Box::new(result.evidence));
+    assert!(symgcad::verify::verify(&solution).unwrap().verified);
+    solution
+}
+
+fn compare_three(p: &Problem) -> symgcad::output::SolveResult {
+    let pruned = local_solution(p, &LocalOptions::default());
+    let plain = local_solution(
+        p,
+        &LocalOptions {
+            domain_pruning: false,
+            ..LocalOptions::default()
+        },
+    );
+    let mut global_problem = p.clone();
+    global_problem.solver.engine = "baseline".into();
+    global_problem.solver.positivity = false;
+    let global = symgcad::solver::solve(&global_problem).unwrap();
+    let limits = symgcad::Limits {
+        wall_time_secs: 30.0,
+        ..Default::default()
+    };
+    for other in [&plain, &global] {
+        let comparison = symgcad::comparison::compare_generic(&pruned, other, &limits).unwrap();
+        assert_eq!(comparison.equivalent, Some(true));
+    }
+    pruned
+}
+
+#[test]
+fn certified_local_guards_export_original_bound_obligations_and_match_global_coverage() {
+    let result = compare_three(&domain_problem(
+        &["x", "z"],
+        &["x>0", "z>0"],
+        &["(x+1)*z-1"],
+    ));
+    let LocalEvidence::Local {
+        guard_certificates,
+        input_factors,
+        ..
+    } = result.local.as_deref().unwrap()
+    else {
+        panic!()
+    };
+    assert!(!guard_certificates.is_empty());
+    let algebra = symgcad::algebra::Algebra::new(&result.order).unwrap();
+    let record = guard_certificates
+        .iter()
+        .find(|r| {
+            algebra.parse(&result.polynomials[r.guard]).unwrap() == algebra.parse("x+1").unwrap()
+        })
+        .unwrap();
+    assert_eq!(record.level, 1);
+    assert_eq!(record.supporting_constraints, vec![0]);
+    assert_eq!(record.supporting_factors, input_factors[0]);
+    assert!(record.certificate.domain.bounds[1].lower.is_none());
+    assert!(
+        record
+            .certificate
+            .domain
+            .excluded_sign_constraints
+            .contains(&1)
+    );
+}
+
+#[test]
+fn finite_box_guard_certificates_preserve_interior_discriminant_seams() {
+    let positive = compare_three(&domain_problem(
+        &["x", "z"],
+        &["x>0", "x<1", "z>0"],
+        &["z^2+2+x-x^2"],
+    ));
+    let LocalEvidence::Local {
+        guard_certificates, ..
+    } = positive.local.as_deref().unwrap()
+    else {
+        panic!()
+    };
+    assert!(guard_certificates.len() >= 2);
+    assert!(
+        guard_certificates
+            .iter()
+            .all(|r| r.supporting_constraints == vec![0, 1])
+    );
+    let crossing = compare_three(&domain_problem(
+        &["x", "z"],
+        &["x>0", "x<2", "z>0"],
+        &["z^2-(x-1)^2"],
+    ));
+    let algebra = symgcad::algebra::Algebra::new(&crossing.order).unwrap();
+    let seam = symgcad::algebra::canonical(&algebra.parse("x-1").unwrap());
+    let seam_id = crossing
+        .polynomials
+        .iter()
+        .position(|p| algebra.parse(p).unwrap() == seam)
+        .unwrap();
+    assert!(crossing.exceptional_polynomials.contains(&seam_id));
+    let LocalEvidence::Local {
+        guard_certificates, ..
+    } = crossing.local.as_deref().unwrap()
+    else {
+        panic!()
+    };
+    assert!(guard_certificates.iter().all(|r| r.guard != seam_id));
+}
+
+#[test]
+fn rootless_real_curves_and_later_coordinate_bounds_do_not_supply_false_premises() {
+    compare_three(&domain_problem(
+        &["x", "y", "z"],
+        &["x>0", "x<2", "z>0"],
+        &["z^2-x", "z-y"],
+    ));
+    let result = compare_three(&domain_problem(&["x", "z"], &["z>0"], &["x*z-1"]));
+    let LocalEvidence::Local {
+        guard_certificates, ..
+    } = result.local.as_deref().unwrap()
+    else {
+        panic!()
+    };
+    assert!(guard_certificates.is_empty());
+    assert!(result.cells.iter().all(|c| c.axes[0].sample != "0"));
+}
+
+#[test]
+fn local_guard_pruning_protects_all_original_split_and_coordinate_factors() {
+    let result = compare_three(&domain_problem(
+        &["x", "z"],
+        &["x>0", "z>0"],
+        &["(x+1)*z-1", "x+1"],
+    ));
+    let LocalEvidence::Local {
+        guard_certificates,
+        input_factors,
+        ..
+    } = result.local.as_deref().unwrap()
+    else {
+        panic!()
+    };
+    assert!(
+        guard_certificates
+            .iter()
+            .all(|r| !input_factors.iter().flatten().any(|&id| id == r.guard))
+    );
+    let algebra = symgcad::algebra::Algebra::new(&result.order).unwrap();
+    for expression in ["x", "z", "x+1"] {
+        let p = algebra.parse(expression).unwrap();
+        let id = result
+            .polynomials
+            .iter()
+            .position(|s| algebra.parse(s).unwrap() == p)
+            .unwrap();
+        assert!(result.exceptional_polynomials.contains(&id));
+    }
+}
+
+#[test]
+fn domain_guard_registry_rejects_changed_bounds_missing_support_and_wrong_scope() {
+    let original = local_solution(
+        &domain_problem(&["x", "z"], &["x>0", "z>0"], &["(x+1)*z-1"]),
+        &LocalOptions::default(),
+    );
+    for modification in 0..5 {
+        let mut changed = original.clone();
+        let LocalEvidence::Local {
+            guard_certificates,
+            options,
+            ..
+        } = changed.local.as_deref_mut().unwrap()
+        else {
+            panic!()
+        };
+        let record = &mut guard_certificates[0];
+        match modification {
+            0 => record.supporting_factors.clear(),
+            1 => record.supporting_constraints.clear(),
+            2 => record.level = 0,
+            3 => record.certificate.domain.bounds[0].lower = Some("-2".into()),
+            4 => options.domain_pruning = false,
+            _ => unreachable!(),
+        }
+        assert!(
+            symgcad::verify::verify(&changed).is_err(),
+            "tampering {modification}"
+        );
+    }
+    // Keeping a valid global domain certificate is insufficient if the tree
+    // drops the ancestor factor obligation establishing its actual premise.
+    let mut changed = original;
+    fn remove_support(node: &mut LocalNode) -> bool {
+        if let LocalNode::Stack {
+            projection,
+            required_below,
+            sectors,
+            ..
+        } = node
+        {
+            if !projection.removals.is_empty() {
+                required_below.clear();
+                return true;
+            }
+            return sectors.iter_mut().any(|s| remove_support(&mut s.child));
+        }
+        false
+    }
+    let LocalEvidence::Local { root, .. } = changed.local.as_deref_mut().unwrap() else {
+        panic!()
+    };
+    assert!(remove_support(root));
+    assert!(symgcad::verify::verify(&changed).is_err());
+}
+
+#[test]
+fn empty_original_boxes_do_not_create_vacuous_guard_certificates() {
+    let result = local_solution(
+        &domain_problem(&["x", "z"], &["x>2", "x<1", "z>0"], &["(x+1)*z-1"]),
+        &LocalOptions::default(),
+    );
+    assert!(result.cells.is_empty());
+    let LocalEvidence::Local {
+        guard_certificates, ..
+    } = result.local.as_deref().unwrap()
+    else {
+        panic!()
+    };
+    assert!(guard_certificates.is_empty());
+}
+
+#[test]
+fn cached_domain_certificates_preserve_registry_and_every_bound_obligation() {
+    let p = domain_problem(
+        &["x", "y", "z"],
+        &["x>0", "y>0", "z>0"],
+        &["(x+1)*z-1", "z-y"],
+    );
+    let cached = solve_local(&p, &LocalOptions::default()).unwrap();
+    let uncached = solve_local(
+        &p,
+        &LocalOptions {
+            cache_enabled: false,
+            ..LocalOptions::default()
+        },
+    )
+    .unwrap();
+    same_mathematical_result(&cached, &uncached);
+    assert!(local_report(&cached).guard_certificate_hits > 0);
+    assert!(verify_local(&cached).unwrap().verified);
+    assert!(verify_local(&uncached).unwrap().verified);
 }

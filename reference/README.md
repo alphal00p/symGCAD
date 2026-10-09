@@ -59,8 +59,13 @@ silently change the fixture's mathematical input.
 For same-algorithm timing, pin the same order, merge policy, affinity and memory
 budget on both engines. The adapter separately records ordering, projection,
 lifting and merging times, and intentionally repeats projection for both signs
-as the original tests do. The Rust supervisor captures wall time and peak RSS;
-timeouts and memory failures remain explicit incomplete records.
+as the original tests do. The Rust supervisor captures wall time, `wait4` user
+and system CPU time, and peak RSS; timeouts and memory failures remain explicit
+incomplete records. RSS sampling follows every worker thread's children across
+nested process groups, without scanning unrelated host processes. These
+controlled workers retain their parent tree and use parent-death cancellation;
+an arbitrary executable that rapidly orphans descendants is outside this
+supervisor's process-accounting contract.
 
 A benchmark configuration placed at the repository root can contain:
 
@@ -170,3 +175,18 @@ hash, runs three paired measurements and independently verifies each complete
 case. Its kernel and fresh-process timing policies match the original baseline
 campaign. It preserves the frozen worker input schema so new CLI options cannot
 silently alter the committed baseline's mathematical workload.
+
+To qualify a new cohort with the current supervisor before selecting a release
+worker, run the standalone Rust oracle driver:
+
+```sh
+nix develop -c cargo run --example qualify_reference -- \
+  --config artifacts/campaigns/core-remaining-release.toml \
+  --output artifacts/bench/core-remaining-clean-qualification
+```
+
+Its frozen manifest records every candidate, including native timeouts, and the
+remaining campaign budget. Supply that manifest to `frozen_replay`, with
+`--campaign-time-secs` no larger than the recorded remaining budget. A separate
+`--verification-timeout` can give exhaustive proof checking more time than each
+measured solve while remaining inside the shared campaign limit.

@@ -2,7 +2,17 @@
 
 The all-corpus goal remains unfinished. Results below identify the measured subset; fixed and symbolic ZZ domains are separate obligations.
 
-**Certification update:** the historical measurements below used Symbolica's automatic resultant dispatcher. Source review found probabilistic CRT early termination on sufficiently large operands. Production construction and verification now use deterministic integer Ducos and invalidate the old algebra caches. Historical reports retain their compatibility evidence and measured timings; fresh deterministic verification is required before those artifacts count toward exact all-corpus completion. The new method is also faster on the two captured degree-2-by-degree-8 operands (1.42 versus 5.73 seconds and 11.88 versus 18.30 seconds in exploratory builds). These operand measurements are not a release campaign speedup.
+**Certification update:** the historical measurements below used Symbolica's automatic resultant dispatcher. Source review found probabilistic CRT early termination on sufficiently large operands. Production construction and verification now use deterministic integer Ducos and invalidate the old algebra caches. Historical reports retain their compatibility evidence and measured timings; fresh deterministic verification is required before those artifacts count toward exact all-corpus completion.
+
+## Deterministic completion checkpoint
+
+The `9025e71` engine solved and independently verified **122 of 124 distinct fixed-kinematics problems** in a fresh completion campaign, including both A446 and Ax12 and the previously difficult B469/D373 cases. Each solve and verification had a 30-second limit, one CPU and 4 GiB; the campaign took 77.961 seconds. The two timeouts are A381 and its Ax12 crossing and remain unresolved. This is a completion run, not a three-repetition release timing benchmark. The exact corpus aliases, normalization identities, input hashes, result hashes and verification hashes are in `artifacts/completion-deterministic/fixed/results/ledger.json`, SHA-256 `5d7d52dbf936ee78d80cb1a7db1704c3888059cc4059adaf2762fee8f23ee400`.
+
+The debug executable SHA-256 is `a0bd1554c08f16a625efd66ba1efa499519b06640db2bcc3898a584cda772cc1`. The separately frozen release executable for clean baseline replays is `artifacts/bin/symgcad-deterministic-9025e71`, SHA-256 `8b2376bc6f9963350e24e26a7d10bdedd6147da5714e73501deda99d311f5ea9`; its path-only manifest patch is stored beside it.
+
+Certified local guard reduction also completed fixed A446 in a cold debug trial: 35 raw cells, 0.427-second solve, 0.163-second verification, 15 MiB peak RSS. Eight distinct certificates replaced 436 guard occurrences, with 21 new factorizations, 12 resultants and five discriminants. The unreduced earlier local trial timed out at 60 seconds. This exploratory result includes a supplied order and anchor, so it does not establish end-to-end ordering speedup. The artifact `artifacts/hard-campaigns/a446-local-domain-debug-01/initial-x2-0/result.json` has SHA-256 `18283a4edbc5ce950110e15d60cbd22c9547e9553f114a9389dfaea1248a7e97`.
+
+Three fresh release measurements of captured degree-2-by-degree-8 operands gave integer-Ducos/CRT medians of 0.933/2.118 seconds for the homogeneous chart and 2.080/1.985 seconds for the unanchored operand. The speed difference depends on the operands; deterministic certification motivates the production choice. All computed polynomials agreed exactly in these trials. The profile summary SHA-256 is `daa0116abb5fd23d298f3674f7d1f5f2be63ef4c9b3223c1f3d5d7b17907d93d` (`artifacts/profile/resultant-release/summary.json`).
 
 ## Native baseline, fast core
 

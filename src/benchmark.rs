@@ -953,7 +953,9 @@ mod tests {
         let rss = process_group_rss(root);
         // Clean up before assertions, including the child's distinct group.
         for &pid in &members {
-            unsafe { libc::kill(pid, libc::SIGKILL); }
+            unsafe {
+                libc::kill(pid, libc::SIGKILL);
+            }
         }
         let _ = child.kill();
         let _ = child.wait();

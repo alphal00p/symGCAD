@@ -14,9 +14,19 @@
 //! generic-open restriction deliberately makes no claims about sections or
 //! nullified fibers. Its independent checker replays projection obligations and
 //! every sector; checking cell samples alone would not establish coverage.
+//!
+//! Optional original-domain certificates replace a projection guard only by
+//! explicit obligations for the earlier coordinate bounds proving it nonzero.
+//! Protected original factors make those premises sign-invariant on the whole
+//! ancestor cell. No certificate borrows an unassigned coordinate's bounds,
+//! and no input split factor or coordinate boundary is removed.
 use crate::{
     Problem,
     algebra::{Algebra, Poly, canonical, factors_checked},
+    domain::{
+        CertificateOptions, Domain, DomainCertificate, certify_nonzero, derive_domain,
+        verify_certificate,
+    },
     optimized_projection::{CacheMetrics, OptimizedProjectionOptions, ProjectionCache},
     output::{Axis, Cell, RootBound, SolveResult, Statistics, Status},
     problem::{NormalizedProblem, normalize},
@@ -45,6 +55,9 @@ pub struct LocalOptions {
     pub fallback_to_global: bool,
     /// Disable both memory and disk algebra reuse for controlled ablations.
     pub cache_enabled: bool,
+    /// Permit original-domain guard certificates when solver.positivity is on.
+    /// Setting this false gives a local projection ablation with the same input.
+    pub domain_pruning: bool,
 }
 impl Default for LocalOptions {
     fn default() -> Self {
@@ -53,6 +66,7 @@ impl Default for LocalOptions {
             max_refinements: 10_000,
             fallback_to_global: true,
             cache_enabled: true,
+            domain_pruning: true,
         }
     }
 }
@@ -65,6 +79,7 @@ pub struct LocalPhaseCosts {
     pub resultant_seconds: f64,
     pub root_classification_seconds: f64,
     pub root_isolation_seconds: f64,
+    pub domain_certificate_seconds: f64,
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
@@ -79,6 +94,9 @@ pub struct LocalReport {
     pub elapsed_seconds: f64,
     pub current_level: Option<usize>,
     pub active_phase: String,
+    pub guard_certificate_attempts: usize,
+    pub guard_certificate_hits: usize,
+    pub certified_guard_removals: usize,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -87,6 +105,19 @@ pub struct LocalProjectionCertificate {
     pub root_bearing: Vec<usize>,
     /// Square-free irreducible factors of all required lc, disc and resultants.
     pub guards: Vec<usize>,
+    /// References into LocalEvidence::Local.guard_certificates. Their bound
+    /// factors replace the removed guards as explicit ancestor obligations.
+    #[serde(default)]
+    pub removals: Vec<usize>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct LocalGuardRemoval {
+    pub level: usize,
+    pub guard: usize,
+    pub certificate: DomainCertificate,
+    pub supporting_constraints: Vec<usize>,
+    pub supporting_factors: Vec<usize>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -121,6 +152,10 @@ pub enum LocalEvidence {
         options: LocalOptions,
         /// One factor set per normalized constraint, followed by every split.
         input_factors: Vec<Vec<usize>>,
+        /// Deduplicated exact proofs, including records from discarded trials.
+        /// Only records referenced by the final tree establish an obligation.
+        #[serde(default)]
+        guard_certificates: Vec<LocalGuardRemoval>,
         root: LocalNode,
         report: LocalReport,
     },
@@ -174,6 +209,50 @@ fn prefix_value(p: &Poly, prefix: &[Rational]) -> Result<Rational> {
     }
     ensure!(value.is_constant(), "incomplete guard evaluation");
     Ok(value.get_constant())
+}
+
+struct GuardDomain {
+    domain: Domain,
+    excluded: Vec<usize>,
+    supporting_constraints: Vec<usize>,
+}
+
+/// The local theorem is conditional on a *previously lifted* ancestor cell.
+/// Later-coordinate bounds cannot be assumed there. Excluding their original
+/// constraints gives a conservative domain in which every bound premise can
+/// be discharged by an ancestor nonzero/sign-invariance obligation.
+fn guard_domain(normalized: &NormalizedProblem, level: usize) -> Result<GuardDomain> {
+    let excluded: Vec<_> = normalized
+        .positives
+        .iter()
+        .enumerate()
+        .filter(|(_, p)| highest(p).is_some_and(|i| i >= level))
+        .map(|(i, _)| i)
+        .collect();
+    let domain = derive_domain(&normalized.algebra, &normalized.positives, &excluded)?;
+    let supporting_constraints = domain
+        .bounds
+        .iter()
+        .flat_map(|b| [b.lower_constraint, b.upper_constraint])
+        .flatten()
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect();
+    Ok(GuardDomain {
+        domain,
+        excluded,
+        supporting_constraints,
+    })
+}
+
+fn supporting_factors(context: &GuardDomain, input_factors: &[Vec<usize>]) -> Vec<usize> {
+    context
+        .supporting_constraints
+        .iter()
+        .flat_map(|&i| input_factors[i].iter().copied())
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect()
 }
 
 trait ProjectionOperations {
@@ -303,6 +382,12 @@ struct Builder<'a> {
     operations: CachedOperations<'a>,
     progress_path: Option<PathBuf>,
     last_progress: Instant,
+    guard_domains: Vec<GuardDomain>,
+    protected: BTreeSet<usize>,
+    guard_certificates: Vec<LocalGuardRemoval>,
+    /// This memo only skips repeat bounded certification attempts. Successful
+    /// entries reference proof records; no cached omission is trusted by replay.
+    guard_certificate_index: HashMap<(usize, usize), Option<usize>>,
 }
 struct Built {
     node: LocalNode,
@@ -363,6 +448,88 @@ impl Builder<'_> {
         }
         Ok(())
     }
+    fn certify_guard(
+        &mut self,
+        guard: usize,
+        level: usize,
+        prefix: &[Rational],
+    ) -> Work<Option<usize>> {
+        if !self.problem.solver.positivity
+            || !self.options.domain_pruning
+            || self.protected.contains(&guard)
+        {
+            return Ok(None);
+        }
+        let context = &self.guard_domains[level];
+        if context.domain.empty {
+            return Ok(None);
+        }
+        // Negative or boundary prefixes cannot borrow a requested domain as a
+        // global assumption. Usually leaf() has already rejected/refined them.
+        for &i in &context.supporting_constraints {
+            if prefix_value(&self.normalized.positives[i], prefix)? <= Rational::zero() {
+                return Ok(None);
+            }
+        }
+        let key = (level, guard);
+        if self.options.cache_enabled {
+            if let Some(&known) = self.guard_certificate_index.get(&key) {
+                self.report.guard_certificate_hits += 1;
+                return Ok(known);
+            }
+        }
+        self.report.guard_certificate_attempts += 1;
+        let started = Instant::now();
+        let certificate = certify_nonzero(
+            &self.normalized.algebra,
+            &self.polynomials[guard],
+            &context.domain,
+            &CertificateOptions::default(),
+        )?;
+        self.operations.phases.domain_certificate_seconds += started.elapsed().as_secs_f64();
+        let index = if let Some(certificate) = certificate {
+            let record = LocalGuardRemoval {
+                level,
+                guard,
+                certificate,
+                supporting_constraints: context.supporting_constraints.clone(),
+                supporting_factors: supporting_factors(context, &self.input_factors),
+            };
+            // Even uncached ablations intern proof records deterministically;
+            // they still recompute their algebraic certificate above.
+            if let Some(Some(index)) = self.guard_certificate_index.get(&key) {
+                if self.guard_certificates[*index] != record {
+                    return Err(Stop::Unsupported(
+                        "inconsistent repeated domain certificate".into(),
+                    ));
+                }
+                Some(*index)
+            } else {
+                let index = self.guard_certificates.len();
+                self.guard_certificates.push(record);
+                Some(index)
+            }
+        } else {
+            None
+        };
+        // Successful proof records need an index for deterministic interning.
+        // Optional inconclusive-attempt memoization has a conservative bound;
+        // zero cache memory retains only the proof registry itself.
+        let memo_limit = (self.problem.solver.cache_memory_mib * 1024 * 1024 / 256).min(65_536);
+        if index.is_some()
+            || (self.options.cache_enabled && self.guard_certificate_index.len() < memo_limit)
+        {
+            self.guard_certificate_index.insert(key, index);
+        }
+        Ok(index)
+    }
+    fn projection_requirements(&self, projection: &LocalProjectionCertificate) -> BTreeSet<usize> {
+        let mut required: BTreeSet<_> = projection.guards.iter().copied().collect();
+        for &index in &projection.removals {
+            required.extend(&self.guard_certificates[index].supporting_factors);
+        }
+        required
+    }
     fn leaf(&self, prefix: &[Rational]) -> Work<Option<Built>> {
         for (i, p) in self.normalized.positives.iter().enumerate() {
             if highest(p).is_none_or(|j| j < prefix.len()) {
@@ -418,13 +585,24 @@ impl Builder<'_> {
         self.report.projected_pairs += pairs;
         self.report.omitted_rootless_pairs += omitted;
         let factors = self.operations.factors(&raw)?;
-        let guards: BTreeSet<_> = factors.into_iter().map(|p| self.intern(p)).collect();
+        let mut guards: BTreeSet<_> = factors.into_iter().map(|p| self.intern(p)).collect();
         self.guard_nonzero(&guards, prefix)?;
+        let mut removals = Vec::new();
+        for guard in guards.iter().copied().collect::<Vec<_>>() {
+            self.check_budget()?;
+            if let Some(index) = self.certify_guard(guard, level, prefix)? {
+                guards.remove(&guard);
+                removals.push(index);
+                self.report.certified_guard_removals += 1;
+            }
+        }
+        removals.sort_unstable();
         self.publish(false)?;
         self.check_budget()?;
         Ok(LocalProjectionCertificate {
             root_bearing,
             guards: guards.into_iter().collect(),
+            removals,
         })
     }
     fn visit(&mut self, prefix: &mut Vec<Rational>) -> Work<Built> {
@@ -458,7 +636,7 @@ impl Builder<'_> {
             let roots = isolate_union(fibers)?;
             self.operations.phases.root_isolation_seconds += root_started.elapsed().as_secs_f64();
             self.publish(false)?;
-            let mut required: BTreeSet<_> = projection.guards.iter().copied().collect();
+            let mut required = self.projection_requirements(&projection);
             let mut sectors = Vec::new();
             let mut cells = 0usize;
             let mut additions = BTreeSet::new();
@@ -716,6 +894,12 @@ pub fn solve_local(problem: &Problem, options: &LocalOptions) -> Result<LocalSol
         },
         progress_path: std::env::var_os("SYMGCAD_PROGRESS_PATH").map(PathBuf::from),
         last_progress: started,
+        guard_domains: (0..order.len())
+            .map(|level| guard_domain(&normalized, level))
+            .collect::<Result<_>>()?,
+        protected: BTreeSet::new(),
+        guard_certificates: Vec::new(),
+        guard_certificate_index: HashMap::new(),
     };
     builder.report.active_phase = "input_factorization".into();
     builder.publish(true)?;
@@ -730,6 +914,7 @@ pub fn solve_local(problem: &Problem, options: &LocalOptions) -> Result<LocalSol
         input.sort_unstable();
         builder.input_factors.push(input);
     }
+    builder.protected = builder.input_factors.iter().flatten().copied().collect();
     let built = match builder.visit(&mut Vec::new()) {
         Ok(built) => built,
         Err(Stop::Resource(reason)) => {
@@ -791,7 +976,8 @@ pub fn solve_local(problem: &Problem, options: &LocalOptions) -> Result<LocalSol
     let report = builder.snapshot();
     statistics.projection_seconds = report.phases.factor_seconds
         + report.phases.discriminant_seconds
-        + report.phases.resultant_seconds;
+        + report.phases.resultant_seconds
+        + report.phases.domain_certificate_seconds;
     statistics.lifting_seconds =
         report.phases.root_classification_seconds + report.phases.root_isolation_seconds;
     let solution = SolveResult {
@@ -830,6 +1016,7 @@ pub fn solve_local(problem: &Problem, options: &LocalOptions) -> Result<LocalSol
         evidence: LocalEvidence::Local {
             options: options.clone(),
             input_factors: builder.input_factors,
+            guard_certificates: builder.guard_certificates,
             root: built.node,
             report,
         },
@@ -841,8 +1028,68 @@ struct Checker<'a> {
     polynomials: &'a [Poly],
     ids: HashMap<Poly, usize>,
     input_factors: &'a [Vec<usize>],
+    guard_certificates: &'a [LocalGuardRemoval],
+    guard_domains: Vec<GuardDomain>,
+    protected: BTreeSet<usize>,
+    domain_pruning: bool,
 }
 impl Checker<'_> {
+    fn check_registry(&self) -> Result<()> {
+        ensure!(
+            self.domain_pruning || self.guard_certificates.is_empty(),
+            "domain guard removals require enabled local positivity"
+        );
+        let mut seen = BTreeSet::new();
+        for record in self.guard_certificates {
+            let context = self
+                .guard_domains
+                .get(record.level)
+                .ok_or_else(|| anyhow!("guard certificate has invalid level"))?;
+            let polynomial = self
+                .polynomials
+                .get(record.guard)
+                .ok_or_else(|| anyhow!("invalid certified guard id"))?;
+            ensure!(
+                highest(polynomial).is_some_and(|i| i < record.level),
+                "certified guard is not in an earlier axis"
+            );
+            ensure!(
+                seen.insert((record.level, record.guard)),
+                "duplicate domain guard certificate"
+            );
+            ensure!(
+                !self.protected.contains(&record.guard),
+                "an original constraint or split factor was removed"
+            );
+            ensure!(
+                !context.domain.empty,
+                "empty domain cannot certify a local guard"
+            );
+            ensure!(
+                record.supporting_constraints == context.supporting_constraints,
+                "changed original bound constraint provenance"
+            );
+            ensure!(
+                record.supporting_factors == supporting_factors(context, self.input_factors),
+                "incomplete supporting bound factor obligations"
+            );
+            for &id in &record.supporting_factors {
+                ensure!(
+                    self.protected.contains(&id)
+                        && highest(&self.polynomials[id]).is_some_and(|i| i < record.level),
+                    "bound support is not a protected ancestor factor"
+                );
+            }
+            verify_certificate(
+                &self.normalized.algebra,
+                polynomial,
+                &self.normalized.positives,
+                &context.excluded,
+                &record.certificate,
+            )?;
+        }
+        Ok(())
+    }
     fn nonzero(&self, guards: &BTreeSet<usize>, prefix: &[Rational]) -> Result<()> {
         for &id in guards {
             let p = self
@@ -934,8 +1181,46 @@ impl Checker<'_> {
                             .ok_or_else(|| anyhow!("missing local projection guard factor"))?,
                     );
                 }
+                let retained: BTreeSet<_> = projection.guards.iter().copied().collect();
                 ensure!(
-                    projection.guards == projected.iter().copied().collect::<Vec<_>>(),
+                    projection.guards == retained.iter().copied().collect::<Vec<_>>(),
+                    "retained guards are not unique and sorted"
+                );
+                let removal_ids: BTreeSet<_> = projection.removals.iter().copied().collect();
+                ensure!(
+                    projection.removals == removal_ids.iter().copied().collect::<Vec<_>>(),
+                    "guard removal references are not unique and sorted"
+                );
+                let mut covered = retained.clone();
+                let mut required = retained;
+                for &index in &projection.removals {
+                    ensure!(self.domain_pruning, "domain guard removal is disabled");
+                    let record = self
+                        .guard_certificates
+                        .get(index)
+                        .ok_or_else(|| anyhow!("invalid guard certificate reference"))?;
+                    ensure!(
+                        record.level == level,
+                        "guard certificate belongs to a different ancestor level"
+                    );
+                    ensure!(
+                        covered.insert(record.guard),
+                        "a guard is retained or removed more than once"
+                    );
+                    for &source in &record.supporting_constraints {
+                        ensure!(
+                            prefix_value(&self.normalized.positives[source], prefix)?
+                                > Rational::zero(),
+                            "local prefix does not satisfy a certificate bound premise"
+                        );
+                    }
+                    // These nonzero obligations reach the owning ancestors.
+                    // Their constant signs and the positive values above prove
+                    // the *whole* current base cell lies in the certified box.
+                    required.extend(&record.supporting_factors);
+                }
+                ensure!(
+                    covered == projected,
                     "local projection obligations omitted or changed"
                 );
                 self.nonzero(&projected, prefix)?;
@@ -962,7 +1247,6 @@ impl Checker<'_> {
                     sectors.len() == actual_roots.len() + 1,
                     "local stack omits an open sector"
                 );
-                let mut required = projected;
                 for (i, sector) in sectors.iter().enumerate() {
                     let expected = sector_sample(
                         if i > 0 { actual_roots.get(i - 1) } else { None },
@@ -1014,15 +1298,17 @@ pub fn verify_local_parts(
         solution.status == Status::CompleteGeneric,
         "only complete local results can be certified"
     );
-    let (input_factors, root) = match evidence {
+    let (input_factors, guard_certificates, root, options) = match evidence {
         LocalEvidence::GlobalFallback { .. } => return crate::verify::verify_nonlocal(solution),
         LocalEvidence::NotApplicable { .. } => anyhow::bail!("local projection was not applicable"),
         LocalEvidence::Unfinished { .. } => anyhow::bail!("unfinished local projection evidence"),
         LocalEvidence::Local {
             input_factors,
+            guard_certificates,
             root,
+            options,
             ..
-        } => (input_factors, root),
+        } => (input_factors, guard_certificates, root, options),
     };
     solution.problem.validate()?;
     ensure!(solution.schema_version == 1, "unsupported output schema");
@@ -1101,7 +1387,14 @@ pub fn verify_local_parts(
         polynomials: &polynomials,
         ids,
         input_factors,
+        guard_certificates,
+        guard_domains: (0..solution.order.len())
+            .map(|level| guard_domain(&normalized, level))
+            .collect::<Result<_>>()?,
+        protected: input_factors.iter().flatten().copied().collect(),
+        domain_pruning: options.domain_pruning && solution.problem.solver.positivity,
     };
+    checker.check_registry()?;
     ensure!(
         checker.walk(root, &mut Vec::new())?.is_empty(),
         "unproved top-level projection guards"

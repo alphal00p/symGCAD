@@ -31,6 +31,8 @@ struct Args {
     repeats: usize,
     #[arg(long, default_value_t = 60.0)]
     timeout: f64,
+    #[arg(long)]
+    verification_timeout: Option<f64>,
     #[arg(long, default_value_t = 3600.0)]
     campaign_time_secs: f64,
     #[arg(long, default_value_t = 8192)]
@@ -102,6 +104,13 @@ fn main() -> Result<()> {
         args.memory_mib > 0 && args.memory_mib <= 65536,
         "invalid memory cap"
     );
+    let verification_timeout = args.verification_timeout.unwrap_or(args.timeout);
+    ensure!(
+        verification_timeout.is_finite()
+            && verification_timeout > 0.0
+            && verification_timeout <= 3600.0,
+        "invalid verification deadline"
+    );
     fs::create_dir_all(&args.output)?;
     ensure!(
         fs::read_dir(&args.output)?.next().is_none(),
@@ -131,7 +140,7 @@ fn main() -> Result<()> {
         .as_str()
         .context("reference interpreter missing")?
         .into();
-    let provenance = json!({"executable":solver,"executable_sha256":solver_hash,"frozen_reference_set":args.frozen,"frozen_reference_set_sha256":hash(&args.frozen)?,"adapter_sha256":hash(&args.adapter)?,"reference_revision":metadata["revision"],"reference_compiler":metadata["compiler"],"workers":1,"memory_mib":args.memory_mib,"timing_policy":"frozen qualification/orders; matched projection + lifting + merging; startup/export in fresh-process wall; independent verification outside solve timing"});
+    let provenance = json!({"executable":solver,"executable_sha256":solver_hash,"harness_sha256":hash(Path::new("/proc/self/exe"))?,"frozen_reference_set":args.frozen,"frozen_reference_set_sha256":hash(&args.frozen)?,"adapter_sha256":hash(&args.adapter)?,"reference_revision":metadata["revision"],"reference_compiler":metadata["compiler"],"workers":1,"memory_mib":args.memory_mib,"solve_timeout_secs":args.timeout,"verification_timeout_secs":verification_timeout,"timing_policy":"frozen qualification/orders; matched projection + lifting + merging; startup/export in fresh-process wall; independent verification outside solve timing"});
     write(args.output.join("frozen-reference-set.json"), &frozen)?;
     let started = Instant::now();
     let mut exhausted = false;
@@ -289,6 +298,9 @@ fn main() -> Result<()> {
             } else {
                 Value::Null
             };
+            if row["raw_cells_match"] != true || row["merged_cells_match"] == false {
+                row["status"] = json!("cell_count_difference");
+            }
             row["end_to_end_ratio"] = json!(
                 row["rust_median_secs"].as_f64().unwrap()
                     / row["reference_median_secs"].as_f64().unwrap()
@@ -307,7 +319,7 @@ fn main() -> Result<()> {
                     .arg("--output")
                     .arg(&verification_file);
                 let limits = Limits {
-                    wall_time_secs: args.timeout.min(remaining()),
+                    wall_time_secs: verification_timeout.min(remaining()),
                     memory_mib: args.memory_mib,
                     workers: 1,
                     max_cells: None,
@@ -352,8 +364,13 @@ fn main() -> Result<()> {
         .iter()
         .filter_map(|r| r["end_to_end_ratio"].as_f64())
         .collect::<Vec<_>>();
-    let geo = geometric(&ratios);
-    let report = json!({"schema_version":1,"cases":rows,"repeats":args.repeats,"frozen_reference_count":qualified.len(),"geometric_mean_solver_ratio":geo,"geometric_mean_end_to_end_ratio":geometric(&walls),"parity_target":1.25,"parity_passed":complete&&!exhausted&&geo.is_some_and(|x|x<=1.25),"campaign_exhausted":exhausted,"elapsed_secs":started.elapsed().as_secs_f64(),"provenance":provenance});
+    let geo = (ratios.len() == qualified.len())
+        .then(|| geometric(&ratios))
+        .flatten();
+    let wall_geo = (walls.len() == qualified.len())
+        .then(|| geometric(&walls))
+        .flatten();
+    let report = json!({"schema_version":1,"cases":rows,"repeats":args.repeats,"frozen_reference_count":qualified.len(),"geometric_mean_solver_ratio":geo,"geometric_mean_end_to_end_ratio":wall_geo,"parity_target":1.25,"parity_passed":complete&&!exhausted&&geo.is_some_and(|x|x<=1.25),"campaign_exhausted":exhausted,"elapsed_secs":started.elapsed().as_secs_f64(),"provenance":provenance});
     write(args.output.join("report.json"), &report)?;
     println!("{}", serde_json::to_string_pretty(&report)?);
     Ok(())
