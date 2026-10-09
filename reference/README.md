@@ -282,3 +282,42 @@ groups and explicit fixed orders, disables reductions, and uses one worker,
 Only a new independently verified full-problem result can add a completion.
 If no unresolved input is eligible, preparation records the skipped groups and
 does not emit an empty campaign configuration.
+
+Research-only strict subdomain probes use `core_piece_probe`. Their plan is a
+JSON array of `{input, extra_constraints, label}` objects; each input is an
+existing TOML problem, and restrictions such as `"x0>1"` are appended unchanged.
+Every completed piece is independently verified and every timeout is retained.
+The helper permits at most 20 seconds per solve/verification and 120 seconds
+for the whole run, on one worker with an 8 GiB address-space cap. Its reports
+explicitly claim zero original completions and must not enter the full-problem
+completion aggregate without a separately verified exhaustive union proof.
+
+```sh
+nix develop -c cargo run --example core_piece_probe -- \
+  --executable artifacts/hard-campaigns/sign-filter-3ddfe2a-debug/symgcad \
+  --plan artifacts/profile/core-piece-candidates/plan.json \
+  --output artifacts/research/core-pieces-replay \
+  --campaign-secs 120 --trial-secs 20
+```
+
+`monotone_candidates --input INPUT --extra-constraint 'x0<1'` checks both target
+orientations against exact coefficient certificates without running projection.
+Repeat `--extra-constraint` for joint restrictions. An uncertified sign is
+reported as unknown; it does not prove that the coefficient changes sign.
+
+`crossing_identity` compares a selected symbolic ZZ original against verified
+same-size donors from the completion audit using exact Symbolica polynomial
+equality, positive primitive normalization, compatible propagator permutations,
+and the crossing `t -> 5/9-s-t`. It also checks the transformed strict domain and
+original fixed-order/group obligations. Matches emit retry inputs, never reused
+completion certificates. For example:
+
+```sh
+nix develop -c cargo run --example crossing_identity -- \
+  --audit artifacts/completion-aggregate-296.json \
+  --target finiteC_6_470_ --seconds 30 \
+  --output artifacts/c470-crossing-replay
+```
+
+The C438/Cx438 positive control finds the expected crossing. The retained
+all-27 unresolved batch and its hashes are documented in `BENCHMARKS.md`.
