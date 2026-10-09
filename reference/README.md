@@ -215,3 +215,69 @@ and mixed worker executables. Missing qualification coverage or missing timing
 ratios suppress the aggregate geometric mean and prevent a passing gate. Native
 timeouts stay explicit. The output records every report and manifest hash, all
 aliases, missing cases, and every matched-phase slowdown above two times native.
+
+Reproduce the completed immutable `9025e71` parity aggregation from the retained
+reports with:
+
+```sh
+nix develop -c cargo run --example aggregate_parity -- \
+  --report artifacts/bench/core-fast-deterministic-release/report.json \
+  --report artifacts/bench/core-remaining-deterministic-release/report.json \
+  --report artifacts/bench/core-api-only-solves-deterministic-release/report.json \
+  --report artifacts/bench/zz-fixed-completing-deterministic-release/report.json \
+  --report artifacts/bench/zz-fixed-remaining-batch1-deterministic-release/report.json \
+  --report artifacts/bench/zz-fixed-remaining-batch2-extended-deterministic-release/report.json \
+  --report artifacts/bench/zz-fixed-remaining-batch3-deterministic-release/report.json \
+  --report artifacts/bench/zz-symbolic-deterministic-release/report.json \
+  --report artifacts/bench/zz-symbolic-remaining-batch1-deterministic-release/report.json \
+  --report artifacts/bench/zz-symbolic-remaining-batch2-deterministic-release/report.json \
+  --report artifacts/bench/zz-symbolic-remaining-batch3-deterministic-release/report.json \
+  --output artifacts/bench/parity-aggregate-9025.json
+```
+
+The extended fixed batch 2 preserves its entire original qualification set and
+uses 120-second paired solve limits; the earlier 60-second failures remain in
+the adjacent non-extended report. Do not supply both versions to aggregation.
+
+Full-problem completion is audited separately from parity. The following audit
+streams large result files, checks retained executable/input/result/verification
+hashes, and compares exact normalized original constraints, the complete ordered
+split list, variables, variable groups, and explicit fixed-order obligations.
+It allows different solver strategies while preserving every failed attempt.
+Supplemental verification records are linked to a result hash in the original
+ledger. This validates retained verification evidence; it does not rerun the
+mathematical checker. Separate positive/negative parity proofs never substitute
+for one proof of the original full split problem.
+
+```sh
+nix develop -c cargo run --example aggregate_completion -- \
+  --ledger artifacts/completion-deterministic/fixed/results/ledger.json \
+  --ledger artifacts/completion-deterministic/symbolic/results/ledger.json \
+  --ledger artifacts/completion-unscaled-retry-01/results/ledger.json \
+  --supplemental artifacts/completion-deterministic/extra-verifications/report.json \
+  --output artifacts/completion-aggregate.json
+```
+
+Add further `--ledger` arguments for completed retries. The report includes all
+331 expected groups, their aliases, proof provenance, and an explicit unresolved
+list; `all_complete` stays false until every group has matching valid evidence.
+
+For unresolved problems with a verified full unsplit baseline result, or split
+problems whose two baseline sign branches both completed, prepare a new
+full-problem campaign using the frozen baseline variable order:
+
+```sh
+nix develop -c cargo run --example prepare_completion_retry -- \
+  --completion artifacts/completion-aggregate.json \
+  --parity artifacts/bench/parity-aggregate-9025.json \
+  --output artifacts/completion-baseline-retry-02
+nix develop -c taskset -c 0 artifacts/bin/symgcad-fast-lifting-1d15d03 bench \
+  artifacts/completion-baseline-retry-02/campaign.toml
+```
+
+This keeps the original constraints and split polynomial, respects original
+groups and explicit fixed orders, disables reductions, and uses one worker,
+8 GiB, 120-second solves, 240-second verifications, and a shared one-hour limit.
+Only a new independently verified full-problem result can add a completion.
+If no unresolved input is eligible, preparation records the skipped groups and
+does not emit an empty campaign configuration.
