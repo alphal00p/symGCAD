@@ -4,4 +4,7 @@
 /corpus/
 /.reference/
 /.direnv/
+/.symgcad-env
 *.profraw
+__pycache__/
+*.pyc
