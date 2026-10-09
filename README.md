@@ -16,6 +16,8 @@ target/release/symgcad verify artifacts/square.json
 
 Set `SYMBOLICA_LICENSE` in your environment when applicable. The development shell also reads the optional, ignored `.symgcad-env` file. License keys are never included in result metadata. Each solver worker uses one symbolic thread; search and benchmark subprocesses are bounded independently.
 
+For an interrupted global solve, `SYMGCAD_LIFTING_PROGRESS_PATH=/tmp/lifting.json` records the current lifting prefix, stack/cell counts, and a bounded exact fiber snapshot. These opt-in diagnostics add filesystem overhead and are not restart certificates or benchmark evidence. Keep this path distinct from `SYMGCAD_PROGRESS_PATH`, which records projection work.
+
 ## Problem format
 
 ```toml

@@ -146,6 +146,16 @@ fn same_root(a: &FiberRoot, b: &FiberRoot) -> bool {
 }
 
 pub fn isolate_union(polynomials: Vec<(usize, UnivariatePolynomial<Q>)>) -> Result<Vec<FiberRoot>> {
+    isolate_union_observed(polynomials, |_, _, _, _| Ok(()))
+}
+
+/// Read-only progress for diagnosing an expensive exact isolation. The observer
+/// cannot change the root computation. It runs before each individual isolation
+/// and collision check; callers should throttle any filesystem output.
+pub fn isolate_union_observed(
+    polynomials: Vec<(usize, UnivariatePolynomial<Q>)>,
+    mut observer: impl FnMut(&str, usize, &UnivariatePolynomial<Q>, usize) -> Result<()>,
+) -> Result<Vec<FiberRoot>> {
     let mut roots = Vec::new();
     for (id, polynomial) in polynomials {
         ensure!(
@@ -155,6 +165,7 @@ pub fn isolate_union(polynomials: Vec<(usize, UnivariatePolynomial<Q>)>) -> Resu
         if polynomial.degree() == 0 {
             continue;
         }
+        observer("isolate_polynomial", id, &polynomial, roots.len())?;
         if polynomial.degree() == 1 {
             // Exact linear isolation needs neither a gcd nor VAS factorization.
             let root = -polynomial.coefficients()[0].clone() / polynomial.coefficients()[1].clone();
@@ -212,6 +223,12 @@ pub fn isolate_union(polynomials: Vec<(usize, UnivariatePolynomial<Q>)>) -> Resu
         let Some(i) = collision else {
             break;
         };
+        observer(
+            "separate_roots",
+            roots[i].polynomial,
+            &roots[i].fiber,
+            roots.len(),
+        )?;
         if same_root(&roots[i], &roots[i + 1]) {
             if roots[i + 1].polynomial < roots[i].polynomial {
                 roots.swap(i, i + 1);

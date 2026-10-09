@@ -12,7 +12,11 @@ use crate::{
     roots::{FiberRoot, isolate_union, sector_sample},
 };
 use anyhow::{Result, ensure};
-use std::{collections::HashMap, time::Instant};
+use std::{
+    collections::HashMap,
+    path::PathBuf,
+    time::{Duration, Instant},
+};
 use symbolica::prelude::*;
 
 pub fn selected_order(problem: &Problem) -> Result<Vec<String>> {
@@ -228,6 +232,64 @@ struct Lifter<'a> {
     incomplete: bool,
     cells: Vec<Cell>,
     statistics: Statistics,
+    progress: Option<LiftingProgress>,
+}
+
+/// Opt-in diagnostics are deliberately separate from projection progress and
+/// from the mathematical result. They cannot be used as restart certificates.
+struct LiftingProgress {
+    path: PathBuf,
+    started: Instant,
+    last: Option<Instant>,
+}
+
+impl LiftingProgress {
+    fn write(
+        &mut self,
+        phase: &str,
+        variables: &[String],
+        prefix: &[Rational],
+        stacks: usize,
+        cells: usize,
+        fiber: Option<(usize, &UnivariatePolynomial<Q>, usize)>,
+        force: bool,
+    ) -> Result<()> {
+        if !force
+            && self
+                .last
+                .is_some_and(|last| last.elapsed() < Duration::from_secs(1))
+        {
+            return Ok(());
+        }
+        // Bound optional operand text. An omitted large fiber is explicitly
+        // identified rather than leaving a previous operand looking current.
+        let fiber = fiber.map(|(id, p, roots)| {
+            let bits = p.coefficients().iter().fold(0_u64, |total, c| {
+                total
+                    .saturating_add(c.numerator_ref().significant_bits() as u64)
+                    .saturating_add(c.denominator_ref().significant_bits() as u64)
+            });
+            serde_json::json!({"polynomial":id,"degree":p.degree(),"roots_accumulated":roots,
+                "coefficient_bits_sum":bits,
+                "coefficients_low_to_high":if bits<=131072 && p.degree()<=4096 {
+                    Some(p.coefficients().iter().map(ToString::to_string).collect::<Vec<_>>())
+                } else {None}})
+        });
+        let report = serde_json::json!({"kind":"lifting_diagnostic_only","phase":phase,
+            "elapsed_seconds":self.started.elapsed().as_secs_f64(),"variables":variables,
+            "prefix":prefix.iter().map(ToString::to_string).collect::<Vec<_>>(),
+            "level":prefix.len(),"visited_stacks":stacks,"accepted_cells":cells,"fiber":fiber});
+        if let Some(parent) = self.path.parent().filter(|p| !p.as_os_str().is_empty()) {
+            std::fs::create_dir_all(parent)?;
+        }
+        let temporary = self
+            .path
+            .with_extension(format!("{}.tmp", std::process::id()));
+        std::fs::write(&temporary, serde_json::to_vec(&report)?)?;
+        std::fs::rename(temporary, &self.path)?;
+        self.last = Some(Instant::now());
+        Ok(())
+    }
 }
 
 impl Lifter<'_> {
@@ -285,10 +347,35 @@ impl Lifter<'_> {
             });
             return Ok(LiftTrace::Accepted { cell });
         }
+        if let Some(progress) = &mut self.progress {
+            progress.write(
+                "specialize",
+                &algebra.names,
+                prefix,
+                self.statistics.visited_stacks,
+                self.cells.len(),
+                None,
+                false,
+            )?;
+        }
         let fibers =
             algebra.specialize_univariate_batch(&self.projection.levels[level], level, prefix)?;
         let polynomials = self.levels[level].iter().copied().zip(fibers).collect();
-        let roots = isolate_union(polynomials)?;
+        let roots = if let Some(progress) = &mut self.progress {
+            crate::roots::isolate_union_observed(polynomials, |phase, id, fiber, count| {
+                progress.write(
+                    phase,
+                    &algebra.names,
+                    prefix,
+                    self.statistics.visited_stacks,
+                    self.cells.len(),
+                    Some((id, fiber, count)),
+                    phase == "isolate_polynomial" && fiber.degree() >= 8,
+                )
+            })?
+        } else {
+            isolate_union(polynomials)?
+        };
         self.statistics.visited_stacks += 1;
         let mut sectors = Vec::with_capacity(roots.len() + 1);
         for i in 0..=roots.len() {
@@ -521,6 +608,11 @@ pub fn solve(problem: &Problem) -> Result<SolveResult> {
         incomplete: false,
         cells: vec![],
         statistics: Statistics::default(),
+        progress: std::env::var_os("SYMGCAD_LIFTING_PROGRESS_PATH").map(|path| LiftingProgress {
+            path: PathBuf::from(path),
+            started,
+            last: None,
+        }),
     };
     let lifting_start = Instant::now();
     let trace = lifter.visit(
@@ -528,6 +620,17 @@ pub fn solve(problem: &Problem) -> Result<SolveResult> {
         &mut vec![],
         normalized.positives.iter().cloned().enumerate().collect(),
     )?;
+    if let Some(progress) = &mut lifter.progress {
+        progress.write(
+            "finished",
+            &normalized.algebra.names,
+            &[],
+            lifter.statistics.visited_stacks,
+            lifter.cells.len(),
+            None,
+            true,
+        )?;
+    }
     lifter.statistics.lifting_seconds = lifting_start.elapsed().as_secs_f64();
     lifter.statistics.ordering_seconds = ordering_seconds;
     lifter.statistics.projection_seconds = projection_seconds;

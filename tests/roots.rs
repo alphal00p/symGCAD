@@ -19,6 +19,39 @@ fn polynomial(expression: &str) -> UnivariatePolynomial<Q> {
 }
 
 #[test]
+fn observed_root_union_preserves_shared_roots_and_propagates_cancellation() {
+    let input = vec![
+        (0, polynomial("(x^2-2)^2")),
+        (1, polynomial("(x^2-2)*(x-3)")),
+    ];
+    let plain = isolate_union(input.clone()).unwrap();
+    let mut events = Vec::new();
+    let observed = symgcad::roots::isolate_union_observed(input.clone(), |phase, id, _, _| {
+        events.push((phase.to_owned(), id));
+        Ok(())
+    })
+    .unwrap();
+    assert_eq!(plain.len(), 3);
+    assert_eq!(observed.len(), plain.len());
+    for (a, b) in plain.iter().zip(&observed) {
+        assert_eq!(
+            (a.polynomial, a.index, &a.interval, &a.fiber),
+            (b.polynomial, b.index, &b.interval, &b.fiber)
+        );
+    }
+    assert!(events.iter().any(|(phase, _)| phase == "separate_roots"));
+    let stopped = symgcad::roots::isolate_union_observed(input, |_, _, _, _| {
+        anyhow::bail!("diagnostic cancelled")
+    });
+    assert!(
+        stopped
+            .unwrap_err()
+            .to_string()
+            .contains("diagnostic cancelled")
+    );
+}
+
+#[test]
 fn sturm_excludes_endpoint_roots_and_counts_repeated_roots_once() {
     let p = polynomial("x^2*(x-1)^2*(x+1)^3");
     for (lo, hi, count) in [
