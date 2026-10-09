@@ -97,7 +97,7 @@ fn bernstein_allows_zeros_only_on_original_strict_endpoints() {
 
 #[test]
 fn bernstein_subdivision_proves_strict_positivity_across_the_new_seam() {
-    let c = certify(&["x"], &["x", "1-x"], "x^2-x+1/3").unwrap();
+    let c = certify(&["x"], &["x", "1-x"], "(x^2-x+1/3)^2").unwrap();
     assert!(matches!(
         c.method,
         CertificateMethod::Bernstein {
@@ -158,7 +158,7 @@ fn empty_domain_and_zero_polynomials_do_not_generate_vacuous_pruning_proofs() {
 #[test]
 fn insufficient_certificate_budget_is_inconclusive() {
     let (a, constraints) = setup(&["x"], &["x", "1-x"]);
-    let p = a.parse("x^2-x+1/3").unwrap();
+    let p = a.parse("(x^2-x+1/3)^2").unwrap();
     let domain = derive_domain(&a, &constraints, &[]).unwrap();
     let options = CertificateOptions {
         bernstein_depth: 0,
@@ -175,6 +175,130 @@ fn insufficient_certificate_budget_is_inconclusive() {
     };
     assert!(
         certify_nonzero(&a, &p, &domain, &options)
+            .unwrap()
+            .is_none()
+    );
+}
+
+#[test]
+fn exact_ldl_certifies_the_talks_mixed_sign_positive_quadratic() {
+    // HP2 talk slide 25, written in the matrix order x4, x3, x2. One active
+    // coordinate being nonzero suffices; the other two may range over R.
+    let c = certify(
+        &["x4", "x3", "x2"],
+        &["x4"],
+        "1849*x4^2-4080*x4*x3+496*x4*x2+2600*x3^2-248*x3*x2+104*x2^2",
+    )
+    .unwrap();
+    assert_eq!(c.sign, 1);
+    assert_eq!(
+        c.method,
+        CertificateMethod::QuadraticLdl {
+            augmented: false,
+            diagonal: vec!["1849".into(), "645800/1849".into(), "536342/80725".into()],
+        }
+    );
+    let serialized = serde_json::to_string(&c).unwrap();
+    let decoded: DomainCertificate = serde_json::from_str(&serialized).unwrap();
+    assert_eq!(decoded, c);
+}
+
+#[test]
+fn exact_ldl_requires_the_origin_of_active_coordinates_to_be_excluded() {
+    let q = "x^2-x*y+y^2";
+    assert!(certify(&["x", "y"], &[], q).is_none());
+    assert!(certify(&["x", "y", "z"], &["z"], q).is_none());
+    assert!(certify(&["x", "y"], &["x+1", "1-x"], q).is_none());
+    // Coupled inequalities are deliberately absent from the derived box.
+    assert!(certify(&["x", "y"], &["x+y"], q).is_none());
+    for constraints in [["x"], ["x-2"], ["-x"], ["-x-2"]] {
+        let c = certify(&["x", "y"], &constraints, q).unwrap();
+        assert!(matches!(
+            c.method,
+            CertificateMethod::QuadraticLdl {
+                augmented: false,
+                ..
+            }
+        ));
+    }
+}
+
+#[test]
+fn exact_ldl_augmented_matrix_proves_global_strict_sign() {
+    let c = certify(&["x", "y"], &[], "(x-y)^2+x^2+2*x+2").unwrap();
+    assert_eq!(c.sign, 1);
+    assert_eq!(
+        c.method,
+        CertificateMethod::QuadraticLdl {
+            augmented: true,
+            diagonal: vec!["2".into(), "1/2".into(), "1".into()],
+        }
+    );
+    let negative = certify(&["x", "y"], &[], "-((x-y)^2+x^2+2*x+2)").unwrap();
+    assert_eq!(negative.sign, -1);
+    assert!(matches!(
+        negative.method,
+        CertificateMethod::QuadraticLdl {
+            augmented: true,
+            ..
+        }
+    ));
+    // The augmented matrix is only semidefinite: the zero at (-1,-1) remains.
+    assert!(certify(&["x", "y"], &[], "(x-y)^2+x^2+2*x+1").is_none());
+    assert!(certify(&["x", "y"], &[], "(x-y)^2+x^2+2*x+1/2").is_none());
+}
+
+#[test]
+fn exact_ldl_keeps_rational_coefficients_and_rejects_wrong_inertia() {
+    let c = certify(&["x", "y"], &["-x"], "-x^2/3+x*y/5-y^2/7").unwrap();
+    assert_eq!(c.sign, -1);
+    assert_eq!(
+        c.method,
+        CertificateMethod::QuadraticLdl {
+            augmented: false,
+            diagonal: vec!["1/3".into(), "79/700".into()],
+        }
+    );
+    assert!(certify(&["x", "y"], &["x"], "x^2-3*x*y+y^2").is_none());
+    assert!(certify(&["x", "y"], &["x"], "x*y").is_none());
+    assert!(certify(&["x", "y"], &["x"], "(x-y)^2").is_none());
+}
+
+#[test]
+fn exact_ldl_checker_recomputes_pivots_orientation_and_origin_exclusion() {
+    let (a, constraints) = setup(&["x", "y"], &["x"]);
+    let p = a.parse("x^2-x*y+y^2").unwrap();
+    let c = certify_nonzero(
+        &a,
+        &p,
+        &derive_domain(&a, &constraints, &[]).unwrap(),
+        &CertificateOptions::default(),
+    )
+    .unwrap()
+    .unwrap();
+    let mut forged = c.clone();
+    forged.method = CertificateMethod::QuadraticLdl {
+        augmented: false,
+        diagonal: vec!["1".into(), "1".into()],
+    };
+    assert!(verify_certificate(&a, &p, &constraints, &[], &forged).is_err());
+    let mut forged = c.clone();
+    forged.sign = -1;
+    assert!(verify_certificate(&a, &p, &constraints, &[], &forged).is_err());
+    let mut forged = c.clone();
+    if let CertificateMethod::QuadraticLdl { augmented, .. } = &mut forged.method {
+        *augmented = true;
+    }
+    assert!(verify_certificate(&a, &p, &constraints, &[], &forged).is_err());
+    let mut forged = c.clone();
+    forged.domain = derive_domain(&a, &[], &[]).unwrap();
+    assert!(verify_certificate(&a, &p, &[], &[], &forged).is_err());
+    let tiny_budget = CertificateOptions {
+        work_limit: 1,
+        ..CertificateOptions::default()
+    };
+    assert!(
+        certify_nonzero(&a, &p, &c.domain, &tiny_budget)
             .unwrap()
             .is_none()
     );

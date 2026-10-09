@@ -63,6 +63,9 @@ pub struct SectorTrace {
 #[serde(default)]
 pub struct Statistics {
     pub ordering_seconds: f64,
+    pub search_seconds: f64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ordering_search: Option<serde_json::Value>,
     pub projection_seconds: f64,
     pub lifting_seconds: f64,
     pub merging_seconds: f64,
@@ -71,6 +74,8 @@ pub struct Statistics {
     pub rejected_branches: usize,
     pub raw_cells: usize,
     pub projection_steps: Vec<ProjectionStep>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub optimized_projection: Option<crate::optimized_projection::OptimizedProjectionReport>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -91,6 +96,10 @@ pub struct SolveResult {
     /// Compatibility-only output. Raw cells and excluded seams remain above.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub merged_cells: Option<Vec<Cell>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub homogeneous: Option<Box<crate::homogeneity::HomogeneousEvidence>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub monotone: Option<Box<crate::monotone::MonotoneEvidence>>,
 }
 
 impl SolveResult {
@@ -110,6 +119,8 @@ impl SolveResult {
             statistics: Statistics::default(),
             diagnostic: Some(reason.into()),
             merged_cells: None,
+            homogeneous: None,
+            monotone: None,
         }
     }
 }

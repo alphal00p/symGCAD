@@ -45,6 +45,12 @@ Orders are written from the first lifted variable to the last; projection elimin
 
 `symgcad project` exports projection sets. `symgcad order` reports a chosen order, or the bounded search history for `mcts`. The search uses at most 256 trials by default and reserves most of the one-hour campaign for its selected solve. Timeouts never count as completed decompositions.
 
+The `optimized` engine reuses canonical factorizations, resultants, and projection prefixes. `positivity = true` permits removal of generated factors only with exact nonvanishing certificates; `input_positivity = true` extends this to input factors while retaining coordinate boundaries. `checkpoint_dir = "artifacts/checkpoints"` enables atomic, validated persistent prefixes shared by ordering trials. MCTS enables this directory automatically and includes its search history and cost in the solve result.
+
+An explicit `homogeneous_block = ["x1", "x2", "x3"]` with `homogeneous_anchor = "x2"` requests positive-scale reduction. The engine checks every constraint and split polynomial, proves the anchor positive, and reconstructs the original cylindrical boundaries. A fixed order must place the anchor before the other block variables. Nonhomogeneous inputs or incompatible fixed orders are rejected.
+
+The `monotone` engine accepts one split polynomial and detects positive-axis variables where exact linear/quadratic coefficient certificates prove strict increase and positive unbounded growth. It solves the endpoint problem using the optimized engine, then reconstructs every positive root sector. Its proof contains the coefficient certificates, exact endpoint identities, and complete base decomposition. Additional constraints involving a peeled variable prevent that peel; fixed orders and variable groups remain binding. This engine composes with homogeneous scale reconstruction.
+
 ## Results and verification
 
 JSON results retain the normalized input, variable order, canonical polynomial table, projection levels, rational sample points, and algebraic boundaries. A boundary references a polynomial and its zero-based index among distinct real roots on the current fiber, with a rational isolating interval at the sample point. Missing lower/upper boundaries mean negative/positive infinity.
@@ -71,3 +77,5 @@ target/release/symgcad bench artifacts/campaigns/core-fast.toml
 The fixed workload uses `mt2=1,mz2=5/18,s=10,t=-3`. The original symbolic ZZ workload keeps `s,t` symbolic and imposes `s>4,x_i>0`. Both remain distinct completion obligations. The hard topology is A446, with Ax12 as its crossing.
 
 The benchmark runner first freezes reference-completing cases and their orders, then performs repeated fresh-process comparisons. The parity ratio uses matched projection, lifting and merging phases; preparation and process wall times are reported separately. See `reference/README.md` for campaign configuration. Local milestone commits do not imply that unresolved corpus cases have been solved.
+
+`BENCHMARKS.md` records validated milestones, artifact hashes, and the limits of each performance claim. The Nix shell includes `perf` and Valgrind for profiling captured algebra workloads.

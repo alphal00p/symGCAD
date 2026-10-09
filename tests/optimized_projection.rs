@@ -8,7 +8,9 @@ use std::{
 use symgcad::{
     algebra::{Algebra, canonical},
     optimized_projection::{
-        OptimizedProjectionOptions, ProjectionCache, project_optimized, project_ordered_optimized,
+        DomainPruningOptions, OptimizedProjectionOptions, OptimizedProjectionReport,
+        ProjectionCache, project_optimized, project_ordered_certified, project_ordered_optimized,
+        replay_certified_projection, replay_certified_projection_with_inputs,
     },
     projection::project,
 };
@@ -238,4 +240,598 @@ fn matching_output_checksum_does_not_bypass_polynomial_validation() {
     assert_eq!(actual.levels, expected.levels);
     assert_eq!(report.cache.invalid_checkpoints, 2);
     assert_eq!(report.cache.prefix_disk_hits, 1);
+}
+
+fn two_variables() -> Algebra {
+    Algebra::new(&["x".into(), "y".into()]).unwrap()
+}
+
+#[test]
+fn certified_pruning_drops_only_generated_nonzero_factors() {
+    let a = two_variables();
+    let constraints = ["x", "y", "y^2+x+1"]
+        .iter()
+        .map(|s| a.parse(s).unwrap())
+        .collect::<Vec<_>>();
+    let baseline = project(&a, &constraints).unwrap();
+    let (pruned, report) = project_ordered_certified(
+        &a,
+        &constraints,
+        &[],
+        &[0, 1],
+        &Default::default(),
+        &Default::default(),
+    )
+    .unwrap();
+    assert_eq!(baseline.levels[0].len(), 2);
+    assert_eq!(pruned.levels[0], vec![a.parse("x").unwrap()]);
+    assert_eq!(pruned.levels[1], baseline.levels[1]);
+    assert_eq!(report.removals.len(), 1);
+    assert_eq!(report.removals[0].level, 0);
+    assert_eq!(report.removals[0].eliminated_variable, 1);
+    assert_eq!(
+        a.parse(&report.removals[0].certificate.polynomial).unwrap(),
+        a.parse("x+1").unwrap()
+    );
+    let replay =
+        replay_certified_projection(&a, &constraints, &[], &[0, 1], &[], &report.removals).unwrap();
+    assert_eq!(replay.levels, pruned.levels);
+}
+
+#[test]
+fn original_constraint_and_split_factors_are_always_protected() {
+    let a = two_variables();
+    for as_split in [false, true] {
+        let mut constraints = ["x", "y", "y^2+x+1"]
+            .iter()
+            .map(|s| a.parse(s).unwrap())
+            .collect::<Vec<_>>();
+        let mut split = vec![];
+        if as_split {
+            split.push(a.parse("x+1").unwrap());
+        } else {
+            constraints.push(a.parse("x+1").unwrap());
+        }
+        let all = constraints
+            .iter()
+            .chain(&split)
+            .cloned()
+            .collect::<Vec<_>>();
+        let baseline = project(&a, &all).unwrap();
+        let (pruned, report) = project_ordered_certified(
+            &a,
+            &constraints,
+            &split,
+            &[0, 1],
+            &Default::default(),
+            &Default::default(),
+        )
+        .unwrap();
+        assert_eq!(pruned.levels, baseline.levels);
+        assert!(report.removals.is_empty());
+    }
+}
+
+#[test]
+fn bounded_negative_certificates_prune_but_interior_zero_candidates_stay() {
+    let a = two_variables();
+    let constraints = ["x", "1-x", "y", "y^2+2-x"]
+        .iter()
+        .map(|s| a.parse(s).unwrap())
+        .collect::<Vec<_>>();
+    let (pruned, report) = project_ordered_certified(
+        &a,
+        &constraints,
+        &[],
+        &[0, 1],
+        &Default::default(),
+        &Default::default(),
+    )
+    .unwrap();
+    let removal = report
+        .removals
+        .iter()
+        .find(|r| a.parse(&r.certificate.polynomial).unwrap() == a.parse("x-2").unwrap())
+        .unwrap();
+    assert_eq!(removal.certificate.sign, -1);
+    assert_eq!(
+        pruned.levels,
+        replay_certified_projection(&a, &constraints, &[], &[0, 1], &[], &report.removals)
+            .unwrap()
+            .levels
+    );
+    let constraints = ["x", "y", "y^2+x-1"]
+        .iter()
+        .map(|s| a.parse(s).unwrap())
+        .collect::<Vec<_>>();
+    let (pruned, report) = project_ordered_certified(
+        &a,
+        &constraints,
+        &[],
+        &[0, 1],
+        &Default::default(),
+        &Default::default(),
+    )
+    .unwrap();
+    assert!(report.removals.is_empty());
+    assert!(pruned.levels[0].contains(&a.parse("x-1").unwrap()));
+}
+
+#[test]
+fn proof_replay_rejects_forged_protected_duplicate_and_wrong_level_removals() {
+    let a = two_variables();
+    let constraints = ["x", "y", "y^2+x+1"]
+        .iter()
+        .map(|s| a.parse(s).unwrap())
+        .collect::<Vec<_>>();
+    let (_, report) = project_ordered_certified(
+        &a,
+        &constraints,
+        &[],
+        &[0, 1],
+        &Default::default(),
+        &Default::default(),
+    )
+    .unwrap();
+    let valid = report.removals;
+    let mut changed = valid.clone();
+    changed[0].certificate.polynomial = "x".into();
+    assert!(replay_certified_projection(&a, &constraints, &[], &[0, 1], &[], &changed).is_err());
+    let mut changed = valid.clone();
+    changed[0].certificate.sign *= -1;
+    assert!(replay_certified_projection(&a, &constraints, &[], &[0, 1], &[], &changed).is_err());
+    let mut changed = valid.clone();
+    changed.push(changed[0].clone());
+    assert!(replay_certified_projection(&a, &constraints, &[], &[0, 1], &[], &changed).is_err());
+    let mut changed = valid.clone();
+    changed[0].level = 1;
+    assert!(replay_certified_projection(&a, &constraints, &[], &[0, 1], &[], &changed).is_err());
+    let mut changed = valid;
+    changed[0].eliminated_variable = 0;
+    assert!(replay_certified_projection(&a, &constraints, &[], &[0, 1], &[], &changed).is_err());
+}
+
+#[test]
+fn sequential_removals_replay_and_survive_checkpoint_restarts() {
+    let a = algebra();
+    let constraints = ["x", "y", "z", "z^2+x+1", "y^2+x+1"]
+        .iter()
+        .map(|s| a.parse(s).unwrap())
+        .collect::<Vec<_>>();
+    let directory = Directory::new();
+    let options = OptimizedProjectionOptions {
+        checkpoint_dir: Some(directory.0.clone()),
+        ..Default::default()
+    };
+    let (pruned, report) = project_ordered_certified(
+        &a,
+        &constraints,
+        &[],
+        &[0, 1, 2],
+        &options,
+        &Default::default(),
+    )
+    .unwrap();
+    assert!(report.removals.iter().any(|r| r.level == 1));
+    assert!(report.removals.iter().any(|r| r.level == 0));
+    assert_eq!(
+        pruned.levels,
+        replay_certified_projection(&a, &constraints, &[], &[0, 1, 2], &[], &report.removals)
+            .unwrap()
+            .levels
+    );
+    let (warm, warm_report) = project_ordered_certified(
+        &a,
+        &constraints,
+        &[],
+        &[0, 1, 2],
+        &options,
+        &Default::default(),
+    )
+    .unwrap();
+    assert_eq!(pruned.levels, warm.levels);
+    assert_eq!(report.removals, warm_report.removals);
+    assert_eq!(warm_report.cache.prefix_disk_hits, 3);
+}
+
+#[test]
+fn excluded_sign_constraint_keeps_the_shared_domain_conservative() {
+    let a = two_variables();
+    let constraints = ["x", "y", "x-2", "y^2+x-1"]
+        .iter()
+        .map(|s| a.parse(s).unwrap())
+        .collect::<Vec<_>>();
+    let (_, narrow) = project_ordered_certified(
+        &a,
+        &constraints,
+        &[],
+        &[0, 1],
+        &Default::default(),
+        &Default::default(),
+    )
+    .unwrap();
+    assert!(
+        narrow
+            .removals
+            .iter()
+            .any(|r| a.parse(&r.certificate.polynomial).unwrap() == a.parse("x-1").unwrap())
+    );
+    let options = DomainPruningOptions {
+        excluded_sign_constraints: vec![2],
+        ..Default::default()
+    };
+    let (shared, report) = project_ordered_certified(
+        &a,
+        &constraints,
+        &[],
+        &[0, 1],
+        &Default::default(),
+        &options,
+    )
+    .unwrap();
+    assert!(
+        !report
+            .removals
+            .iter()
+            .any(|r| a.parse(&r.certificate.polynomial).unwrap() == a.parse("x-1").unwrap())
+    );
+    assert!(shared.levels[0].contains(&a.parse("x-1").unwrap()));
+    assert_eq!(
+        shared.levels,
+        replay_certified_projection(&a, &constraints, &[], &[0, 1], &[2], &report.removals)
+            .unwrap()
+            .levels
+    );
+}
+
+#[test]
+fn cached_chooser_work_is_reused_by_certified_and_ordinary_final_projection() {
+    let a = two_variables();
+    let constraints = ["x", "y", "y^2+x+1"]
+        .iter()
+        .map(|s| a.parse(s).unwrap())
+        .collect::<Vec<_>>();
+    let mut cache = ProjectionCache::new(&a, &Default::default());
+    let basis = cache.initial_basis(&constraints).unwrap();
+    cache.project_one(&basis, 1).unwrap();
+    let misses = cache.report.cache.resultant_misses;
+    let pruned = cache
+        .project_ordered_certified(&constraints, &[], &[0, 1], &Default::default())
+        .unwrap();
+    assert_eq!(cache.report.cache.resultant_misses, misses);
+    assert_eq!(pruned.levels[0], vec![a.parse("x").unwrap()]);
+    assert_eq!(cache.report.removals.len(), 1);
+    let full = cache.project_ordered(&constraints, &[0, 1]).unwrap();
+    assert_eq!(full.levels, project(&a, &constraints).unwrap().levels);
+    assert!(cache.report.removals.is_empty());
+}
+
+#[test]
+fn progress_survives_cache_drop_and_does_not_change_checkpoint_keys() {
+    let a = algebra();
+    let directory = Directory::new();
+    let progress_path = directory.0.join("progress/first.json");
+    let mut options = OptimizedProjectionOptions {
+        checkpoint_dir: Some(directory.0.join("checkpoints")),
+        progress_path: Some(progress_path.clone()),
+        ..Default::default()
+    };
+    let inputs = ["z^2+x", "z+y"]
+        .iter()
+        .map(|s| a.parse(s).unwrap())
+        .collect::<Vec<_>>();
+    let read_progress = |path: &PathBuf| -> OptimizedProjectionReport {
+        serde_json::from_slice(&fs::read(path).unwrap()).unwrap()
+    };
+    {
+        let mut cache = ProjectionCache::new(&a, &options);
+        let basis = cache.initial_basis(&inputs).unwrap();
+        let initial = read_progress(&progress_path);
+        assert_eq!(initial.checkpoints.len(), 1);
+        assert_eq!(initial.checkpoints[0].eliminated_variable, None);
+        assert_eq!(initial.checkpoints[0].polynomial_count, basis.len());
+        let output = cache.project_one(&basis, 2).unwrap();
+        let after_step = read_progress(&progress_path);
+        assert_eq!(after_step.checkpoints.len(), 2);
+        assert_eq!(after_step.checkpoints[1].eliminated_variable, Some(2));
+        assert_eq!(after_step.checkpoints[1].polynomial_count, output.len());
+        assert!(after_step.checkpoints[1].term_count > 0);
+        assert!(after_step.checkpoints[1].max_coefficient_bits > 0);
+        assert_eq!(after_step.cache.written_checkpoints, 2);
+    }
+    let saved = read_progress(&progress_path);
+    options.progress_path = Some(directory.0.join("progress/second.json"));
+    let mut restarted = ProjectionCache::new(&a, &options);
+    let basis = restarted.initial_basis(&inputs).unwrap();
+    restarted.project_one(&basis, 2).unwrap();
+    let warm = read_progress(options.progress_path.as_ref().unwrap());
+    assert_eq!(warm.cache.prefix_disk_hits, 2);
+    assert_eq!(
+        saved.checkpoints.iter().map(|c| &c.key).collect::<Vec<_>>(),
+        warm.checkpoints.iter().map(|c| &c.key).collect::<Vec<_>>()
+    );
+    assert_eq!(
+        fs::read_dir(directory.0.join("progress")).unwrap().count(),
+        2
+    );
+    assert_eq!(read_progress(&progress_path).checkpoints.len(), 2);
+}
+
+#[test]
+fn final_progress_includes_certified_removals() {
+    let a = two_variables();
+    let directory = Directory::new();
+    let progress_path = directory.0.join("progress.json");
+    let options = OptimizedProjectionOptions {
+        progress_path: Some(progress_path.clone()),
+        ..Default::default()
+    };
+    let constraints = ["x", "y", "y^2+x+1"]
+        .iter()
+        .map(|s| a.parse(s).unwrap())
+        .collect::<Vec<_>>();
+    let (_, report) = project_ordered_certified(
+        &a,
+        &constraints,
+        &[],
+        &[0, 1],
+        &options,
+        &Default::default(),
+    )
+    .unwrap();
+    let saved: OptimizedProjectionReport =
+        serde_json::from_slice(&fs::read(progress_path).unwrap()).unwrap();
+    assert_eq!(saved.removals, report.removals);
+    assert_eq!(saved.removals.len(), 1);
+}
+
+fn input_pruning() -> DomainPruningOptions {
+    DomainPruningOptions {
+        prune_input: true,
+        ..Default::default()
+    }
+}
+
+#[test]
+fn initial_positive_factors_are_certified_and_domain_faces_are_preserved() {
+    let a = two_variables();
+    let constraints = ["2*x", "3-3*x", "y", "2-y", "x^2+y^2+1"]
+        .iter()
+        .map(|s| a.parse(s).unwrap())
+        .collect::<Vec<_>>();
+    let split = vec![a.parse("x+y+1").unwrap(), a.parse("y+1").unwrap()];
+    let (pruned, report) = project_ordered_certified(
+        &a,
+        &constraints,
+        &split,
+        &[0, 1],
+        &Default::default(),
+        &input_pruning(),
+    )
+    .unwrap();
+    assert_eq!(report.initial_removals.len(), 2);
+    for expression in ["x", "x-1"] {
+        assert!(pruned.levels[0].contains(&a.parse(expression).unwrap()));
+    }
+    for expression in ["y", "y-2", "y+1"] {
+        assert!(pruned.levels[1].contains(&a.parse(expression).unwrap()));
+    }
+    assert_eq!(pruned.levels[0].len(), 2);
+    assert_eq!(pruned.levels[1].len(), 3);
+    let replay = replay_certified_projection_with_inputs(
+        &a,
+        &constraints,
+        &split,
+        &[0, 1],
+        &[],
+        &report.initial_removals,
+        &report.removals,
+    )
+    .unwrap();
+    assert_eq!(pruned.levels, replay.levels);
+    let (_, default_report) = project_ordered_certified(
+        &a,
+        &constraints,
+        &split,
+        &[0, 1],
+        &Default::default(),
+        &Default::default(),
+    )
+    .unwrap();
+    assert!(default_report.initial_removals.is_empty());
+}
+
+#[test]
+fn initial_removal_preserves_original_signs_and_does_not_certify_empty_boxes() {
+    let a = two_variables();
+    let constraints = ["x", "y", "-x^2-y^2-1"]
+        .iter()
+        .map(|s| a.parse(s).unwrap())
+        .collect::<Vec<_>>();
+    let (pruned, report) = project_ordered_certified(
+        &a,
+        &constraints,
+        &[],
+        &[0, 1],
+        &Default::default(),
+        &input_pruning(),
+    )
+    .unwrap();
+    assert_eq!(report.initial_removals.len(), 1);
+    assert_eq!(
+        pruned.levels,
+        vec![vec![a.parse("x").unwrap()], vec![a.parse("y").unwrap()]]
+    );
+    // Basis representatives are canonically positive; exact original leaf
+    // signs still reject this contradictory conjunction after input pruning.
+    let sample = [
+        symgcad::algebra::rational("1").unwrap(),
+        symgcad::algebra::rational("1").unwrap(),
+    ];
+    assert_eq!(
+        symgcad::solver::sign(&symgcad::solver::evaluate(&constraints[2], &sample)),
+        -1
+    );
+    let mut empty_box = constraints.clone();
+    empty_box.push(a.parse("-x-1").unwrap());
+    let (_, report) = project_ordered_certified(
+        &a,
+        &empty_box,
+        &[],
+        &[0, 1],
+        &Default::default(),
+        &input_pruning(),
+    )
+    .unwrap();
+    assert!(report.initial_removals.is_empty());
+    assert!(report.removals.is_empty());
+}
+
+#[test]
+fn shared_domain_exclusions_and_interior_seams_prevent_initial_removals() {
+    let a = two_variables();
+    let constraints = ["x", "y", "x-2", "x+y-2"]
+        .iter()
+        .map(|s| a.parse(s).unwrap())
+        .collect::<Vec<_>>();
+    let (_, narrow) = project_ordered_certified(
+        &a,
+        &constraints,
+        &[],
+        &[0, 1],
+        &Default::default(),
+        &input_pruning(),
+    )
+    .unwrap();
+    assert_eq!(narrow.initial_removals.len(), 1);
+    let shared_options = DomainPruningOptions {
+        excluded_sign_constraints: vec![2],
+        ..input_pruning()
+    };
+    let (shared, report) = project_ordered_certified(
+        &a,
+        &constraints,
+        &[],
+        &[0, 1],
+        &Default::default(),
+        &shared_options,
+    )
+    .unwrap();
+    assert!(report.initial_removals.is_empty());
+    assert!(shared.levels[1].contains(&a.parse("x+y-2").unwrap()));
+    assert!(
+        replay_certified_projection_with_inputs(
+            &a,
+            &constraints,
+            &[],
+            &[0, 1],
+            &[2],
+            &narrow.initial_removals,
+            &narrow.removals,
+        )
+        .is_err()
+    );
+    let seam_constraints = ["x", "1-x", "y", "1-y", "(2*x-1)^2+(2*y-1)^2"]
+        .iter()
+        .map(|s| a.parse(s).unwrap())
+        .collect::<Vec<_>>();
+    let (seam, seam_report) = project_ordered_certified(
+        &a,
+        &seam_constraints,
+        &[],
+        &[0, 1],
+        &Default::default(),
+        &input_pruning(),
+    )
+    .unwrap();
+    assert!(seam_report.initial_removals.is_empty());
+    assert!(seam.levels[1].contains(&canonical(&seam_constraints[4])));
+}
+
+#[test]
+fn initial_replay_rejects_boundary_duplicate_absent_and_forged_certificates() {
+    let a = two_variables();
+    let constraints = ["x", "y", "x^2+y^2+1"]
+        .iter()
+        .map(|s| a.parse(s).unwrap())
+        .collect::<Vec<_>>();
+    let (_, report) = project_ordered_certified(
+        &a,
+        &constraints,
+        &[],
+        &[0, 1],
+        &Default::default(),
+        &input_pruning(),
+    )
+    .unwrap();
+    let check = |certificates: &[_]| {
+        replay_certified_projection_with_inputs(
+            &a,
+            &constraints,
+            &[],
+            &[0, 1],
+            &[],
+            certificates,
+            &report.removals,
+        )
+    };
+    let proof = report.initial_removals[0].clone();
+    assert!(check(&[proof.clone(), proof.clone()]).is_err());
+    let mut forged = proof.clone();
+    forged.sign *= -1;
+    assert!(check(&[forged]).is_err());
+    let mut absent = proof.clone();
+    absent.polynomial = "x^2+y^2+2".into();
+    assert!(check(&[absent]).is_err());
+    let domain = symgcad::domain::derive_domain(&a, &constraints, &[]).unwrap();
+    let boundary =
+        symgcad::domain::certify_nonzero(&a, &constraints[0], &domain, &Default::default())
+            .unwrap()
+            .unwrap();
+    assert!(check(&[boundary]).is_err());
+    let mut forged_domain = proof;
+    forged_domain.domain.bounds[0].lower = Some("2".into());
+    assert!(check(&[forged_domain]).is_err());
+}
+
+#[test]
+fn input_certificates_survive_restarts_and_plain_projection_clears_them() {
+    let a = two_variables();
+    let directory = Directory::new();
+    let options = OptimizedProjectionOptions {
+        checkpoint_dir: Some(directory.0.join("checkpoints")),
+        progress_path: Some(directory.0.join("progress.json")),
+        ..Default::default()
+    };
+    let constraints = ["x", "y", "x^2+y^2+1"]
+        .iter()
+        .map(|s| a.parse(s).unwrap())
+        .collect::<Vec<_>>();
+    let mut cache = ProjectionCache::new(&a, &options);
+    let basis = cache
+        .initial_basis_certified(&constraints, &[], &input_pruning())
+        .unwrap();
+    assert_eq!(basis.len(), 2);
+    cache.project_one(&basis, 1).unwrap();
+    let misses = cache.report.cache.prefix_misses;
+    let pruned = cache
+        .project_ordered_certified(&constraints, &[], &[0, 1], &input_pruning())
+        .unwrap();
+    assert_eq!(cache.report.cache.prefix_misses, misses);
+    let initial_removals = cache.report.initial_removals.clone();
+    let saved: OptimizedProjectionReport =
+        serde_json::from_slice(&fs::read(options.progress_path.as_ref().unwrap()).unwrap())
+            .unwrap();
+    assert_eq!(saved.initial_removals, initial_removals);
+    drop(cache);
+    let mut restarted = ProjectionCache::new(&a, &options);
+    let warm = restarted
+        .project_ordered_certified(&constraints, &[], &[0, 1], &input_pruning())
+        .unwrap();
+    assert_eq!(warm.levels, pruned.levels);
+    assert_eq!(restarted.report.initial_removals, initial_removals);
+    assert_eq!(restarted.report.cache.prefix_disk_hits, 2);
+    let full = restarted.project_ordered(&constraints, &[0, 1]).unwrap();
+    assert_eq!(full.levels, project(&a, &constraints).unwrap().levels);
+    assert!(restarted.report.initial_removals.is_empty());
 }

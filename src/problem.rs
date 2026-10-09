@@ -4,7 +4,7 @@ use crate::{
     algebra::{Algebra, Poly, rational},
 };
 use anyhow::{Result, bail, ensure};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 pub struct NormalizedProblem {
     pub algebra: Algebra,
@@ -41,6 +41,12 @@ fn substitute(text: &str, parameters: &BTreeMap<String, String>) -> Result<Strin
 
 pub fn normalize(problem: &Problem, order: &[String]) -> Result<NormalizedProblem> {
     problem.validate()?;
+    ensure!(
+        order.len() == problem.variables.len()
+            && order.iter().collect::<BTreeSet<_>>()
+                == problem.variables.iter().collect::<BTreeSet<_>>(),
+        "normalization order must be a permutation of all declared variables"
+    );
     let algebra = Algebra::new(order)?;
     let mut positives = Vec::new();
     for constraint in &problem.constraints {
@@ -71,16 +77,30 @@ pub fn normalize(problem: &Problem, order: &[String]) -> Result<NormalizedProble
                 }
             }
         };
-        positives.push(algebra.parse(&expression)?);
+        positives.push(positive_primitive(algebra.parse(&expression)?));
     }
     let split = problem
         .split
         .iter()
-        .map(|p| algebra.parse(&substitute(p, &problem.parameters)?))
+        .map(|p| {
+            Ok(positive_primitive(
+                algebra.parse(&substitute(p, &problem.parameters)?)?,
+            ))
+        })
         .collect::<Result<Vec<_>>>()?;
     Ok(NormalizedProblem {
         algebra,
         positives,
         split,
     })
+}
+
+/// Clear rational denominators and content using a strictly positive scale.
+/// In particular a negative one-term polynomial must retain its sign.
+fn positive_primitive(polynomial: Poly) -> Poly {
+    if polynomial.is_zero() {
+        return polynomial;
+    }
+    let positive_content = polynomial.content().abs();
+    polynomial.div_coeff(&positive_content)
 }

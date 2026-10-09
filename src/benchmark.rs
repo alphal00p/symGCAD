@@ -615,6 +615,7 @@ pub fn run_bounded(command: &mut Command, limits: &Limits) -> Result<ProcessOutc
         .checked_mul(1024 * 1024)
         .context("memory limit overflow")?;
     let workers = limits.workers;
+    let supervisor_pid = unsafe { libc::getpid() };
     // Compute affinity before fork; the pre-exec hook only performs syscalls.
     let mut allowed = unsafe { std::mem::zeroed::<libc::cpu_set_t>() };
     let affinity_ok =
@@ -634,12 +635,29 @@ pub fn run_bounded(command: &mut Command, limits: &Limits) -> Result<ProcessOutc
     }
     unsafe {
         command.pre_exec(move || {
+            // Nested CLI supervisors create their own worker groups. Kill each
+            // direct child if its supervisor disappears, so cancellation also
+            // propagates through those nested groups during search campaigns.
+            if libc::prctl(libc::PR_SET_PDEATHSIG, libc::SIGKILL) != 0 {
+                return Err(std::io::Error::last_os_error());
+            }
+            if libc::getppid() != supervisor_pid {
+                return Err(std::io::Error::from_raw_os_error(libc::ECHILD));
+            }
             if libc::setpgid(0, 0) != 0 {
                 return Err(std::io::Error::last_os_error());
             }
+            let mut inherited = libc::rlimit {
+                rlim_cur: 0,
+                rlim_max: 0,
+            };
+            if libc::getrlimit(libc::RLIMIT_AS, &mut inherited) != 0 {
+                return Err(std::io::Error::last_os_error());
+            }
+            let effective_memory = memory.min(inherited.rlim_max);
             let cap = libc::rlimit {
-                rlim_cur: memory,
-                rlim_max: memory,
+                rlim_cur: effective_memory,
+                rlim_max: effective_memory,
             };
             if libc::setrlimit(libc::RLIMIT_AS, &cap) != 0 {
                 return Err(std::io::Error::last_os_error());
@@ -734,16 +752,11 @@ fn process_group_rss(group: libc::pid_t) -> u64 {
     let Ok(entries) = fs::read_dir("/proc") else {
         return 0;
     };
-    let mut rss = 0;
+    let mut processes = Vec::new();
     for entry in entries.flatten() {
-        if !entry
-            .file_name()
-            .to_string_lossy()
-            .bytes()
-            .all(|b| b.is_ascii_digit())
-        {
+        let Ok(pid) = entry.file_name().to_string_lossy().parse::<libc::pid_t>() else {
             continue;
-        }
+        };
         let Ok(stat) = fs::read_to_string(entry.path().join("stat")) else {
             continue;
         };
@@ -752,15 +765,20 @@ fn process_group_rss(group: libc::pid_t) -> u64 {
         let Some((_, tail)) = stat.rsplit_once(')') else {
             continue;
         };
-        if tail
-            .split_whitespace()
-            .nth(2)
-            .and_then(|s| s.parse::<i32>().ok())
-            != Some(group)
-        {
+        let mut fields = tail.split_whitespace();
+        fields.next();
+        let (Some(parent), Some(process_group)) = (fields.next(), fields.next()) else {
             continue;
-        }
-        if let Ok(status) = fs::read_to_string(entry.path().join("status")) {
+        };
+        let (Ok(parent), Ok(process_group)) = (parent.parse(), process_group.parse()) else {
+            continue;
+        };
+        processes.push((pid, parent, process_group));
+    }
+    let members = process_tree_members(&processes, group);
+    let mut rss = 0;
+    for pid in members {
+        if let Ok(status) = fs::read_to_string(format!("/proc/{pid}/status")) {
             if let Some(line) = status.lines().find(|s| s.starts_with("VmRSS:")) {
                 rss += line
                     .split_whitespace()
@@ -771,6 +789,27 @@ fn process_group_rss(group: libc::pid_t) -> u64 {
         }
     }
     rss
+}
+
+#[cfg(target_os = "linux")]
+fn process_tree_members(
+    processes: &[(libc::pid_t, libc::pid_t, libc::pid_t)],
+    group: libc::pid_t,
+) -> std::collections::HashSet<libc::pid_t> {
+    let mut members = std::collections::HashSet::from([group]);
+    // A public CLI worker may itself supervise children in new process groups.
+    // Keep direct-group accounting and include descendants across those groups.
+    loop {
+        let previous = members.len();
+        for &(pid, parent, process_group) in processes {
+            if process_group == group || members.contains(&parent) {
+                members.insert(pid);
+            }
+        }
+        if members.len() == previous {
+            return members;
+        }
+    }
 }
 
 /// Invoke only the independently built native upstream package. The adapter
@@ -847,5 +886,18 @@ mod tests {
         assert_eq!(outcome.status, "completed");
         assert_eq!(outcome.stdout, "result");
         assert_eq!(outcome.stderr, "diagnostic");
+    }
+    #[test]
+    fn nested_worker_groups_remain_in_memory_accounting() {
+        // Deliberately reverse ancestry order, and include an unrelated worker.
+        let processes = [
+            (30, 20, 30),
+            (20, 10, 20),
+            (11, 1, 10),
+            (99, 1, 99),
+            (10, 1, 10),
+        ];
+        let members = process_tree_members(&processes, 10);
+        assert_eq!(members, std::collections::HashSet::from([10, 11, 20, 30]));
     }
 }

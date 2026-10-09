@@ -86,3 +86,131 @@ fn exact_parameter_specialization_and_json_roundtrip() {
     let restored = serde_json::from_str(&serde_json::to_string(&result).unwrap()).unwrap();
     verify(&restored).unwrap();
 }
+
+#[test]
+fn optimized_projection_keeps_raw_cells_and_certifies_pruning() {
+    let mut p = Problem {
+        variables: vec!["x".into(), "y".into()],
+        constraints: vec!["x>0".into(), "y>0".into()],
+        split: vec!["y^2+x*y+1".into()],
+        ..Default::default()
+    };
+    let baseline = solve(&p).unwrap();
+    p.solver.engine = "optimized".into();
+    let optimized = solve(&p).unwrap();
+    assert_eq!(baseline.polynomials, optimized.polynomials);
+    assert_eq!(baseline.cells, optimized.cells);
+    verify(&optimized).unwrap();
+    p.solver.positivity = true;
+    let pruned = solve(&p).unwrap();
+    verify(&pruned).unwrap();
+    assert!(
+        !pruned
+            .statistics
+            .optimized_projection
+            .as_ref()
+            .unwrap()
+            .removals
+            .is_empty()
+    );
+    let mut broken = pruned;
+    broken
+        .statistics
+        .optimized_projection
+        .as_mut()
+        .unwrap()
+        .removals
+        .clear();
+    assert!(verify(&broken).is_err());
+}
+
+#[test]
+fn ordering_work_is_reused_by_optimized_final_projection() {
+    let mut p = Problem {
+        variables: vec!["x".into(), "y".into(), "z".into()],
+        constraints: vec!["x>0".into(), "y>0".into(), "z>0".into()],
+        split: vec!["x+y+z-1".into()],
+        ..Default::default()
+    };
+    p.solver.engine = "optimized".into();
+    p.solver.ordering = "mods".into();
+    p.solver.positivity = true;
+    let result = solve(&p).unwrap();
+    verify(&result).unwrap();
+    assert!(
+        result
+            .statistics
+            .optimized_projection
+            .unwrap()
+            .cache
+            .prefix_memory_hits
+            >= 2
+    );
+}
+
+#[test]
+fn denominator_clearing_preserves_strict_negative_signs() {
+    let result = run(&["x"], &["-x/3>0", "x/7>-1/14"], &["-2*x/9"]);
+    assert_eq!(result.cells.len(), 1);
+    assert_eq!(result.cells[0].signs, vec![1]);
+    let normalized = symgcad::problem::normalize(&result.problem, &result.order).unwrap();
+    assert_eq!(
+        normalized.positives[0],
+        normalized.algebra.parse("-x").unwrap()
+    );
+    assert!(
+        normalized
+            .positives
+            .iter()
+            .flat_map(|p| &p.coefficients)
+            .all(|c| c.is_integer())
+    );
+}
+
+#[test]
+fn verifier_rejects_dropped_unconstrained_dimensions() {
+    let mut result = run(&[], &[], &[]);
+    result.problem.variables.push("x".into());
+    assert!(verify(&result).is_err());
+    let problem = Problem {
+        variables: vec!["x".into()],
+        ..Default::default()
+    };
+    assert!(symgcad::problem::normalize(&problem, &[]).is_err());
+}
+
+#[test]
+fn certified_positive_input_is_removed_without_changing_its_sign() {
+    let mut p = Problem {
+        variables: vec!["x".into(), "y".into()],
+        constraints: vec!["x>0".into(), "y>0".into()],
+        split: vec!["-x^2-x*y-y^2".into()],
+        ..Default::default()
+    };
+    p.solver.engine = "optimized".into();
+    p.solver.positivity = true;
+    p.solver.input_positivity = true;
+    let result = solve(&p).unwrap();
+    assert_eq!(result.cells.len(), 1);
+    assert_eq!(result.cells[0].signs, vec![-1]);
+    assert_eq!(
+        result
+            .statistics
+            .optimized_projection
+            .as_ref()
+            .unwrap()
+            .initial_removals
+            .len(),
+        1
+    );
+    verify(&result).unwrap();
+    let mut broken = result;
+    broken
+        .statistics
+        .optimized_projection
+        .as_mut()
+        .unwrap()
+        .initial_removals
+        .clear();
+    assert!(verify(&broken).is_err());
+}

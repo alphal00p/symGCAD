@@ -164,8 +164,19 @@ pub enum BernsteinProof {
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum CertificateMethod {
     ShiftedCoefficients,
-    Polya { order: u32 },
-    Bernstein { proof: BernsteinProof },
+    Polya {
+        order: u32,
+    },
+    /// Exact LDL^T pivots for the signed quadratic matrix. An augmented
+    /// matrix uses the constant coordinate 1; otherwise the domain must
+    /// exclude the origin of the polynomial's active coordinates.
+    QuadraticLdl {
+        augmented: bool,
+        diagonal: Vec<String>,
+    },
+    Bernstein {
+        proof: BernsteinProof,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -231,6 +242,15 @@ pub fn certify_nonzero(
                 }
             }
         }
+    }
+    if let Some(proof) = quadratic_ldl(polynomial, domain, options)? {
+        return Ok(Some(make(
+            proof.sign,
+            CertificateMethod::QuadraticLdl {
+                augmented: proof.augmented,
+                diagonal: proof.diagonal,
+            },
+        )));
     }
     if let Some((unit, active)) = to_unit_box(algebra, polynomial, domain, options.max_terms)? {
         let sample = vec![Rational::from((1, 2)); algebra.names.len()];
@@ -324,6 +344,14 @@ pub fn verify_certificate(
             }
             coefficient_sign(&p, &positive) == Some(certificate.sign)
         }
+        CertificateMethod::QuadraticLdl {
+            augmented,
+            diagonal,
+        } => quadratic_ldl(polynomial, &domain, &certificate.limits)?.is_some_and(|proof| {
+            proof.sign == certificate.sign
+                && proof.augmented == *augmented
+                && proof.diagonal == *diagonal
+        }),
         CertificateMethod::Bernstein { proof } => {
             let Some((unit, active)) =
                 to_unit_box(algebra, polynomial, &domain, certificate.limits.max_terms)?
@@ -452,6 +480,134 @@ fn coefficient_sign(p: &Poly, positive: &[bool]) -> Option<i8> {
         strict_term |= m.iter().enumerate().all(|(v, e)| positive[v] || *e == 0);
     }
     strict_term.then_some(sign)
+}
+
+struct QuadraticProof {
+    sign: i8,
+    augmented: bool,
+    diagonal: Vec<String>,
+}
+
+/// Reconstruct q(x) = z^T A z exactly and certify sign*A positive definite.
+/// The entries and all Schur complements are rational; no numerical tolerance
+/// or sampled eigenvalue enters the proof. Only positive pivots are accepted,
+/// so semidefinite forms remain inconclusive even if their nullspace might
+/// miss the domain.
+fn quadratic_ldl(
+    polynomial: &Poly,
+    domain: &Domain,
+    options: &CertificateOptions,
+) -> Result<Option<QuadraticProof>> {
+    let active = support(polynomial);
+    if active.is_empty() || polynomial.nterms() > options.max_terms {
+        return Ok(None);
+    }
+    let mut budget = ProofBudget::new(options);
+    let mut augmented = false;
+    for powers in polynomial.exponents_iter() {
+        if !budget.spend(powers.len()) {
+            return Ok(None);
+        }
+        let Some(degree) = powers.iter().try_fold(0u32, |sum, &e| sum.checked_add(e)) else {
+            return Ok(None);
+        };
+        if degree > 2 {
+            return Ok(None);
+        }
+        augmented |= degree < 2;
+    }
+    if !augmented {
+        // Positive definiteness gives zero only at the origin in these active
+        // coordinates. A bound on an inactive variable cannot exclude it.
+        let mut excludes_origin = false;
+        for &v in &active {
+            let b = &domain.bounds[v];
+            excludes_origin |= match &b.lower {
+                Some(lower) => rational(lower)? >= Rational::zero(),
+                None => false,
+            } || match &b.upper {
+                Some(upper) => rational(upper)? <= Rational::zero(),
+                None => false,
+            };
+        }
+        if !excludes_origin {
+            return Ok(None);
+        }
+    }
+    let dimension = active.len() + usize::from(augmented);
+    if !budget.spend(dimension.saturating_mul(dimension)) {
+        return Ok(None);
+    }
+    let mut matrix = vec![vec![Rational::zero(); dimension]; dimension];
+    for (coefficient, powers) in polynomial
+        .coefficients
+        .iter()
+        .zip(polynomial.exponents_iter())
+    {
+        if !budget.spend(active.len()) {
+            return Ok(None);
+        }
+        let factors: Vec<_> = active
+            .iter()
+            .enumerate()
+            .flat_map(|(i, &v)| std::iter::repeat_n(i, powers[v] as usize))
+            .collect();
+        let (i, j) = match factors.as_slice() {
+            [] => (active.len(), active.len()),
+            [i] => (*i, active.len()),
+            [i, j] => (*i, *j),
+            _ => unreachable!("total degree checked above"),
+        };
+        let entry = if i == j {
+            coefficient.clone()
+        } else {
+            coefficient.clone() / Rational::from(2)
+        };
+        matrix[i][j] += entry.clone();
+        if i != j {
+            matrix[j][i] += entry;
+        }
+    }
+    // A positive/negative definite matrix has diagonals of that strict sign.
+    // The first diagonal therefore fixes the only possible orientation.
+    if matrix[0][0].is_zero() {
+        return Ok(None);
+    }
+    let sign = if matrix[0][0].is_negative() { -1 } else { 1 };
+    if sign < 0 {
+        for row in &mut matrix {
+            for entry in row {
+                *entry = -entry.clone();
+            }
+        }
+    }
+    let mut diagonal = Vec::with_capacity(dimension);
+    for k in 0..dimension {
+        if !budget.spend(1) {
+            return Ok(None);
+        }
+        let pivot = matrix[k][k].clone();
+        if pivot <= Rational::zero() {
+            return Ok(None);
+        }
+        diagonal.push(pivot.to_string());
+        // Store only the lower triangle of each exact Schur complement.
+        // Entries in column k stay intact until all updates use them.
+        for i in k + 1..dimension {
+            for j in k + 1..=i {
+                if !budget.spend(3) {
+                    return Ok(None);
+                }
+                let correction = &matrix[i][k] * &matrix[j][k] / pivot.clone();
+                matrix[i][j] -= correction;
+            }
+        }
+    }
+    Ok(Some(QuadraticProof {
+        sign,
+        augmented,
+        diagonal,
+    }))
 }
 
 pub fn homogeneous_degree(p: &Poly, variables: &[usize]) -> Option<u32> {

@@ -79,9 +79,21 @@ pub fn choose_order(
     groups: &[Vec<usize>],
     method: OrderingMethod,
 ) -> Result<OrderingResult> {
+    choose_order_from_basis(algebra, factors(positives)?, groups, method, project_one)
+}
+
+/// Apply the same conventions with a caller-owned projection cache. The basis
+/// must be canonical square-free factors in the algebra's stable variable map.
+pub fn choose_order_from_basis(
+    algebra: &Algebra,
+    initial_basis: Vec<Poly>,
+    groups: &[Vec<usize>],
+    method: OrderingMethod,
+    mut project_step: impl FnMut(&[Poly], usize) -> Result<Vec<Poly>>,
+) -> Result<OrderingResult> {
     validate_groups(groups, algebra.names.len())?;
     ensure!(
-        positives
+        initial_basis
             .iter()
             .all(|p| p.variables() == &algebra.variables),
         "ordering input has a different variable map"
@@ -93,8 +105,7 @@ pub fn choose_order(
             projections: vec![],
         });
     }
-    let mut basis = factors(positives)?;
-    let initial_basis = basis.clone();
+    let mut basis = initial_basis.clone();
     let mut eliminated = Vec::with_capacity(algebra.names.len());
     let mut projections = Vec::new();
     for group in groups.iter().rev() {
@@ -107,7 +118,7 @@ pub fn choose_order(
             } else if method == OrderingMethod::Sotd {
                 let mut best = None;
                 for &variable in &remaining {
-                    let candidate = project_one(&basis, variable)?;
+                    let candidate = project_step(&basis, variable)?;
                     let score = sotd(&candidate);
                     if best
                         .as_ref()
@@ -128,7 +139,7 @@ pub fn choose_order(
             if need_projection {
                 basis = match selected_projection {
                     Some(projected) => projected,
-                    None => project_one(&basis, chosen)?,
+                    None => project_step(&basis, chosen)?,
                 };
                 projections.push(ProjectionChoice {
                     variable: chosen,

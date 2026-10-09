@@ -3,7 +3,7 @@ use crate::{
     algebra::{Algebra, Poly, rational},
     output::{Axis, Cell, LiftTrace, RootBound, SolveResult, Status},
     problem::normalize,
-    projection::project,
+    projection::project_checked,
     roots::{isolate_union, roots_in_open_interval},
     solver::{projection_table, sign},
 };
@@ -212,12 +212,24 @@ impl Checker<'_> {
 }
 
 pub fn verify(result: &SolveResult) -> Result<Verification> {
+    if result.homogeneous.is_some() {
+        return crate::homogeneity::verify_homogeneous(result);
+    }
+    if result.monotone.is_some() {
+        return crate::monotone::verify_monotone(result);
+    }
     ensure!(result.schema_version == 1, "unsupported result schema");
     ensure!(
         result.status == Status::CompleteGeneric,
         "result is not complete_generic"
     );
     let mut check_problem = result.problem.clone();
+    if !result.problem.solver.order.is_empty() || result.problem.solver.ordering == "given" {
+        ensure!(
+            crate::solver::selected_order(&result.problem)? == result.order,
+            "result order differs from the requested fixed order"
+        );
+    }
     check_problem.solver.order = result.order.clone();
     check_problem.validate()?;
     let normalized = normalize(&result.problem, &result.order)?;
@@ -242,7 +254,49 @@ pub fn verify(result: &SolveResult) -> Result<Verification> {
     );
     let mut all = normalized.positives.clone();
     all.extend(normalized.split.clone());
-    let expected = project(algebra, &all)?;
+    let expected = if result.problem.solver.positivity {
+        let original = normalize(&result.problem, &result.problem.variables)?;
+        let indices = result
+            .order
+            .iter()
+            .map(|name| {
+                result
+                    .problem
+                    .variables
+                    .iter()
+                    .position(|n| n == name)
+                    .expect("validated order")
+            })
+            .collect::<Vec<_>>();
+        let evidence = result
+            .statistics
+            .optimized_projection
+            .as_ref()
+            .ok_or_else(|| anyhow!("missing certified projection evidence"))?;
+        ensure!(
+            result.problem.solver.input_positivity || evidence.initial_removals.is_empty(),
+            "input factor removals require input_positivity mode"
+        );
+        crate::optimized_projection::replay_certified_projection_with_inputs(
+            &original.algebra,
+            &original.positives,
+            &original.split,
+            &indices,
+            &[],
+            &evidence.initial_removals,
+            &evidence.removals,
+        )?
+    } else {
+        ensure!(
+            result
+                .statistics
+                .optimized_projection
+                .as_ref()
+                .is_none_or(|r| r.removals.is_empty() && r.initial_removals.is_empty()),
+            "nonvanishing removals require certified projection mode"
+        );
+        project_checked(algebra, &all)?
+    };
     let (table, levels) = projection_table(algebra, &expected);
     ensure!(
         table == result.polynomials && levels == result.projection_levels,

@@ -98,3 +98,11 @@ nonvanishing certificates; exhaustive exact fiber-root isolation; and a child
 or rejection witness for every open sector. Accepted samples establish signs
 only after projection/delineability establishes sign invariance. Random
 sampling is supplemental and cannot rule out a missed narrow component.
+
+## Implemented monotone quadratic reduction
+
+For `q(z)=a*z^2+b*z+c` on `z>0`, exact certificates establishing `a>0,b>=0` on the whole relevant base domain prove strict increase and positive unbounded growth. If `c<0`, exactly one positive simple root exists (index 1 among all distinct real roots), and its two sectors have opposite signs. If `c>=0`, the entire positive axis has positive sign. The linear variant requires a strictly positive leading coefficient. A nonzero endpoint's zero sheet may be recorded in the generic exceptional set; an identically zero endpoint is handled as a positive cylinder, never discarded as an exceptional polynomial.
+
+The implemented engine peels only variables with positive-axis domain constraints and no additional constraints involving them. It solves the endpoint problem exactly, restores variables in reverse elimination order, and independently checks every coefficient certificate and reconstructed sector. The resulting cells remain cylindrical in the requested coordinates. Both fixed A446 topologies admit four such peels and verified eight-cell decompositions after positive-scale reduction.
+
+This argument has a real applicability boundary for unrestricted symbolic kinematics: a negative linear coefficient can produce two positive roots even with a positive endpoint. `examples/symbolic_structure_audit.rs` verifies an exact counterexample and an alternative positive-definite quadratic identity in additive graph coordinates. That additive identity is research evidence; it does not authorize relabeling transformed cells as an original-coordinate CAD or restricting the symbolic domain to its physical region.

@@ -8,7 +8,7 @@
     in {
       devShells = forAllSystems (pkgs: {
         default = pkgs.mkShell {
-          packages = with pkgs; [ rustc cargo rustfmt clippy gcc gnumake m4 pkg-config gmp mpfr time hyperfine ];
+          packages = with pkgs; [ rustc cargo rustfmt clippy gcc gnumake m4 pkg-config gmp mpfr time hyperfine perf valgrind ];
           CARGO_BUILD_JOBS = "16";
           RUST_BACKTRACE = "1";
           shellHook = ''

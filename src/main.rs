@@ -1,4 +1,4 @@
-use anyhow::{Context, Result};
+use anyhow::Result;
 use clap::{Parser, Subcommand};
 use serde_json::{Value, json};
 use std::{
@@ -12,9 +12,7 @@ use symgcad::{
     Problem,
     benchmark::{self, ProcessOutcome},
     output::{SolveResult, Status},
-    problem::normalize,
-    projection::project,
-    solver::{projection_table, selected_order, solve},
+    solver::{prepare_projection, projection_table, selected_order, solve},
 };
 
 #[derive(Parser)]
@@ -87,6 +85,24 @@ fn emit(value: &impl serde::Serialize, output: Option<&Path>) -> Result<()> {
     Ok(())
 }
 
+fn read_problem(input: &Path, output: Option<&Path>) -> Result<Option<Problem>> {
+    let text = fs::read_to_string(input)?;
+    match Problem::from_toml(&text) {
+        Ok(problem) => Ok(Some(problem)),
+        Err(error) => {
+            let problem = Problem {
+                name: Some(input.display().to_string()),
+                ..Default::default()
+            };
+            emit(
+                &SolveResult::failure(problem, Status::InvalidInput, format!("{error:#}")),
+                output,
+            )?;
+            Ok(None)
+        }
+    }
+}
+
 fn temporary(label: &str) -> Result<PathBuf> {
     static SERIAL: AtomicU64 = AtomicU64::new(0);
     let directory = PathBuf::from("artifacts/workers");
@@ -109,9 +125,21 @@ fn temporary(label: &str) -> Result<PathBuf> {
     }
 }
 
-fn bounded(problem: &Problem, operation: &str) -> Result<(ProcessOutcome, PathBuf)> {
+fn bounded(
+    problem: &Problem,
+    operation: &str,
+    search_report: Option<&Value>,
+) -> Result<(ProcessOutcome, PathBuf, Option<Value>)> {
     let input = temporary("input")?;
     let output = temporary("output")?;
+    let progress = temporary("progress")?;
+    let search_path = search_report
+        .map(|report| -> Result<PathBuf> {
+            let path = temporary("search")?;
+            fs::write(&path, serde_json::to_vec(report)?)?;
+            Ok(path)
+        })
+        .transpose()?;
     fs::write(&input, serde_json::to_vec(problem)?)?;
     let mut command = ProcessCommand::new(std::env::current_exe()?);
     command
@@ -122,14 +150,28 @@ fn bounded(problem: &Problem, operation: &str) -> Result<(ProcessOutcome, PathBu
         .arg(&output);
     command
         .env("RAYON_NUM_THREADS", "1")
-        .env("OMP_NUM_THREADS", "1");
+        .env("OMP_NUM_THREADS", "1")
+        .env("SYMGCAD_PROGRESS_PATH", &progress);
+    if let Some(path) = &search_path {
+        command.env("SYMGCAD_SEARCH_REPORT", path);
+    }
     let outcome = benchmark::run_bounded(&mut command, &problem.limits);
+    let evidence = serde_json::from_slice::<Value>(&fs::read(&progress)?).ok();
+    fs::remove_file(progress)?;
     fs::remove_file(input)?;
-    Ok((outcome?, output))
+    if let Some(path) = search_path {
+        fs::remove_file(path)?;
+    }
+    Ok((outcome?, output, evidence))
 }
 
-fn forward(problem: Problem, operation: &str, output: Option<PathBuf>) -> Result<()> {
-    let (process, result_path) = bounded(&problem, operation)?;
+fn forward(
+    problem: Problem,
+    operation: &str,
+    output: Option<PathBuf>,
+    search: Option<&Value>,
+) -> Result<()> {
+    let (process, result_path, progress) = bounded(&problem, operation, search)?;
     if process.status == "completed"
         && !process.output_truncated
         && fs::metadata(&result_path)?.len() > 0
@@ -149,11 +191,16 @@ fn forward(problem: Problem, operation: &str, output: Option<PathBuf>) -> Result
         } else {
             Status::ComputationFailure
         };
-        let failure = SolveResult::failure(
+        let mut failure = SolveResult::failure(
             problem,
             status,
             format!("worker {}: {}", process.status, process.stderr),
         );
+        failure.statistics.optimized_projection =
+            progress.and_then(|p| serde_json::from_value(p).ok());
+        if let Some(search) = search {
+            attach_search(&mut failure, search.clone());
+        }
         emit(&failure, output.as_deref())?;
     }
     fs::remove_file(result_path)?;
@@ -163,7 +210,7 @@ fn forward(problem: Problem, operation: &str, output: Option<PathBuf>) -> Result
 fn run_search(problem: &Problem) -> Result<Value> {
     use symgcad::search::{SearchOptions, TrialOutcome, TrialStatus, search};
     let n = problem.variables.len();
-    let groups: Vec<Vec<usize>> = if problem.variable_groups.is_empty() {
+    let mut groups: Vec<Vec<usize>> = if problem.variable_groups.is_empty() {
         vec![(0..n).collect()]
     } else {
         problem
@@ -176,6 +223,23 @@ fn run_search(problem: &Problem) -> Result<Value> {
             })
             .collect()
     };
+    if let Some(anchor) = &problem.solver.homogeneous_anchor {
+        let anchor_index = problem.variables.iter().position(|v| v == anchor).unwrap();
+        let group_index = groups
+            .iter()
+            .position(|g| g.contains(&anchor_index))
+            .unwrap();
+        anyhow::ensure!(
+            groups[..group_index].iter().flatten().all(|&i| !problem
+                .solver
+                .homogeneous_block
+                .contains(&problem.variables[i])),
+            "homogeneous block conflicts with variable groups"
+        );
+        groups[group_index].retain(|&i| i != anchor_index);
+        groups.insert(group_index, vec![anchor_index]);
+        groups.retain(|g| !g.is_empty());
+    }
     let start = std::time::Instant::now();
     let mut options = SearchOptions::for_campaign(problem.limits.wall_time_secs);
     options.seed = problem.solver.seed;
@@ -185,30 +249,23 @@ fn run_search(problem: &Problem) -> Result<Value> {
     }
     let default_order = groups.iter().flatten().copied().collect::<Vec<_>>();
     let mut seeds = vec![default_order.clone()];
-    for method in ["brown", "sparsity"] {
-        if start.elapsed().as_secs_f64() >= options.wall_time_secs * 0.2 {
-            break;
-        }
+    {
         let mut seed = problem.clone();
         seed.solver.order.clear();
-        seed.solver.ordering = method.into();
-        seed.limits.wall_time_secs = (options.wall_time_secs * 0.1).min(5.0).max(0.01);
-        let (out, path) = bounded(&seed, "order")?;
+        seed.variable_groups = groups
+            .iter()
+            .map(|g| g.iter().map(|&i| problem.variables[i].clone()).collect())
+            .collect();
+        seed.limits.wall_time_secs = (options.wall_time_secs * 0.2).min(5.0).max(0.01);
+        let (out, path, _) = bounded(&seed, "seed_orders", None)?;
         if out.status == "completed" {
             if let Ok(value) = serde_json::from_slice::<Value>(&fs::read(&path)?) {
-                if let Some(order) = value["order"].as_array() {
-                    let indices = order
-                        .iter()
-                        .map(|v| {
-                            problem
-                                .variables
-                                .iter()
-                                .position(|n| Some(n.as_str()) == v.as_str())
-                                .context("unknown seed variable")
-                        })
-                        .collect::<Result<Vec<_>>>()?;
-                    if !seeds.contains(&indices) {
-                        seeds.push(indices);
+                if let Some(orders) = value["orders"].as_array() {
+                    for order in orders {
+                        let indices: Vec<usize> = serde_json::from_value(order.clone())?;
+                        if !seeds.contains(&indices) {
+                            seeds.push(indices);
+                        }
                     }
                 }
             }
@@ -223,6 +280,7 @@ fn run_search(problem: &Problem) -> Result<Value> {
         .copied()
         .collect::<Vec<_>>();
     options.wall_time_secs = (options.wall_time_secs - start.elapsed().as_secs_f64()).max(0.001);
+    let mut projection_progress = Vec::new();
     let report = search(&groups, &priority, &seeds, &options, |request| {
         let mut trial = problem.clone();
         trial.solver.order = request
@@ -232,7 +290,7 @@ fn run_search(problem: &Problem) -> Result<Value> {
             .collect();
         trial.solver.ordering = "given".into();
         trial.limits.wall_time_secs = request.timeout_secs;
-        let (process, path) = bounded(&trial, "solve")?;
+        let (process, path, progress) = bounded(&trial, "solve", None)?;
         let summary = serde_json::from_str::<Value>(&process.stdout).ok();
         let complete = summary
             .as_ref()
@@ -248,17 +306,46 @@ fn run_search(problem: &Problem) -> Result<Value> {
             .and_then(|v| v["cells"].as_u64())
             .map(|n| n as usize);
         fs::remove_file(path)?;
+        let progress_score = progress.as_ref().and_then(|p| {
+            let checkpoints = p["checkpoints"].as_array()?;
+            let last = checkpoints.last()?;
+            let cost = [
+                "term_count",
+                "polynomial_count",
+                "max_degree",
+                "max_coefficient_bits",
+            ]
+            .iter()
+            .map(|k| (last[*k].as_f64().unwrap_or(0.0) + 1.0).ln())
+            .sum::<f64>();
+            Some((1.0 + cost) / checkpoints.len().max(1) as f64)
+        });
+        projection_progress.push(json!({"order":request.order,"progress":progress}));
         Ok(TrialOutcome {
             status,
             elapsed_secs: process.wall_time_secs,
             cells,
-            progress_score: None,
+            progress_score,
             message: if complete { None } else { Some(process.stderr) },
         })
     })?;
     Ok(
-        json!({"schema_version":1,"problem":problem,"search":report,"total_seconds":start.elapsed().as_secs_f64()}),
+        json!({"schema_version":1,"problem":problem,"search":report,"projection_progress":projection_progress,"total_seconds":start.elapsed().as_secs_f64()}),
     )
+}
+
+fn enable_search_checkpoints(problem: &mut Problem) {
+    if problem.solver.engine == "optimized" && problem.solver.checkpoint_dir.is_none() {
+        problem.solver.checkpoint_dir = Some(PathBuf::from("artifacts/checkpoints"));
+    }
+}
+
+fn attach_search(result: &mut SolveResult, report: Value) {
+    let seconds = report["total_seconds"].as_f64().unwrap_or(0.0);
+    result.statistics.search_seconds = seconds;
+    result.statistics.ordering_seconds += seconds;
+    result.statistics.total_seconds += seconds;
+    result.statistics.ordering_search = Some(report);
 }
 
 fn worker(operation: &str, input: &Path, output: &Path) -> Result<()> {
@@ -269,35 +356,79 @@ fn worker(operation: &str, input: &Path, output: &Path) -> Result<()> {
         return emit(&verification, None);
     }
     let problem: Problem = serde_json::from_slice(&fs::read(input)?)?;
+    if let Err(error) = symgcad::problem::normalize(&problem, &problem.variables) {
+        let failure = SolveResult::failure(problem, Status::InvalidInput, format!("{error:#}"));
+        emit(&failure, Some(output))?;
+        return emit(
+            &json!({"status":"invalid_input","diagnostic":failure.diagnostic}),
+            None,
+        );
+    }
     match operation {
         "solve" => {
-            let result = match solve(&problem) {
+            let mut result = match solve(&problem) {
                 Ok(result) => result,
                 Err(e) => {
                     SolveResult::failure(problem, Status::ComputationFailure, format!("{e:#}"))
                 }
             };
+            if let Some(path) = std::env::var_os("SYMGCAD_SEARCH_REPORT") {
+                attach_search(&mut result, serde_json::from_slice(&fs::read(path)?)?);
+            }
             emit(&result, Some(output))?;
+            let mut statistics = serde_json::to_value(&result.statistics)?;
+            if let Some(report) = statistics
+                .get_mut("optimized_projection")
+                .and_then(Value::as_object_mut)
+            {
+                for field in ["removals", "initial_removals"] {
+                    if let Some(certificates) = report.remove(field) {
+                        report.insert(
+                            format!("{field}_count"),
+                            json!(certificates.as_array().map_or(0, Vec::len)),
+                        );
+                    }
+                }
+            }
             emit(
-                &json!({"status":result.status,"cells":result.cells.len(),"merged_cells":result.merged_cells.as_ref().map(Vec::len),"statistics":result.statistics}),
+                &json!({"status":result.status,"cells":result.cells.len(),"merged_cells":result.merged_cells.as_ref().map(Vec::len),"statistics":statistics}),
                 None,
             )?;
         }
         "project" => {
             let order = selected_order(&problem)?;
-            let normalized = normalize(&problem, &order)?;
-            let mut all = normalized.positives;
-            all.extend(normalized.split);
-            let projection = project(&normalized.algebra, &all)?;
+            let (normalized, projection, optimization) = prepare_projection(&problem, &order)?;
             let (polynomials, levels) = projection_table(&normalized.algebra, &projection);
             emit(
-                &json!({"schema_version":1,"order":order,"polynomials":polynomials,"levels":levels,"steps":projection.steps}),
+                &json!({"schema_version":1,"order":order,"polynomials":polynomials,"levels":levels,"steps":projection.steps,"optimization":optimization}),
                 Some(output),
             )?;
         }
         "order" => {
             emit(
                 &json!({"schema_version":1,"order":selected_order(&problem)?}),
+                Some(output),
+            )?;
+        }
+        "seed_orders" => {
+            let normalized = symgcad::problem::normalize(&problem, &problem.variables)?;
+            let mut all = normalized.positives;
+            all.extend(normalized.split);
+            let groups = if problem.variable_groups.is_empty() {
+                vec![(0..problem.variables.len()).collect()]
+            } else {
+                problem
+                    .variable_groups
+                    .iter()
+                    .map(|g| {
+                        g.iter()
+                            .map(|v| problem.variables.iter().position(|n| n == v).unwrap())
+                            .collect()
+                    })
+                    .collect()
+            };
+            emit(
+                &json!({"orders":symgcad::ordering::cheap_seed_orders(&all, &groups)}),
                 Some(output),
             )?;
         }
@@ -314,8 +445,12 @@ fn main() -> Result<()> {
             output,
         } => worker(&operation, &input, &output),
         Command::Solve { input, output } => {
-            let mut problem = Problem::from_toml(&fs::read_to_string(input)?)?;
-            if problem.solver.ordering == "mcts" {
+            let Some(mut problem) = read_problem(&input, output.as_deref())? else {
+                return Ok(());
+            };
+            let mut search_metadata = None;
+            if problem.solver.ordering == "mcts" && problem.solver.order.is_empty() {
+                enable_search_checkpoints(&mut problem);
                 let start = std::time::Instant::now();
                 let report = run_search(&problem)?;
                 let indices: Vec<usize> =
@@ -327,21 +462,25 @@ fn main() -> Result<()> {
                 problem.solver.ordering = "given".into();
                 problem.limits.wall_time_secs =
                     (problem.limits.wall_time_secs - start.elapsed().as_secs_f64()).max(0.001);
-                eprintln!("{}", serde_json::to_string(&report)?);
+                search_metadata = Some(report);
             }
-            forward(problem, "solve", output)
+            forward(problem, "solve", output, search_metadata.as_ref())
         }
-        Command::Project { input, output } => forward(
-            Problem::from_toml(&fs::read_to_string(input)?)?,
-            "project",
-            output,
-        ),
+        Command::Project { input, output } => {
+            let Some(problem) = read_problem(&input, output.as_deref())? else {
+                return Ok(());
+            };
+            forward(problem, "project", output, None)
+        }
         Command::Order { input, output } => {
-            let problem = Problem::from_toml(&fs::read_to_string(input)?)?;
-            if problem.solver.ordering == "mcts" {
+            let Some(mut problem) = read_problem(&input, output.as_deref())? else {
+                return Ok(());
+            };
+            if problem.solver.ordering == "mcts" && problem.solver.order.is_empty() {
+                enable_search_checkpoints(&mut problem);
                 emit(&run_search(&problem)?, output.as_deref())
             } else {
-                forward(problem, "order", output)
+                forward(problem, "order", output, None)
             }
         }
         Command::Verify { input } => {
@@ -365,6 +504,17 @@ fn main() -> Result<()> {
             Ok(())
         }
         Command::Bench { input } => {
+            let configuration: toml::Value = toml::from_str(&fs::read_to_string(&input)?)?;
+            if configuration
+                .get("mode")
+                .and_then(toml::Value::as_str)
+                .is_some_and(|mode| ["completion", "ablation"].contains(&mode))
+            {
+                return emit(
+                    &symgcad::campaign::run_campaign(&input, &std::env::current_exe()?)?,
+                    None,
+                );
+            }
             let report = benchmark::run_campaign(&input, &std::env::current_exe()?)?;
             emit(&report, None)
         }
@@ -381,9 +531,13 @@ fn main() -> Result<()> {
                     problems.extend(symgcad::corpus::import_core_json(&core)?);
                 }
                 let files = symgcad::corpus::export_toml(&problems, &directory)?;
+                let groups = symgcad::corpus::write_equivalence_manifest(
+                    &problems,
+                    &directory.join("equivalence.json"),
+                )?;
                 emit(&inventory, Some(&directory.join("inventory.json")))?;
                 emit(
-                    &json!({"collected_tests":inventory.collected_count,"disabled_tests":inventory.disabled_count,"fixtures":inventory.fixtures.len(),"exported":files.len(),"directory":directory}),
+                    &json!({"collected_tests":inventory.collected_count,"disabled_tests":inventory.disabled_count,"fixtures":inventory.fixtures.len(),"exported":files.len(),"distinct_problems":groups.len(),"directory":directory}),
                     None,
                 )
             } else {

@@ -202,12 +202,30 @@ pub fn canonical(polynomial: &Poly) -> Poly {
 /// The original GCAD SFRP: unique primitive irreducible factors, with no
 /// multiplicities or constants. Sorting makes ordering/cache behavior stable.
 pub fn factors(polynomials: &[Poly]) -> Result<Vec<Poly>> {
+    factor_basis(polynomials, false)
+}
+
+/// Verification additionally reconstructs every input including scalar content
+/// and multiplicities before discarding them from the projection zero sets.
+pub fn factors_checked(polynomials: &[Poly]) -> Result<Vec<Poly>> {
+    factor_basis(polynomials, true)
+}
+
+fn factor_basis(polynomials: &[Poly], check: bool) -> Result<Vec<Poly>> {
     let mut unique = HashSet::new();
     for polynomial in polynomials {
         if polynomial.is_constant() {
             continue;
         }
-        for (factor, _) in polynomial.factor() {
+        let factorization = polynomial.factor();
+        if check {
+            let mut reconstructed = polynomial.one();
+            for (factor, multiplicity) in &factorization {
+                reconstructed = &reconstructed * &factor.pow(*multiplicity);
+            }
+            ensure!(&reconstructed == polynomial, "factor reconstruction failed");
+        }
+        for (factor, _) in factorization {
             if !factor.is_constant() {
                 unique.insert(canonical(&factor));
             }

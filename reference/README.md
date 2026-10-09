@@ -102,3 +102,45 @@ The exact-equivalence manifest retains every input alias. Equivalence keys use
 Symbolica-normalized polynomials after substitutions and preserve variables,
 grouping, ordering and solver options, so different ordering workloads are not
 silently combined.
+
+Completion and ablation ledgers use a separate configuration mode, because
+certified preprocessing or a changed order can legitimately change cell counts:
+
+```toml
+mode = "completion" # use "ablation" for three measured repetitions
+cases = ["examples/unit_square.toml"]
+output_dir = "artifacts/completion/smoke"
+equivalence_manifests = []
+solve_timeout_secs = 60.0
+verify_timeout_secs = 60.0
+campaign_time_secs = 3600.0
+workers = 1
+memory_mib = 8192
+resume = true
+
+[[variants]]
+name = "optimized-mods"
+[variants.solver]
+engine = "optimized"
+ordering = "mods"
+```
+
+Each solver variant overrides only the specified input options. The ledger
+measures a fresh public `solve` process, including order search, preprocessing,
+normalization, decomposition and export. It independently verifies every
+completed repetition. Verification time is recorded separately. Completion
+runs use one repetition; ablations default to three. These runs certify results
+without requiring the same number of cells as the upstream engine.
+
+`ledger.json` retains every scheduled identifier, equivalence alias and attempt,
+including timeouts, resource failures and inputs not started within the budget.
+Resume skips a case only if its input and executable hashes match, all required
+repetitions were verified, and the result and verification artifacts still match
+their recorded hashes. Changed binaries rerun the case. The history retains old
+attempts. Each campaign snapshots its executable, so rebuilding the working tree
+cannot change later trials. Optional equivalence manifests must use the Rust
+importer's schema.
+
+Full-corpus completion is a mathematical solve workload. In particular, solving
+an inequality extracted from an ordering/projection unit test does not reproduce
+that test's original API assertion; the corpus inventory retains this distinction.

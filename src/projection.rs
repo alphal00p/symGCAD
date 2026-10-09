@@ -122,6 +122,18 @@ pub fn project_one(polynomials: &[Poly], variable: usize) -> Result<Vec<Poly>> {
 }
 
 pub fn project(algebra: &Algebra, polynomials: &[Poly]) -> Result<Projection> {
+    project_with_factorizer(algebra, polynomials, factors)
+}
+
+pub fn project_checked(algebra: &Algebra, polynomials: &[Poly]) -> Result<Projection> {
+    project_with_factorizer(algebra, polynomials, crate::algebra::factors_checked)
+}
+
+fn project_with_factorizer(
+    algebra: &Algebra,
+    polynomials: &[Poly],
+    factorize: fn(&[Poly]) -> Result<Vec<Poly>>,
+) -> Result<Projection> {
     ensure!(
         polynomials
             .iter()
@@ -137,10 +149,10 @@ pub fn project(algebra: &Algebra, polynomials: &[Poly]) -> Result<Projection> {
     }
     let mut levels = vec![Vec::new(); n];
     let mut steps = Vec::with_capacity(n.saturating_sub(1));
-    levels[n - 1] = factors(polynomials)?;
+    levels[n - 1] = factorize(polynomials)?;
     for variable in (1..n).rev() {
         let started = Instant::now();
-        let projected = project_one(&levels[variable], variable)?;
+        let projected = factorize(&projection_polynomials(&levels[variable], variable)?)?;
         steps.push(ProjectionStep {
             variable,
             input_count: levels[variable].len(),

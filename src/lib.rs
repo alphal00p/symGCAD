@@ -1,16 +1,19 @@
 //! Exact generic cylindrical algebraic decomposition.
-pub mod config;
 pub mod algebra;
-pub mod projection;
-pub mod problem;
-pub mod roots;
+pub mod benchmark;
+pub mod campaign;
+pub mod config;
+pub mod corpus;
+pub mod domain;
+pub mod homogeneity;
+pub mod monotone;
+pub mod optimized_projection;
 pub mod ordering;
 pub mod output;
+pub mod problem;
+pub mod projection;
+pub mod roots;
+pub mod search;
 pub mod solver;
 pub mod verify;
-pub mod corpus;
-pub mod benchmark;
-pub mod search;
-pub mod domain;
-pub mod optimized_projection;
 pub use config::{Limits, Problem, SolverOptions};

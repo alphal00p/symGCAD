@@ -1,14 +1,16 @@
 //! Exact projection shortcuts and bounded reusable algebra/checkpoint caches.
 //!
-//! No polynomial is removed on a domain heuristic here. The resulting factor
-//! sets are identical to baseline GPROJ. Checkpoints accelerate computation;
-//! the independent verifier still reconstructs the baseline obligations.
+//! Ordinary optimized projection has the same factor sets as baseline GPROJ.
+//! Optional domain pruning records exact nonvanishing certificates for generated
+//! factors. Optional input pruning preserves every original coordinate-affine
+//! factor bounding the domain. Checkpoints accelerate computation and are not
+//! a replacement for proof replay.
 
 use std::{
     collections::{HashMap, HashSet},
     fs::{self, File, OpenOptions},
     io::Write,
-    path::PathBuf,
+    path::{Path, PathBuf},
     sync::atomic::{AtomicU64, Ordering},
     time::Instant,
 };
@@ -19,7 +21,10 @@ use sha2::{Digest, Sha256};
 use symbolica::{domains::InternalOrdering, prelude::*};
 
 use crate::{
-    algebra::{Algebra, MAX_DEGREE, Poly, canonical, factors},
+    algebra::{Algebra, MAX_DEGREE, Poly, canonical, factors, factors_checked},
+    domain::{
+        CertificateOptions, DomainCertificate, certify_nonzero, derive_domain, verify_certificate,
+    },
     projection::{Projection, ProjectionStep, discriminant},
 };
 
@@ -31,6 +36,10 @@ static TEMP_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 #[serde(default)]
 pub struct OptimizedProjectionOptions {
     pub checkpoint_dir: Option<PathBuf>,
+    /// Atomically replaced after each completed algebra stage. This report
+    /// remains readable if a bounded ordering worker is subsequently killed.
+    /// It has no effect on the persistent algebra cache keys.
+    pub progress_path: Option<PathBuf>,
     /// Conservative modeled retention budget; process RSS limits remain the
     /// hard bound, including transient Symbolica allocations and the result.
     pub memory_cache_bytes: usize,
@@ -44,6 +53,7 @@ impl Default for OptimizedProjectionOptions {
     fn default() -> Self {
         Self {
             checkpoint_dir: None,
+            progress_path: None,
             memory_cache_bytes: 128 * 1024 * 1024,
             max_checkpoint_bytes: 512 * 1024 * 1024,
             domain_fingerprint: "unrestricted".into(),
@@ -89,6 +99,32 @@ pub struct ProjectionCheckpoint {
 pub struct OptimizedProjectionReport {
     pub cache: CacheMetrics,
     pub checkpoints: Vec<ProjectionCheckpoint>,
+    #[serde(default)]
+    pub removals: Vec<ProjectionRemoval>,
+    /// Exact nonvanishing evidence for input factors omitted before projection.
+    #[serde(default)]
+    pub initial_removals: Vec<DomainCertificate>,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(default)]
+pub struct DomainPruningOptions {
+    /// Also remove certified input factors, preserving coordinate-affine ones.
+    /// Every accepted lifted cell must still satisfy the original constraints.
+    pub prune_input: bool,
+    pub excluded_sign_constraints: Vec<usize>,
+    pub certificates: CertificateOptions,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ProjectionRemoval {
+    /// Intermediate output level, before the final positive-degree filter.
+    /// The removed factor may depend on only a subset of this level's variables.
+    pub level: usize,
+    /// Variable index in the stable original variable map.
+    pub eliminated_variable: usize,
+    /// Polynomial and domain in that same original map, not the lifting order.
+    pub certificate: DomainCertificate,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -143,6 +179,35 @@ fn digest(value: &impl Serialize) -> Result<String> {
     Ok(format!("{:x}", Sha256::digest(serde_json::to_vec(value)?)))
 }
 
+fn write_atomic(destination: &Path, bytes: &[u8]) -> Result<()> {
+    let directory = destination
+        .parent()
+        .filter(|p| !p.as_os_str().is_empty())
+        .unwrap_or_else(|| Path::new("."));
+    fs::create_dir_all(directory)
+        .with_context(|| format!("create output directory {}", directory.display()))?;
+    let temporary = directory.join(format!(
+        ".symgcad.{}.{}.tmp",
+        std::process::id(),
+        TEMP_SEQUENCE.fetch_add(1, Ordering::Relaxed)
+    ));
+    let written = (|| -> Result<()> {
+        let mut file = OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&temporary)?;
+        file.write_all(bytes)?;
+        file.sync_all()?;
+        fs::rename(&temporary, destination)?;
+        File::open(directory)?.sync_all()?;
+        Ok(())
+    })();
+    if written.is_err() {
+        let _ = fs::remove_file(&temporary);
+    }
+    written.with_context(|| format!("atomically save {}", destination.display()))
+}
+
 fn sorted_unique(polynomials: impl IntoIterator<Item = Poly>) -> Vec<Poly> {
     let mut result: Vec<_> = polynomials
         .into_iter()
@@ -151,6 +216,14 @@ fn sorted_unique(polynomials: impl IntoIterator<Item = Poly>) -> Vec<Poly> {
         .collect();
     result.sort_by(|a, b| a.internal_cmp(b));
     result
+}
+
+/// Conservatively protect every coordinate-affine input factor. In particular,
+/// this includes each original strict affine constraint used by derive_domain,
+/// so accepted cells cannot cross a face of the certificate rectangle.
+fn is_coordinate_affine(polynomial: &Poly) -> bool {
+    let mut support = (0..polynomial.nvars()).filter(|&v| polynomial.degree(v) > 0);
+    support.next().is_some_and(|v| polynomial.degree(v) == 1) && support.next().is_none()
 }
 
 fn polynomial_bytes(polynomial: &Poly) -> usize {
@@ -474,30 +547,16 @@ impl<'a> ProjectionCache<'a> {
         if bytes.len() > self.options.max_checkpoint_bytes {
             return Ok(());
         }
-        fs::create_dir_all(directory)
-            .with_context(|| format!("create checkpoint directory {}", directory.display()))?;
         let destination = directory.join(format!("{key}.json"));
-        let temporary = directory.join(format!(
-            ".{key}.{}.{}.tmp",
-            std::process::id(),
-            TEMP_SEQUENCE.fetch_add(1, Ordering::Relaxed)
-        ));
-        let written = (|| -> Result<()> {
-            let mut file = OpenOptions::new()
-                .write(true)
-                .create_new(true)
-                .open(&temporary)?;
-            file.write_all(&bytes)?;
-            file.sync_all()?;
-            fs::rename(&temporary, &destination)?;
-            File::open(directory)?.sync_all()?;
-            Ok(())
-        })();
-        if written.is_err() {
-            let _ = fs::remove_file(&temporary);
-        }
-        written.with_context(|| format!("save projection checkpoint {}", destination.display()))?;
+        write_atomic(&destination, &bytes)?;
         self.report.cache.written_checkpoints += 1;
+        Ok(())
+    }
+
+    fn save_progress(&self) -> Result<()> {
+        if let Some(path) = &self.options.progress_path {
+            write_atomic(path, &serde_json::to_vec(&self.report)?)?;
+        }
         Ok(())
     }
 
@@ -550,7 +609,7 @@ impl<'a> ProjectionCache<'a> {
         {
             self.prefix_cache.insert(key, output.to_vec());
         }
-        Ok(())
+        self.save_progress()
     }
 
     fn step(&mut self, polynomials: &[Poly], variable: Option<usize>) -> Result<Vec<Poly>> {
@@ -627,10 +686,204 @@ impl<'a> ProjectionCache<'a> {
         self.step(polynomials, None)
     }
 
+    /// Obtain the initial basis used by certified projection, retaining its
+    /// cache and initial proof evidence for ordering exploration and replay.
+    pub fn initial_basis_certified(
+        &mut self,
+        original_constraints: &[Poly],
+        split: &[Poly],
+        pruning: &DomainPruningOptions,
+    ) -> Result<Vec<Poly>> {
+        let domain = derive_domain(
+            self.algebra,
+            original_constraints,
+            &pruning.excluded_sign_constraints,
+        )?;
+        self.report.initial_removals.clear();
+        self.report.removals.clear();
+        let all = original_constraints
+            .iter()
+            .chain(split)
+            .cloned()
+            .collect::<Vec<_>>();
+        let initial = self.initial_basis(&all)?;
+        if !pruning.prune_input {
+            return Ok(initial);
+        }
+        let mut retained = Vec::with_capacity(initial.len());
+        for polynomial in initial {
+            if !is_coordinate_affine(&polynomial)
+                && let Some(certificate) =
+                    certify_nonzero(self.algebra, &polynomial, &domain, &pruning.certificates)?
+            {
+                self.report.initial_removals.push(certificate);
+            } else {
+                retained.push(polynomial);
+            }
+        }
+        self.save_progress()?;
+        Ok(retained)
+    }
+
     /// Input must be a square-free pairwise-coprime factor basis, as for PR.
     pub fn project_one(&mut self, polynomials: &[Poly], variable: usize) -> Result<Vec<Poly>> {
         self.step(polynomials, Some(variable))
     }
+
+    /// Retain the same cache while choosing an order and doing final projection.
+    /// Projection arithmetic stays in the original map; returned polynomials
+    /// are remapped to the requested lifting order.
+    pub fn project_ordered(&mut self, polynomials: &[Poly], order: &[usize]) -> Result<Projection> {
+        validate_projection_input(self.algebra, polynomials, order)?;
+        self.report.removals.clear();
+        self.report.initial_removals.clear();
+        if order.is_empty() {
+            return Ok(Projection {
+                levels: vec![],
+                steps: vec![],
+            });
+        }
+        let initial = self.initial_basis(polynomials)?;
+        self.project_from_initial(initial, order, |_, _, generated| Ok(generated))
+    }
+
+    /// Certified variant retaining the algebra cache used during ordering.
+    /// The constructor's domain fingerprint should identify the original
+    /// constraints/splits; checkpoint payloads themselves remain unpruned.
+    pub fn project_ordered_certified(
+        &mut self,
+        original_constraints: &[Poly],
+        split: &[Poly],
+        order: &[usize],
+        pruning: &DomainPruningOptions,
+    ) -> Result<Projection> {
+        let algebra = self.algebra;
+        let all = original_constraints
+            .iter()
+            .chain(split)
+            .cloned()
+            .collect::<Vec<_>>();
+        validate_projection_input(algebra, &all, order)?;
+        let domain = derive_domain(
+            algebra,
+            original_constraints,
+            &pruning.excluded_sign_constraints,
+        )?;
+        self.report.removals.clear();
+        self.report.initial_removals.clear();
+        if order.is_empty() {
+            return Ok(Projection {
+                levels: vec![],
+                steps: vec![],
+            });
+        }
+        let initial = self.initial_basis_certified(original_constraints, split, pruning)?;
+        let protected = initial.iter().cloned().collect::<HashSet<_>>();
+        let mut removals = Vec::new();
+        let projection =
+            self.project_from_initial(initial, order, |level, eliminated_variable, generated| {
+                let mut retained = Vec::with_capacity(generated.len());
+                for polynomial in generated {
+                    if !protected.contains(&polynomial)
+                        && let Some(certificate) =
+                            certify_nonzero(algebra, &polynomial, &domain, &pruning.certificates)?
+                    {
+                        removals.push(ProjectionRemoval {
+                            level,
+                            eliminated_variable,
+                            certificate,
+                        });
+                    } else {
+                        retained.push(polynomial);
+                    }
+                }
+                Ok(retained)
+            })?;
+        self.report.removals = removals;
+        self.save_progress()?;
+        Ok(projection)
+    }
+
+    fn project_from_initial(
+        &mut self,
+        initial: Vec<Poly>,
+        order: &[usize],
+        mut retain: impl FnMut(usize, usize, Vec<Poly>) -> Result<Vec<Poly>>,
+    ) -> Result<Projection> {
+        let n = order.len();
+        let mut levels = vec![vec![]; n];
+        let mut steps = Vec::with_capacity(n.saturating_sub(1));
+        if n == 0 {
+            return Ok(Projection { levels, steps });
+        }
+        levels[n - 1] = initial;
+        for position in (1..n).rev() {
+            let started = Instant::now();
+            let variable = order[position];
+            let generated = self.project_one(&levels[position], variable)?;
+            let output = retain(position - 1, variable, generated)?;
+            steps.push(ProjectionStep {
+                variable: position,
+                input_count: levels[position].len(),
+                output_count: output.len(),
+                input_terms: levels[position].iter().map(Poly::nterms).sum(),
+                output_terms: output.iter().map(Poly::nterms).sum(),
+                elapsed_seconds: started.elapsed().as_secs_f64(),
+            });
+            levels[position - 1] = output;
+        }
+        finish_projection(self.algebra, levels, steps, order)
+    }
+}
+
+fn validate_projection_input(
+    algebra: &Algebra,
+    polynomials: &[Poly],
+    order: &[usize],
+) -> Result<()> {
+    ensure!(
+        polynomials
+            .iter()
+            .all(|p| p.variables() == &algebra.variables),
+        "optimized projection input has a different variable map"
+    );
+    let n = algebra.names.len();
+    ensure!(
+        order.len() == n
+            && order.iter().all(|&i| i < n)
+            && order.iter().copied().collect::<HashSet<_>>().len() == n,
+        "projection order must be a permutation of the variable indices"
+    );
+    Ok(())
+}
+
+fn finish_projection(
+    algebra: &Algebra,
+    mut levels: Vec<Vec<Poly>>,
+    steps: Vec<ProjectionStep>,
+    order: &[usize],
+) -> Result<Projection> {
+    let variables = order
+        .iter()
+        .map(|&i| algebra.variables[i].clone())
+        .collect::<Vec<_>>();
+    let reordered = order.iter().enumerate().any(|(i, &j)| i != j);
+    for (position, level) in levels.iter_mut().enumerate() {
+        level.retain(|p| p.degree(order[position]) > 0);
+        if reordered {
+            *level = sorted_unique(
+                level
+                    .iter()
+                    .map(|p| {
+                        p.rearrange_with_growth(&variables)
+                            .map(|p| canonical(&p))
+                            .map_err(anyhow::Error::msg)
+                    })
+                    .collect::<Result<Vec<_>>>()?,
+            );
+        }
+    }
+    Ok(Projection { levels, steps })
 }
 
 pub fn project_optimized(
@@ -656,64 +909,189 @@ pub fn project_ordered_optimized(
     order: &[usize],
     options: &OptimizedProjectionOptions,
 ) -> Result<(Projection, OptimizedProjectionReport)> {
-    ensure!(
-        polynomials
-            .iter()
-            .all(|p| p.variables() == &algebra.variables),
-        "optimized projection input has a different variable map"
-    );
-    let n = algebra.names.len();
-    ensure!(
-        order.len() == n
-            && order.iter().all(|&i| i < n)
-            && order.iter().copied().collect::<HashSet<_>>().len() == n,
-        "projection order must be a permutation of the variable indices"
-    );
-    if n == 0 {
-        return Ok((
-            Projection {
-                levels: vec![],
-                steps: vec![],
-            },
-            OptimizedProjectionReport::default(),
-        ));
-    }
     let mut cache = ProjectionCache::new(algebra, options);
+    let projection = cache.project_ordered(polynomials, order)?;
+    Ok((projection, cache.report))
+}
+
+/// Prune generated factors (and optionally input factors) proved nonzero on a
+/// rectangular superset of the original domain. A factor independent of eliminated variables
+/// inherits this certificate on the projected rectangle. Original coordinate
+/// boundaries remain protected, so full-real-line lifting cannot accept a cell
+/// crossing out of the rectangle on which its projection was certified.
+pub fn project_ordered_certified(
+    algebra: &Algebra,
+    original_constraints: &[Poly],
+    split: &[Poly],
+    order: &[usize],
+    options: &OptimizedProjectionOptions,
+    pruning: &DomainPruningOptions,
+) -> Result<(Projection, OptimizedProjectionReport)> {
+    let all = original_constraints
+        .iter()
+        .chain(split)
+        .cloned()
+        .collect::<Vec<_>>();
+    validate_projection_input(algebra, &all, order)?;
+    let domain = derive_domain(
+        algebra,
+        original_constraints,
+        &pruning.excluded_sign_constraints,
+    )?;
+    let mut options = options.clone();
+    options.domain_fingerprint = digest(&(
+        "certified-factors-v2",
+        &options.domain_fingerprint,
+        original_constraints
+            .iter()
+            .map(|p| algebra.format(p))
+            .collect::<Vec<_>>(),
+        split.iter().map(|p| algebra.format(p)).collect::<Vec<_>>(),
+        &domain,
+        pruning.prune_input,
+        &pruning.certificates,
+    ))?;
+    let mut cache = ProjectionCache::new(algebra, &options);
+    let projection =
+        cache.project_ordered_certified(original_constraints, split, order, pruning)?;
+    Ok((projection, cache.report))
+}
+
+/// Independently replay the exact PR/SFRP obligations at each retained stage.
+/// This path does not read caches or rerun certificate discovery. It verifies
+/// each recorded witness and rejects removal of any original factor.
+pub fn replay_certified_projection(
+    algebra: &Algebra,
+    original_constraints: &[Poly],
+    split: &[Poly],
+    order: &[usize],
+    excluded_sign_constraints: &[usize],
+    removals: &[ProjectionRemoval],
+) -> Result<Projection> {
+    replay_certified_projection_with_inputs(
+        algebra,
+        original_constraints,
+        split,
+        order,
+        excluded_sign_constraints,
+        &[],
+        removals,
+    )
+}
+
+/// Replay initial-factor certificates followed by the exact retained PR/SFRP
+/// obligations. Coordinate-affine input factors cannot be omitted, even with
+/// a valid strict-domain nonvanishing certificate, because lifting needs the
+/// original rectangular faces. No caches or certificate discovery are used.
+pub fn replay_certified_projection_with_inputs(
+    algebra: &Algebra,
+    original_constraints: &[Poly],
+    split: &[Poly],
+    order: &[usize],
+    excluded_sign_constraints: &[usize],
+    initial_removals: &[DomainCertificate],
+    removals: &[ProjectionRemoval],
+) -> Result<Projection> {
+    let all = original_constraints
+        .iter()
+        .chain(split)
+        .cloned()
+        .collect::<Vec<_>>();
+    validate_projection_input(algebra, &all, order)?;
+    derive_domain(algebra, original_constraints, excluded_sign_constraints)?;
+    let n = order.len();
+    for removal in removals {
+        ensure!(
+            removal.level < n.saturating_sub(1),
+            "certificate removal names an invalid projection level"
+        );
+        ensure!(
+            removal.eliminated_variable == order[removal.level + 1],
+            "certificate removal names the wrong elimination variable"
+        );
+    }
+    if n == 0 {
+        ensure!(
+            initial_removals.is_empty(),
+            "zero-dimensional projection has no input factors to remove"
+        );
+        return Ok(Projection {
+            levels: vec![],
+            steps: vec![],
+        });
+    }
+    let mut initial = factors_checked(&all)?;
+    let mut removed = HashSet::new();
+    for certificate in initial_removals {
+        let polynomial = algebra.parse(&certificate.polynomial)?;
+        ensure!(
+            initial.contains(&polynomial),
+            "initial certificate removes a factor absent from the input basis"
+        );
+        ensure!(
+            !is_coordinate_affine(&polynomial),
+            "initial certificate cannot remove a coordinate-affine domain boundary factor"
+        );
+        ensure!(
+            removed.insert(polynomial.clone()),
+            "duplicate initial factor removal"
+        );
+        verify_certificate(
+            algebra,
+            &polynomial,
+            original_constraints,
+            excluded_sign_constraints,
+            certificate,
+        )?;
+    }
+    initial.retain(|p| !removed.contains(p));
+    let protected = initial.iter().cloned().collect::<HashSet<_>>();
     let mut levels = vec![vec![]; n];
     let mut steps = Vec::with_capacity(n - 1);
-    levels[n - 1] = cache.initial_basis(polynomials)?;
+    levels[n - 1] = initial;
     for position in (1..n).rev() {
         let started = Instant::now();
         let variable = order[position];
-        let output = cache.project_one(&levels[position], variable)?;
+        let generated = factors_checked(&crate::projection::projection_polynomials(
+            &levels[position],
+            variable,
+        )?)?;
+        let mut removed = HashSet::new();
+        for removal in removals.iter().filter(|r| r.level == position - 1) {
+            let polynomial = algebra.parse(&removal.certificate.polynomial)?;
+            ensure!(
+                generated.contains(&polynomial),
+                "certificate removes a factor absent from this projection obligation"
+            );
+            ensure!(
+                !protected.contains(&polynomial),
+                "certificate cannot remove an original constraint or split factor"
+            );
+            ensure!(
+                removed.insert(polynomial.clone()),
+                "duplicate projection-factor removal"
+            );
+            verify_certificate(
+                algebra,
+                &polynomial,
+                original_constraints,
+                excluded_sign_constraints,
+                &removal.certificate,
+            )?;
+        }
+        let retained = generated
+            .into_iter()
+            .filter(|p| !removed.contains(p))
+            .collect::<Vec<_>>();
         steps.push(ProjectionStep {
             variable: position,
             input_count: levels[position].len(),
-            output_count: output.len(),
+            output_count: retained.len(),
             input_terms: levels[position].iter().map(Poly::nterms).sum(),
-            output_terms: output.iter().map(Poly::nterms).sum(),
+            output_terms: retained.iter().map(Poly::nterms).sum(),
             elapsed_seconds: started.elapsed().as_secs_f64(),
         });
-        levels[position - 1] = output;
+        levels[position - 1] = retained;
     }
-    let variables = order
-        .iter()
-        .map(|&i| algebra.variables[i].clone())
-        .collect::<Vec<_>>();
-    for (position, level) in levels.iter_mut().enumerate() {
-        level.retain(|p| p.degree(order[position]) > 0);
-        if order.iter().enumerate().any(|(i, &j)| i != j) {
-            *level = sorted_unique(
-                level
-                    .iter()
-                    .map(|p| {
-                        p.rearrange_with_growth(&variables)
-                            .map(|p| canonical(&p))
-                            .map_err(anyhow::Error::msg)
-                    })
-                    .collect::<Result<Vec<_>>>()?,
-            );
-        }
-    }
-    Ok((Projection { levels, steps }, cache.report))
+    finish_projection(algebra, levels, steps, order)
 }

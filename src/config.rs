@@ -1,6 +1,7 @@
 use anyhow::{Result, ensure};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
+use std::path::PathBuf;
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
@@ -25,6 +26,12 @@ pub struct SolverOptions {
     pub seed: u64,
     pub max_rollouts: usize,
     pub search_time_secs: Option<f64>,
+    pub checkpoint_dir: Option<PathBuf>,
+    pub cache_memory_mib: usize,
+    pub positivity: bool,
+    pub input_positivity: bool,
+    pub homogeneous_block: Vec<String>,
+    pub homogeneous_anchor: Option<String>,
 }
 impl Default for SolverOptions {
     fn default() -> Self {
@@ -36,6 +43,12 @@ impl Default for SolverOptions {
             seed: 0,
             max_rollouts: 256,
             search_time_secs: None,
+            checkpoint_dir: None,
+            cache_memory_mib: 128,
+            positivity: false,
+            input_positivity: false,
+            homogeneous_block: vec![],
+            homogeneous_anchor: None,
         }
     }
 }
@@ -128,12 +141,48 @@ impl Problem {
             }
         }
         ensure!(
-            ["baseline", "optimized"].contains(&self.solver.engine.as_str()),
+            ["baseline", "optimized", "monotone"].contains(&self.solver.engine.as_str()),
             "unknown engine"
         );
         ensure!(
             ["none", "aggressive"].contains(&self.solver.merge.as_str()),
             "unknown merge policy"
+        );
+        ensure!(
+            self.solver.cache_memory_mib <= 65536,
+            "cache_memory_mib exceeds memory ceiling"
+        );
+        ensure!(
+            !self.solver.positivity
+                || ["optimized", "monotone"].contains(&self.solver.engine.as_str()),
+            "positivity certificates require an optimized engine"
+        );
+        ensure!(
+            !self.solver.input_positivity || self.solver.positivity,
+            "input_positivity requires positivity"
+        );
+        ensure!(
+            self.solver
+                .search_time_secs
+                .is_none_or(|s| s.is_finite() && s > 0.0),
+            "search_time_secs must be finite and positive"
+        );
+        let scale_block = self
+            .solver
+            .homogeneous_block
+            .iter()
+            .collect::<BTreeSet<_>>();
+        ensure!(
+            scale_block.len() == self.solver.homogeneous_block.len()
+                && scale_block.is_subset(&names),
+            "homogeneous_block must contain distinct declared variables"
+        );
+        ensure!(
+            self.solver
+                .homogeneous_anchor
+                .as_ref()
+                .is_none_or(|a| scale_block.contains(a)),
+            "homogeneous_anchor must belong to homogeneous_block"
         );
         Ok(())
     }
