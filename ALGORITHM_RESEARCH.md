@@ -253,3 +253,40 @@ resolve the collision and the affected intervals return to the queue.
 Refinement only shrinks intervals, so finalized roots cannot be crossed later.
 Shared roots retain the smallest source-polynomial identifier. No tolerance or
 floating-point comparison participates in root equality or ordering.
+
+## Two-coordinate simplex chart experiment
+
+For a positive homogeneous block, set `a=1-r`, `b=r` and leave its other
+coordinates as `z` to construct a reduced polynomial `q`. If the original
+polynomial has block degree D and `L=a+b`, the exact identity is
+`L^D*q(b/L,x_other/L)=p`. The research helper `examples/simplex_probe.rs`
+checks this identity separately for every normalized constraint and split by
+termwise polynomial rehomogenization. It requires the entire final variable
+group as its explicit block and original strict positive coordinate
+constraints; kinematic parameters stay outside the block.
+
+The inverse map is triangular for original lifting order
+`[outer parameters,a,b,other block axes]`: with positive scale A, it sends
+`a=A`, `b=A*r/(1-r)`, and `x_other=A*z/(1-r)`. The reduced domain is
+`0<r<1`, `z>0`. Every original strict constraint is transformed, and its
+positive homogeneity multiplier preserves its sign. The helper rejects
+incompatible explicit orders rather than silently changing them.
+
+This identity does not yet supply an original-coordinate cell certificate.
+In particular, reconstructing the b axis needs root ordinals restricted to
+`0<r<1`; a source boundary at r=1 maps to infinity, and real roots outside
+that interval do not retain their full-real ordinal under the rational map.
+Other block axes undergo positive scaling once the preceding b axis is fixed.
+Any future production wrapper must replay these boundary and coverage facts.
+
+Exact tests on fixed A381 pairs `(a,b)=(x4,x5)` and `(x6,x5)` reduce its
+57-term polynomial to 42 terms and make it affine in r. Its r derivative has
+strictly positive coefficients on positive spectators at the fixed
+kinematics. Symbolic A446 pairs `(x4,x5)` and `(x2,x1)` reduce 78 terms to 61
+and are also affine in r; the unrestricted t parameter prevents the same
+global derivative-sign assertion. Four cold 60-second release trials still
+timed out, so no hard transformed decomposition or speedup is established.
+The helper's small workflow smoke completed and independently verified.
+Inputs, exact identities, operation captures and binary hashes are retained
+in `artifacts/hard-campaigns/simplex-release-01`; every record explicitly
+sets `original_completion=false`.
