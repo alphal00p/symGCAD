@@ -109,6 +109,43 @@ This argument has a real applicability boundary for unrestricted symbolic kinema
 
 ## Local positive-ray projection and conditional proof reuse
 
+### Adjacent-root chain projection
+
+The optional `solver.local_adjacent_pairs=true` uses an indexed-root chain,
+an established local projection technique: [Nalbach's 2025 dissertation,
+Definition 5.6 and Rule 4.36](https://publications.rwth-aachen.de/record/1022295/files/1022295.pdf)
+describes consecutive sample-root comparisons and the delineability/resultant
+premises needed to preserve them. Strzeboński's Algorithm 8 instead retains
+every pair of root-bearing polynomials.
+
+Our implementation keeps all individual leading-coefficient, discriminant,
+endpoint and conditional coefficient obligations. On the final connected
+parent cell, each relevant simple root branch is continuous. A selected pair
+resultant, or the existing certified positive-pair separation, keeps each
+adjacent difference nonzero and thus preserves its sample sign. Transitivity
+then fixes the complete root order. Same-polynomial neighbors need no extra
+pair guard. Every sibling refinement reconstructs the chain from the enlarged
+cut inventory.
+
+This adapts the chain to generic open cells and to the separately certified
+positive ray. In positive mode only strictly positive branches participate;
+negative-root coincidences and negative collisions under a Descartes-one
+witness do not invalidate the positive chain. Before selecting any pair, exact
+isolation compares the sum of individual distinct relevant root counts with
+the merged union count. A mismatch triggers all-pair fallback, preventing root
+deduplication from concealing coincident owners. A generated nonzero guard
+vanishing at the prefix immediately requests ancestor refinement; a partial
+projection is never accepted as a finished certificate.
+
+Evidence records individual counts, the exact sample branch order, selected
+pairs and fallback mode. The checker independently reconstructs all of them
+and still requires every open sector and inherited guard. Tests compare exact
+common refinements with full-pair local and ordinary global CAD, exercise
+multiple branches per polynomial and coincident roots, and reject altered
+pair, ordering, scope and sector evidence. The option remains off by default
+pending hard-workload measurement. With fewer than three bearing polynomials
+no pair can be omitted, so the implementation avoids redundant chain isolation.
+
 On an originally constrained positive axis, quadratic coefficient signs and
 Descartes' zero- and one-variation cases can certify root counts without a
 discriminant. One variation counts exactly one positive root with multiplicity,

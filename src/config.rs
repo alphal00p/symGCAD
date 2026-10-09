@@ -56,6 +56,9 @@ pub struct SolverOptions {
     /// Isolate the first-axis root union without constant projection algebra.
     #[serde(skip_serializing_if = "is_true")]
     pub local_base_point_projection: bool,
+    /// Experimental projection through adjacent relevant root branches only.
+    #[serde(skip_serializing_if = "is_false")]
+    pub local_adjacent_pairs: bool,
     /// Per-problem local search limits; omitted values keep LocalOptions defaults.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub local_max_refinements: Option<usize>,
@@ -87,6 +90,7 @@ impl Default for SolverOptions {
             local_pair_cancellations: 2,
             local_descartes_one: true,
             local_base_point_projection: true,
+            local_adjacent_pairs: false,
             local_max_refinements: None,
             local_max_nodes: None,
             homogeneous_block: vec![],
@@ -97,6 +101,9 @@ impl Default for SolverOptions {
 
 fn is_true(value: &bool) -> bool {
     *value
+}
+fn is_false(value: &bool) -> bool {
+    !*value
 }
 fn is_two(value: &usize) -> bool {
     *value == 2

@@ -181,6 +181,7 @@ mod tests {
                 cuts: vec![3],
                 projection: LocalProjectionCertificate {
                     base_point: false,
+                    adjacent_pairs: None,
                     root_bearing: vec![3],
                     guards: vec![7],
                     removals: vec![4],

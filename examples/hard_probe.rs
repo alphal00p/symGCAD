@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use std::{
-    collections::VecDeque,
+    collections::{BTreeSet, VecDeque},
     fs,
     io::Write,
     path::{Path, PathBuf},
@@ -42,6 +42,22 @@ struct Args {
     promotion_secs: f64,
     #[arg(long, default_value_t = 6)]
     promotions: usize,
+    /// Additional seeded permutations per anchor, respecting original groups.
+    #[arg(long, default_value_t = 0)]
+    permutations: usize,
+    #[arg(long, default_value_t = 0)]
+    seed: u64,
+    /// Coordinates kept last, and set to zero for endpoint ordering heuristics.
+    #[arg(long, value_delimiter = ',')]
+    peel_tail: Vec<String>,
+    #[arg(long)]
+    monotone_base_engine: Option<String>,
+    #[arg(long, default_value_t = 0)]
+    final_promotions: usize,
+    #[arg(long, default_value_t = 120.0)]
+    final_secs: f64,
+    #[arg(long, default_value_t = 60.0)]
+    verification_secs: f64,
     #[arg(long, default_value_t = 3)]
     parallel: usize,
     #[arg(long, default_value_t = 8192)]
@@ -66,6 +82,12 @@ struct Args {
     /// Retain high-degree discriminants instead of using Descartes one variation.
     #[arg(long)]
     no_descartes_one: bool,
+    /// Replay ordinary projection over the zero-dimensional initial base.
+    #[arg(long)]
+    no_base_point_projection: bool,
+    /// Experimental adjacent-root pair projection, with exact proof replay.
+    #[arg(long)]
+    adjacent_pairs: bool,
     /// Same-build ablation of a second exact pair cancellation.
     #[arg(long, default_value_t = 2, value_parser = clap::value_parser!(u8).range(1..=2))]
     pair_cancellations: u8,
@@ -109,12 +131,16 @@ struct Campaign {
     checkpoint_dir: PathBuf,
     deadline: Instant,
     memory_mib: u64,
+    verification_secs: f64,
     block: Vec<String>,
     engine: String,
+    monotone_base_engine: Option<String>,
     batch_siblings: bool,
     reuse_subtrees: bool,
     reuse_learned_cuts: bool,
     descartes_one: bool,
+    base_point_projection: bool,
+    adjacent_pairs: bool,
     pair_cancellations: usize,
     local_max_refinements: Option<usize>,
     local_max_nodes: Option<usize>,
@@ -171,10 +197,15 @@ fn run_trial(campaign: &Campaign, trial: Trial) -> Result<Record> {
     let progress_path = directory.join("progress.json");
     let mut problem = campaign.problem.clone();
     problem.solver.engine = campaign.engine.clone();
+    if let Some(engine) = &campaign.monotone_base_engine {
+        problem.solver.monotone_base_engine = engine.clone();
+    }
     problem.solver.local_batch_siblings = campaign.batch_siblings;
     problem.solver.local_reuse_subtrees = campaign.reuse_subtrees;
     problem.solver.local_reuse_learned_cuts = campaign.reuse_learned_cuts;
     problem.solver.local_descartes_one = campaign.descartes_one;
+    problem.solver.local_base_point_projection = campaign.base_point_projection;
+    problem.solver.local_adjacent_pairs = campaign.adjacent_pairs;
     problem.solver.local_pair_cancellations = campaign.pair_cancellations;
     problem.solver.local_max_refinements = campaign
         .local_max_refinements
@@ -194,6 +225,9 @@ fn run_trial(campaign: &Campaign, trial: Trial) -> Result<Record> {
     fs::write(&input, serde_json::to_vec_pretty(&problem)?)?;
     let mut command = worker_command(campaign, "solve", &input, &output);
     command.env("SYMGCAD_PROGRESS_PATH", &progress_path);
+    let capture = directory.join("capture");
+    fs::create_dir_all(&capture)?;
+    command.env("SYMGCAD_CAPTURE_DIR", &capture);
     let process = run_bounded(&mut command, &problem.limits)?;
     let result: Option<SolveResult> = fs::read(&output)
         .ok()
@@ -207,7 +241,7 @@ fn run_trial(campaign: &Campaign, trial: Trial) -> Result<Record> {
             .is_some_and(|r| r.status == Status::CompleteGeneric);
     let verification = if complete && remaining(campaign) > 0.01 {
         let mut limits = problem.limits.clone();
-        limits.wall_time_secs = 60.0_f64.min(remaining(campaign));
+        limits.wall_time_secs = campaign.verification_secs.min(remaining(campaign));
         let mut command = worker_command(
             campaign,
             "verify",
@@ -262,6 +296,69 @@ fn last_terms(record: &Record) -> u64 {
         .and_then(|c| c.last())
         .and_then(|c| c["term_count"].as_u64())
         .unwrap_or(u64::MAX)
+}
+
+fn next_random(state: &mut u64) -> u64 {
+    *state = state.wrapping_add(0x9e3779b97f4a7c15);
+    let mut z = *state;
+    z = (z ^ (z >> 30)).wrapping_mul(0xbf58476d1ce4e5b9);
+    z = (z ^ (z >> 27)).wrapping_mul(0x94d049bb133111eb);
+    z ^ (z >> 31)
+}
+
+/// Promotion is a heuristic only: a small cache can mean a stalled operation,
+/// so prefer recent progress before comparing observed algebra inventories.
+/// None of these metrics certifies completed coverage.
+fn promotion_cmp(a: &Record, b: &Record) -> std::cmp::Ordering {
+    let stagnation = |r: &Record| {
+        let elapsed = r
+            .progress
+            .as_ref()
+            .and_then(|p| p["elapsed_seconds"].as_f64())
+            .unwrap_or(0.0);
+        let wall = r.process.wall_time_secs.max(0.001);
+        (((wall - elapsed).max(0.0) / wall).clamp(0.0, 1.0) * 4.0) as u8
+    };
+    let metric = |r: &Record, field: &str| {
+        r.progress
+            .as_ref()
+            .and_then(|p| p[field].as_u64())
+            .unwrap_or(u64::MAX)
+    };
+    let bytes = |r: &Record| {
+        r.progress
+            .as_ref()
+            .and_then(|p| p["cache"]["retained_bytes_estimate"].as_u64())
+            .filter(|&n| n > 0)
+            .unwrap_or(u64::MAX)
+    };
+    completed_levels(b)
+        .cmp(&completed_levels(a))
+        .then_with(|| last_terms(a).cmp(&last_terms(b)))
+        .then_with(|| stagnation(a).cmp(&stagnation(b)))
+        .then_with(|| bytes(a).cmp(&bytes(b)))
+        .then_with(|| metric(a, "refinements").cmp(&metric(b, "refinements")))
+        .then_with(|| a.trial.id.cmp(&b.trial.id))
+}
+
+fn promotion_candidates(records: &[Record], count: usize, seconds: f64, label: &str) -> Vec<Trial> {
+    let mut candidates = records
+        .iter()
+        .filter(|r| {
+            !r.verified
+                && (r.process.status == "timeout" || r.result_status == Some(Status::Incomplete))
+        })
+        .collect::<Vec<_>>();
+    candidates.sort_by(|a, b| promotion_cmp(a, b));
+    candidates
+        .into_iter()
+        .take(count)
+        .map(|r| Trial {
+            id: format!("{label}-{}", r.trial.id),
+            seconds,
+            ..r.trial.clone()
+        })
+        .collect()
 }
 
 fn run_round(campaign: &Campaign, trials: Vec<Trial>, cpus: &[usize]) -> Result<Vec<Record>> {
@@ -331,7 +428,11 @@ fn main() -> Result<()> {
         args.initial_secs.is_finite()
             && args.initial_secs > 0.0
             && args.promotion_secs.is_finite()
-            && args.promotion_secs > 0.0,
+            && args.promotion_secs > 0.0
+            && args.final_secs.is_finite()
+            && args.final_secs > 0.0
+            && args.verification_secs.is_finite()
+            && args.verification_secs > 0.0,
         "trial durations must be positive"
     );
     ensure!(
@@ -374,10 +475,13 @@ fn main() -> Result<()> {
             args.block.clone()
         },
         engine: args.engine.clone(),
+        monotone_base_engine: args.monotone_base_engine.clone(),
         batch_siblings: !args.no_batch_siblings,
         reuse_subtrees: !args.no_reuse_subtrees,
         reuse_learned_cuts: !args.no_learned_cuts,
         descartes_one: !args.no_descartes_one,
+        base_point_projection: !args.no_base_point_projection,
+        adjacent_pairs: args.adjacent_pairs,
         pair_cancellations: args.pair_cancellations as usize,
         local_max_refinements: args.local_max_refinements,
         local_max_nodes: args.local_max_nodes,
@@ -386,11 +490,29 @@ fn main() -> Result<()> {
         output,
         deadline: started + std::time::Duration::from_secs_f64(args.campaign_secs),
         memory_mib: args.memory_mib,
+        verification_secs: args.verification_secs,
     };
     let normalized = normalize(&campaign.problem, &campaign.problem.variables)?;
+    let tails = args
+        .peel_tail
+        .iter()
+        .map(|name| {
+            campaign
+                .problem
+                .variables
+                .iter()
+                .position(|v| v == name)
+                .context("unknown peeled tail variable")
+        })
+        .collect::<Result<Vec<_>>>()?;
+    ensure!(
+        tails.iter().copied().collect::<BTreeSet<_>>().len() == tails.len(),
+        "duplicate tail variable"
+    );
     let mut anchors = (0..campaign.problem.variables.len())
         .filter(|&v| {
             campaign.block.contains(&campaign.problem.variables[v])
+                && !tails.contains(&v)
                 && args
                     .anchor
                     .as_ref()
@@ -412,13 +534,19 @@ fn main() -> Result<()> {
             v,
         )
     });
-    let mut trials = Vec::new();
+    let mut anchor_trials = Vec::new();
+    let mut random = args.seed;
     for anchor in anchors {
         let mut reduced = normalized
             .positives
             .iter()
             .chain(&normalized.split)
             .map(|p| p.replace(anchor, &Rational::one()))
+            .map(|p| {
+                tails
+                    .iter()
+                    .fold(p, |q, &v| q.replace(v, &Rational::zero()))
+            })
             .collect::<Vec<_>>();
         reduced.retain(|p| !p.is_constant());
         let mut groups = if campaign.problem.variable_groups.is_empty() {
@@ -446,8 +574,39 @@ fn main() -> Result<()> {
         groups[anchor_group].retain(|&v| v != anchor);
         groups.insert(anchor_group, vec![anchor]);
         groups.retain(|g| !g.is_empty());
+        if !tails.is_empty() {
+            ensure!(
+                groups
+                    .last()
+                    .is_some_and(|g| tails.iter().all(|v| g.contains(v))),
+                "peeled tail variables must belong to the final original variable group"
+            );
+            groups.last_mut().unwrap().retain(|v| !tails.contains(v));
+            groups.retain(|g| !g.is_empty());
+            groups.extend(tails.iter().map(|&v| vec![v]));
+        }
         let seeds = if args.order.is_empty() {
-            cheap_seed_orders(&reduced, &groups)
+            let mut seeds = cheap_seed_orders(&reduced, &groups);
+            seeds.push(groups.iter().flatten().copied().collect());
+            seeds.push(
+                groups
+                    .iter()
+                    .flat_map(|g| g.iter().rev().copied())
+                    .collect(),
+            );
+            for _ in 0..args.permutations {
+                let mut shuffled = groups.clone();
+                for group in &mut shuffled {
+                    for i in (1..group.len()).rev() {
+                        let j = (next_random(&mut random) % (i as u64 + 1)) as usize;
+                        group.swap(i, j);
+                    }
+                }
+                seeds.push(shuffled.into_iter().flatten().collect());
+            }
+            let mut seen = BTreeSet::new();
+            seeds.retain(|order| seen.insert(order.clone()));
+            seeds
         } else {
             vec![
                 args.order
@@ -463,9 +622,14 @@ fn main() -> Result<()> {
                     .collect::<Result<Vec<_>>>()?,
             ]
         };
+        let mut current = VecDeque::new();
         for (seed, indices) in seeds.into_iter().enumerate() {
             let name = campaign.problem.variables[anchor].clone();
-            trials.push(Trial {
+            ensure!(
+                tails.is_empty() || indices.ends_with(&tails),
+                "explicit order must end with the peeled tail"
+            );
+            current.push_back(Trial {
                 id: format!("initial-{name}-{seed}"),
                 anchor: name,
                 order: indices
@@ -475,6 +639,16 @@ fn main() -> Result<()> {
                 seconds: args.initial_secs,
             });
         }
+        anchor_trials.push(current);
+    }
+    // Round-robin anchors so short campaigns explore every normalization chart.
+    let mut trials = Vec::new();
+    while anchor_trials.iter().any(|queue| !queue.is_empty()) {
+        for queue in &mut anchor_trials {
+            if let Some(trial) = queue.pop_front() {
+                trials.push(trial);
+            }
+        }
     }
     let provenance = json!({
         "kind":"exploratory_debug_no_parity_claim", "fixture":args.fixture,"engine":args.engine,
@@ -483,6 +657,8 @@ fn main() -> Result<()> {
         "executable_sha256":format!("{:x}",Sha256::digest(fs::read(&campaign.executable)?)),
         "cpus":cpus,"worker_memory_mib":args.memory_mib,"campaign_secs":args.campaign_secs,
         "checkpoint_dir":campaign.checkpoint_dir,
+        "seed":args.seed,"permutations_per_anchor":args.permutations,"peel_tail":args.peel_tail,
+        "promotion_policy":"projection depth then term count then stale-progress quartile then retained algebra bytes then refinements; heuristic only",
         "initial_trials":trials,
     });
     fs::write(
@@ -495,28 +671,16 @@ fn main() -> Result<()> {
         campaign.output.display()
     );
     let mut records = run_round(&campaign, trials, &cpus)?;
-    let mut candidates = records
-        .iter()
-        .filter(|r| r.process.status == "timeout" && !r.verified)
-        .cloned()
-        .collect::<Vec<_>>();
-    candidates.sort_by(|a, b| {
-        completed_levels(b)
-            .cmp(&completed_levels(a))
-            .then_with(|| last_terms(a).cmp(&last_terms(b)))
-            .then_with(|| a.trial.id.cmp(&b.trial.id))
-    });
-    let promotions = candidates
-        .into_iter()
-        .take(args.promotions)
-        .map(|r| Trial {
-            id: format!("promoted-{}", r.trial.id),
-            seconds: args.promotion_secs,
-            ..r.trial
-        })
-        .collect();
+    let promotions =
+        promotion_candidates(&records, args.promotions, args.promotion_secs, "promoted");
     if remaining(&campaign) > 0.01 {
-        records.extend(run_round(&campaign, promotions, &cpus)?);
+        let promoted = run_round(&campaign, promotions, &cpus)?;
+        let finalists =
+            promotion_candidates(&promoted, args.final_promotions, args.final_secs, "final");
+        records.extend(promoted);
+        if remaining(&campaign) > 0.01 {
+            records.extend(run_round(&campaign, finalists, &cpus)?);
+        }
     }
     let summary = json!({"provenance":provenance,"elapsed_secs":started.elapsed().as_secs_f64(),
         "verified_complete":records.iter().filter(|r|r.verified).count(),"records":records});

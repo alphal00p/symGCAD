@@ -15,6 +15,13 @@
 //! nullified fibers. Its independent checker replays projection obligations and
 //! every sector; checking cell samples alone would not establish coverage.
 //!
+//! The opt-in adjacent-pair rule strengthens Algorithm 8, which uses all
+//! root-bearing pairs. On a connected parent cell the individual relevant root
+//! branches are continuous and simple. A nonvanishing guard for each adjacent
+//! pair preserves its strict sample ordering; transitivity preserves the whole
+//! order. Exact coincidences use all pairs instead. Every sibling refinement
+//! rebuilds this ordering, and the checker reconstructs it independently.
+//!
 //! Optional original-domain certificates replace a projection guard only by
 //! explicit obligations for the earlier coordinate bounds proving it nonzero.
 //! Protected original factors make those premises sign-invariant on the whole
@@ -103,6 +110,10 @@ pub struct LocalOptions {
     /// Missing historical evidence retains ordinary local projection replay.
     #[serde(default)]
     pub base_point_projection: bool,
+    /// Experimental: project only consecutive relevant root branches after
+    /// their individual delineability guards have been established.
+    #[serde(default)]
+    pub adjacent_pairs: bool,
 }
 fn one_cancellation() -> usize {
     1
@@ -123,6 +134,7 @@ impl Default for LocalOptions {
             reuse_learned_cuts: true,
             descartes_one: true,
             base_point_projection: true,
+            adjacent_pairs: false,
         }
     }
 }
@@ -191,6 +203,9 @@ pub struct LocalReport {
     /// All potential pairs avoided, including pairs with rootless cuts.
     pub base_point_candidate_pairs_skipped: usize,
     pub base_point_max_cuts: usize,
+    pub adjacent_pair_stacks: usize,
+    pub nonadjacent_pairs_omitted: usize,
+    pub coincident_pair_fallbacks: usize,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -210,6 +225,24 @@ pub struct LocalProjectionCertificate {
     pub removals: Vec<usize>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub positive_ray: Option<PositiveRayProjection>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub adjacent_pairs: Option<AdjacentPairProjection>,
+}
+
+/// Sample ordering is used only after every individual relevant root function
+/// is delineable on the eventual connected parent cell. Nonvanishing selected
+/// pair guards preserve every adjacent inequality, hence the complete order.
+/// Shared roots lose owner information in the union, so they use all pairs.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AdjacentPairProjection {
+    pub positive: bool,
+    pub distinct_root_counts: Vec<(usize, usize)>,
+    /// Polynomial and full-real index at this exact sample. For a positive
+    /// Descartes-one branch the index is descriptive, not a global ordinal.
+    pub branch_order: Vec<(usize, usize)>,
+    pub coincident_fallback: bool,
+    /// Sorted unique polynomial pairs; empty when fallback selects all pairs.
+    pub selected_pairs: Vec<(usize, usize)>,
 }
 
 /// A separate delineability theorem on x>0. The omitted negative half-line
@@ -527,6 +560,87 @@ impl ProjectionOperations for CachedOperations<'_> {
     }
 }
 
+fn relevant_roots(mut roots: Vec<FiberRoot>, positive: bool) -> Result<Vec<FiberRoot>> {
+    if positive {
+        for root in &mut roots {
+            ensure!(
+                root.fiber.evaluate(&Rational::zero()) != Rational::zero(),
+                "positive pair selection has an unguarded zero endpoint"
+            );
+            while root.interval.0 <= Rational::zero() && root.interval.1 >= Rational::zero() {
+                crate::roots::refine_once(root);
+            }
+        }
+        roots.retain(|root| root.interval.0 > Rational::zero());
+    }
+    Ok(roots)
+}
+
+/// Recomputed independently by the checker, including multiplicity-free root
+/// counts BEFORE the merged union discards coincident owners. Negative roots
+/// are excluded on both sides for a positive-ray proof.
+fn adjacent_pair_projection(
+    algebra: &Algebra,
+    polynomials: &[Poly],
+    bearing: &[usize],
+    variable: usize,
+    prefix: &[Rational],
+    positive: bool,
+) -> Result<AdjacentPairProjection> {
+    let mut fibers = Vec::with_capacity(bearing.len());
+    let mut counts = Vec::with_capacity(bearing.len());
+    for &id in bearing {
+        let fiber = algebra.specialize_univariate(&polynomials[id], variable, prefix)?;
+        let roots = relevant_roots(isolate_union(vec![(id, fiber.clone())])?, positive)?;
+        ensure!(!roots.is_empty(), "root-bearing cut has no relevant roots");
+        counts.push((id, roots.len()));
+        fibers.push((id, fiber));
+    }
+    let union = relevant_roots(isolate_union(fibers)?, positive)?;
+    let individual_count: usize = counts.iter().map(|(_, count)| count).sum();
+    ensure!(
+        union.len() <= individual_count,
+        "root union count exceeds its inputs"
+    );
+    let coincident_fallback = union.len() != individual_count;
+    let selected_pairs = if coincident_fallback {
+        Vec::new()
+    } else {
+        union
+            .windows(2)
+            .filter_map(|roots| {
+                let (a, b) = (roots[0].polynomial, roots[1].polynomial);
+                (a != b).then_some((a.min(b), a.max(b)))
+            })
+            .collect::<BTreeSet<_>>()
+            .into_iter()
+            .collect()
+    };
+    Ok(AdjacentPairProjection {
+        positive,
+        distinct_root_counts: counts,
+        branch_order: union
+            .iter()
+            .map(|root| (root.polynomial, root.index))
+            .collect(),
+        coincident_fallback,
+        selected_pairs,
+    })
+}
+
+fn projection_pairs<'a>(
+    bearing: &'a [usize],
+    selection: Option<&'a AdjacentPairProjection>,
+) -> Box<dyn Iterator<Item = (usize, usize)> + 'a> {
+    if let Some(selection) = selection.filter(|proof| !proof.coincident_fallback) {
+        Box::new(selection.selected_pairs.iter().copied())
+    } else {
+        Box::new(bearing.iter().enumerate().flat_map(move |(index, &id)| {
+            bearing[index + 1..].iter().map(move |&other| (id, other))
+        }))
+    }
+}
+
 /// Return the generic McCallum local projection before factorization. Keeping
 /// this pure lets the checker use checked factor reconstruction independently.
 fn local_projection_raw(
@@ -535,6 +649,8 @@ fn local_projection_raw(
     cuts: &[usize],
     variable: usize,
     prefix: &[Rational],
+    adjacent_pairs: bool,
+    selection: &mut Option<AdjacentPairProjection>,
     operations: &mut impl ProjectionOperations,
 ) -> Result<(Vec<usize>, Vec<Poly>, usize, usize, f64)> {
     let mut raw = Vec::new();
@@ -552,13 +668,17 @@ fn local_projection_raw(
         // Root-bearing classification is meaningful only on a full-degree fiber.
         // Return lc first even at a nongeneric prefix; the caller will refine it.
         raw.push(lc.clone());
+        if prefix_value(&lc, prefix)?.is_zero() {
+            return Ok((bearing, raw, 0, 0, root_seconds));
+        }
         if p.degree(variable) > 1 {
             let disc = operations.discriminant(p, variable)?;
             ensure!(!disc.is_zero(), "local cut is not square-free");
+            let vanishing = prefix_value(&disc, prefix)?.is_zero();
             raw.push(disc);
-        }
-        if prefix_value(&lc, prefix)?.is_zero() {
-            continue;
+            if vanishing {
+                return Ok((bearing, raw, 0, 0, root_seconds));
+            }
         }
         let started = Instant::now();
         let fiber = algebra.specialize_univariate(p, variable, prefix)?;
@@ -580,22 +700,42 @@ fn local_projection_raw(
     {
         return Ok((bearing, raw, 0, 0, root_seconds));
     }
+    // With fewer than three bearing polynomials every possible pair is
+    // necessary; avoid repeating root isolation when no omission can result.
+    if adjacent_pairs && bearing.len() >= 3 {
+        let started = Instant::now();
+        *selection = Some(adjacent_pair_projection(
+            algebra,
+            polynomials,
+            &bearing,
+            variable,
+            prefix,
+            false,
+        )?);
+        root_seconds += started.elapsed().as_secs_f64();
+    }
     let mut pairs = 0;
-    for (j, &id) in bearing.iter().enumerate() {
+    for (id, other) in projection_pairs(&bearing, selection.as_ref()) {
         let p = &polynomials[id];
-        for &other in &bearing[j + 1..] {
-            let q = &polynomials[other];
-            let r = operations.resultant(p, q, variable)?;
-            ensure!(
-                !r.is_zero(),
-                "distinct irreducible cuts have zero resultant"
-            );
-            raw.push(r);
-            pairs += 1;
+        let q = &polynomials[other];
+        let r = operations.resultant(p, q, variable)?;
+        ensure!(
+            !r.is_zero(),
+            "distinct irreducible cuts have zero resultant"
+        );
+        let vanishing = prefix_value(&r, prefix)?.is_zero();
+        raw.push(r);
+        pairs += 1;
+        if vanishing {
+            break;
         }
     }
     let all_pairs = cuts.len().saturating_mul(cuts.len().saturating_sub(1)) / 2;
-    Ok((bearing, raw, pairs, all_pairs - pairs, root_seconds))
+    let bearing_pairs = bearing
+        .len()
+        .saturating_mul(bearing.len().saturating_sub(1))
+        / 2;
+    Ok((bearing, raw, pairs, all_pairs - bearing_pairs, root_seconds))
 }
 
 /// No specialization may hide parameter dependence here: every polynomial
@@ -729,6 +869,8 @@ fn positive_projection_raw(
     pair_separation: bool,
     pair_cancellations: usize,
     descartes_one: bool,
+    adjacent_pairs: bool,
+    selection: &mut Option<AdjacentPairProjection>,
     pair_seconds: &mut f64,
     operations: &mut impl ProjectionOperations,
 ) -> Result<(
@@ -901,33 +1043,47 @@ fn positive_projection_raw(
     {
         return Ok((bearing, raw, 0, 0, root_seconds, ray));
     }
+    if adjacent_pairs && bearing.len() >= 3 {
+        let started = Instant::now();
+        *selection = Some(adjacent_pair_projection(
+            algebra,
+            polynomials,
+            &bearing,
+            variable,
+            prefix,
+            true,
+        )?);
+        root_seconds += started.elapsed().as_secs_f64();
+    }
     let mut pairs = 0;
-    for (j, &id) in bearing.iter().enumerate() {
-        for &other in &bearing[j + 1..] {
-            if pair_separation {
-                let started = Instant::now();
-                let attempt = separate_positive_pair(
-                    polynomials,
-                    id,
-                    other,
-                    variable,
-                    prefix,
-                    pair_cancellations,
-                );
-                *pair_seconds += started.elapsed().as_secs_f64();
-                if let Some((proof, coefficients)) = attempt? {
-                    raw.extend(coefficients);
-                    ray.separations.push(proof);
-                    continue;
-                }
-            }
-            let r = operations.resultant(&polynomials[id], &polynomials[other], variable)?;
-            ensure!(
-                !r.is_zero(),
-                "distinct irreducible cuts have zero resultant"
+    for (id, other) in projection_pairs(&bearing, selection.as_ref()) {
+        if pair_separation {
+            let started = Instant::now();
+            let attempt = separate_positive_pair(
+                polynomials,
+                id,
+                other,
+                variable,
+                prefix,
+                pair_cancellations,
             );
-            raw.push(r);
-            pairs += 1;
+            *pair_seconds += started.elapsed().as_secs_f64();
+            if let Some((proof, coefficients)) = attempt? {
+                raw.extend(coefficients);
+                ray.separations.push(proof);
+                continue;
+            }
+        }
+        let r = operations.resultant(&polynomials[id], &polynomials[other], variable)?;
+        ensure!(
+            !r.is_zero(),
+            "distinct irreducible cuts have zero resultant"
+        );
+        let vanishing = prefix_value(&r, prefix)?.is_zero();
+        raw.push(r);
+        pairs += 1;
+        if vanishing {
+            break;
         }
     }
     let all_pairs = cuts.len().saturating_mul(cuts.len().saturating_sub(1)) / 2;
@@ -1348,9 +1504,11 @@ impl Builder<'_> {
                 guards: vec![],
                 removals: vec![],
                 positive_ray: None,
+                adjacent_pairs: None,
             });
         }
         let mut pair_seconds = 0.0;
+        let mut adjacent_pairs = None;
         let ray_constraint = self
             .options
             .positive_ray
@@ -1372,14 +1530,24 @@ impl Builder<'_> {
                     self.options.positive_pair_separation,
                     self.options.positive_pair_cancellations,
                     self.options.descartes_one,
+                    self.options.adjacent_pairs,
+                    &mut adjacent_pairs,
                     &mut pair_seconds,
                     &mut self.operations,
                 )?;
                 if self.options.positive_pair_separation {
-                    self.report.pair_separation_candidates += bearing
-                        .len()
-                        .saturating_mul(bearing.len().saturating_sub(1))
-                        / 2;
+                    self.report.pair_separation_candidates += adjacent_pairs
+                        .as_ref()
+                        .filter(|proof| !proof.coincident_fallback)
+                        .map_or_else(
+                            || {
+                                bearing
+                                    .len()
+                                    .saturating_mul(bearing.len().saturating_sub(1))
+                                    / 2
+                            },
+                            |proof| proof.selected_pairs.len(),
+                        );
                     self.report.pair_resultants_omitted += ray.separations.len();
                     self.report.second_cancellation_pairs_omitted += ray
                         .separations
@@ -1417,6 +1585,8 @@ impl Builder<'_> {
                     cuts,
                     level,
                     prefix,
+                    self.options.adjacent_pairs,
+                    &mut adjacent_pairs,
                     &mut self.operations,
                 )?;
                 (bearing, raw, pairs, omitted, seconds, None)
@@ -1425,6 +1595,18 @@ impl Builder<'_> {
         self.operations.phases.pair_separation_seconds += pair_seconds;
         self.report.projected_pairs += pairs;
         self.report.omitted_rootless_pairs += omitted;
+        if let Some(selection) = &adjacent_pairs {
+            self.report.adjacent_pair_stacks += 1;
+            if selection.coincident_fallback {
+                self.report.coincident_pair_fallbacks += 1;
+            } else {
+                let all = root_bearing
+                    .len()
+                    .saturating_mul(root_bearing.len().saturating_sub(1))
+                    / 2;
+                self.report.nonadjacent_pairs_omitted += all - selection.selected_pairs.len();
+            }
+        }
         let factors = self.operations.factors(&raw)?;
         let mut guards: BTreeSet<_> = factors.into_iter().map(|p| self.intern(p)).collect();
         self.guard_nonzero(&guards, prefix)?;
@@ -1446,6 +1628,7 @@ impl Builder<'_> {
             guards: guards.into_iter().collect(),
             removals,
             positive_ray,
+            adjacent_pairs,
         })
     }
     fn visit(&mut self, prefix: &mut Vec<Rational>) -> Work<Built> {
@@ -1964,6 +2147,7 @@ struct Checker<'a> {
     positive_pair_cancellations: usize,
     descartes_one: bool,
     base_point_projection: bool,
+    adjacent_pairs: bool,
 }
 impl Checker<'_> {
     fn check_registry(&self) -> Result<()> {
@@ -2092,6 +2276,7 @@ impl Checker<'_> {
                     cuts == &cut_set.iter().copied().collect::<Vec<_>>(),
                     "cuts are not unique and sorted"
                 );
+                let mut adjacent_pairs = None;
                 let (bearing, raw) = if projection.base_point {
                     ensure!(
                         self.base_point_projection,
@@ -2127,6 +2312,8 @@ impl Checker<'_> {
                         self.positive_pair_separation,
                         self.positive_pair_cancellations,
                         self.descartes_one,
+                        self.adjacent_pairs,
+                        &mut adjacent_pairs,
                         &mut 0.0,
                         &mut IndependentOperations,
                     )?;
@@ -2142,10 +2329,16 @@ impl Checker<'_> {
                         cuts,
                         level,
                         prefix,
+                        self.adjacent_pairs,
+                        &mut adjacent_pairs,
                         &mut IndependentOperations,
                     )?;
                     (bearing, raw)
                 };
+                ensure!(
+                    projection.adjacent_pairs == adjacent_pairs,
+                    "incorrect adjacent-root pair projection witness"
+                );
                 ensure!(
                     projection.root_bearing == bearing,
                     "incorrect root-bearing cut subset"
@@ -2383,6 +2576,7 @@ pub fn verify_local_parts(
         positive_pair_cancellations: options.positive_pair_cancellations,
         descartes_one: options.descartes_one,
         base_point_projection: options.base_point_projection,
+        adjacent_pairs: options.adjacent_pairs,
     };
     checker.check_registry()?;
     ensure!(
@@ -2525,5 +2719,123 @@ mod pair_separation_tests {
         }
         assert!(pair_cancellation(&polynomials[0], &polynomials[1], 1, 1).is_none());
         assert!(separate_positive_pair(&polynomials, 0, 1, 1, &[Rational::from(2)], 3).is_err());
+    }
+}
+
+#[cfg(test)]
+mod adjacent_pair_tests {
+    use super::*;
+
+    #[test]
+    fn every_branch_participates_in_the_exact_adjacency_order() {
+        let algebra = Algebra::new(&["s".into(), "t".into(), "z".into()]).unwrap();
+        let polys = ["z^2+s*z+t", "z+1", "z-1"].map(|p| algebra.parse(p).unwrap());
+        let proof = adjacent_pair_projection(
+            &algebra,
+            &polys,
+            &[0, 1, 2],
+            2,
+            &[Rational::zero(), Rational::from(-4)],
+            false,
+        )
+        .unwrap();
+        assert_eq!(proof.branch_order, vec![(0, 0), (1, 0), (2, 0), (0, 1)]);
+        assert_eq!(proof.selected_pairs, vec![(0, 1), (0, 2), (1, 2)]);
+        assert!(!proof.coincident_fallback);
+    }
+
+    #[test]
+    fn coincident_relevant_roots_fall_back_but_negative_coincidences_do_not() {
+        let algebra = Algebra::new(&["a".into(), "z".into()]).unwrap();
+        let polys = ["z-a", "z+a", "z-2"].map(|p| algebra.parse(p).unwrap());
+        let proof =
+            adjacent_pair_projection(&algebra, &polys, &[0, 1, 2], 1, &[Rational::zero()], false)
+                .unwrap();
+        assert!(proof.coincident_fallback);
+        assert_eq!(
+            proof
+                .distinct_root_counts
+                .iter()
+                .map(|(_, n)| n)
+                .sum::<usize>(),
+            3
+        );
+        assert_eq!(proof.branch_order.len(), 2);
+        assert_eq!(projection_pairs(&[0, 1, 2], Some(&proof)).count(), 3);
+        let polys = ["z^2-a", "z^2-z-a-1"].map(|p| algebra.parse(p).unwrap());
+        let positive =
+            adjacent_pair_projection(&algebra, &polys, &[0, 1], 1, &[Rational::one()], true)
+                .unwrap();
+        assert!(!positive.coincident_fallback);
+        assert_eq!(positive.distinct_root_counts, vec![(0, 1), (1, 1)]);
+        assert_eq!(positive.branch_order, vec![(0, 1), (1, 1)]);
+        let full =
+            adjacent_pair_projection(&algebra, &polys, &[0, 1], 1, &[Rational::one()], false)
+                .unwrap();
+        assert!(full.coincident_fallback);
+    }
+
+    #[test]
+    fn vanishing_guards_abort_before_unusable_pair_work() {
+        struct Counting {
+            pairs: usize,
+            discriminants: usize,
+        }
+        impl ProjectionOperations for Counting {
+            fn discriminant(&mut self, p: &Poly, variable: usize) -> Result<Poly> {
+                self.discriminants += 1;
+                discriminant(p, variable)
+            }
+            fn resultant(&mut self, p: &Poly, q: &Poly, variable: usize) -> Result<Poly> {
+                self.pairs += 1;
+                exact_resultant(p, q, variable)
+            }
+        }
+        let algebra = Algebra::new(&["a".into(), "z".into()]).unwrap();
+        let mut operations = Counting {
+            pairs: 0,
+            discriminants: 0,
+        };
+        for text in ["a*z^2+1", "z^2-a"] {
+            let polys = [text, "z^3+a*z+1"].map(|p| algebra.parse(p).unwrap());
+            let mut selection = None;
+            let (_, raw, _, _, _) = local_projection_raw(
+                &algebra,
+                &polys,
+                &[0, 1],
+                1,
+                &[Rational::zero()],
+                true,
+                &mut selection,
+                &mut operations,
+            )
+            .unwrap();
+            assert!(selection.is_none());
+            assert!(
+                raw.iter()
+                    .any(|p| prefix_value(p, &[Rational::zero()]).unwrap().is_zero())
+            );
+        }
+        assert_eq!(operations.pairs, 0);
+        assert_eq!(operations.discriminants, 1);
+        let polys = ["z-a", "z+a", "z-2"].map(|p| algebra.parse(p).unwrap());
+        let mut selection = None;
+        let (_, raw, _, _, _) = local_projection_raw(
+            &algebra,
+            &polys,
+            &[0, 1, 2],
+            1,
+            &[Rational::zero()],
+            true,
+            &mut selection,
+            &mut operations,
+        )
+        .unwrap();
+        assert!(selection.unwrap().coincident_fallback);
+        assert_eq!(operations.pairs, 1);
+        assert!(
+            raw.iter()
+                .any(|p| prefix_value(p, &[Rational::zero()]).unwrap().is_zero())
+        );
     }
 }

@@ -2136,3 +2136,217 @@ fn base_point_historical_evidence_and_solver_ablation_remain_explicit() {
     assert!(options.base_point_projection);
     assert!(symgcad::verify::verify(&fast).unwrap().verified);
 }
+
+fn adjacent_options(positive: bool) -> LocalOptions {
+    LocalOptions {
+        adjacent_pairs: true,
+        positive_ray: positive,
+        fallback_to_global: false,
+        ..Default::default()
+    }
+}
+
+#[test]
+fn adjacent_pairs_match_full_pairs_and_global_cad_across_crossings() {
+    let cases = [
+        (
+            problem(&["a", "z"], &[], &["z^2+a*z-4", "z+1", "z-1", "z-a"]),
+            false,
+        ),
+        (
+            problem(&["a", "z"], &["a>0", "z>0"], &["z^2-a", "z^2-z-a-1", "z-3"]),
+            true,
+        ),
+        (
+            problem(
+                &["a", "z"],
+                &["a>0", "z>0"],
+                &["z^3+a*z^2+z-1", "z-2", "z-3"],
+            ),
+            true,
+        ),
+    ];
+    let mut omitted = 0;
+    for (p, positive) in cases {
+        let options = adjacent_options(positive);
+        let adjacent = local_solution(&p, &options);
+        let full = local_solution(
+            &p,
+            &LocalOptions {
+                adjacent_pairs: false,
+                ..options
+            },
+        );
+        let global = symgcad::solver::solve(&p).unwrap();
+        let LocalEvidence::Local { report, .. } = adjacent.local.as_deref().unwrap() else {
+            panic!()
+        };
+        omitted += report.nonadjacent_pairs_omitted;
+        for other in [&full, &global] {
+            let comparison =
+                symgcad::comparison::compare_generic(&adjacent, other, &symgcad::Limits::default())
+                    .unwrap();
+            assert_eq!(comparison.equivalent, Some(true));
+        }
+    }
+    assert!(omitted > 0);
+}
+
+#[test]
+fn adjacent_pairs_replay_sibling_refinement_and_cache_ablations() {
+    let p = problem(
+        &["x", "y", "z"],
+        &["x>0", "y>0", "z>0"],
+        &["z^2-x", "z-y", "z-2"],
+    );
+    let cached = local_solution(&p, &adjacent_options(true));
+    let uncached = local_solution(
+        &p,
+        &LocalOptions {
+            cache_enabled: false,
+            reuse_completed_subtrees: false,
+            reuse_learned_cuts: false,
+            batch_sibling_discovery: false,
+            ..adjacent_options(true)
+        },
+    );
+    assert_eq!(
+        symgcad::comparison::compare_generic(&cached, &uncached, &symgcad::Limits::default())
+            .unwrap()
+            .equivalent,
+        Some(true)
+    );
+    let limited = solve_local(
+        &p,
+        &LocalOptions {
+            max_nodes: 1,
+            ..adjacent_options(true)
+        },
+    )
+    .unwrap();
+    assert_eq!(limited.solution.status, Status::Incomplete);
+    assert!(verify_local(&limited).is_err());
+}
+
+fn change_adjacent_witness(node: &mut LocalNode, modification: usize) -> bool {
+    let LocalNode::Stack {
+        projection,
+        sectors,
+        ..
+    } = node
+    else {
+        return false;
+    };
+    if let Some(witness) = &mut projection.adjacent_pairs {
+        if witness.selected_pairs.is_empty() || witness.branch_order.len() < 2 {
+            return sectors
+                .iter_mut()
+                .any(|s| change_adjacent_witness(&mut s.child, modification));
+        }
+        match modification {
+            0 => witness.selected_pairs.clear(),
+            1 => witness.branch_order.swap(0, 1),
+            2 => witness.distinct_root_counts[0].1 += 1,
+            3 => witness.coincident_fallback = !witness.coincident_fallback,
+            4 => witness.positive = !witness.positive,
+            5 => projection.adjacent_pairs = None,
+            _ => unreachable!(),
+        }
+        true
+    } else {
+        sectors
+            .iter_mut()
+            .any(|s| change_adjacent_witness(&mut s.child, modification))
+    }
+}
+
+#[test]
+fn adjacent_pair_verifier_rejects_omitted_pairs_changed_order_and_scope() {
+    let p = problem(&["a", "z"], &["a>0", "z>0"], &["z^2-a", "z-2", "z-3"]);
+    let result = solve_local(&p, &adjacent_options(true)).unwrap();
+    assert!(verify_local(&result).unwrap().verified);
+    for modification in 0..6 {
+        let mut changed = result.clone();
+        let LocalEvidence::Local { root, .. } = &mut changed.evidence else {
+            panic!()
+        };
+        assert!(change_adjacent_witness(root, modification));
+        assert!(verify_local(&changed).is_err(), "tamper {modification}");
+    }
+    let mut changed = result.clone();
+    let LocalEvidence::Local { options, .. } = &mut changed.evidence else {
+        panic!()
+    };
+    options.adjacent_pairs = false;
+    assert!(verify_local(&changed).is_err());
+}
+
+#[test]
+fn adjacent_pairs_are_opt_in_and_historical_proofs_replay_full_pairs() {
+    let mut p = problem(&["a", "z"], &[], &["z-a", "z-1", "z+1"]);
+    p.solver.engine = "local".into();
+    assert!(!p.solver.local_adjacent_pairs);
+    assert!(
+        !toml::to_string(&p)
+            .unwrap()
+            .contains("local_adjacent_pairs")
+    );
+    let ordinary = symgcad::solver::solve(&p).unwrap();
+    let mut old = serde_json::to_value(&ordinary).unwrap();
+    fn erase(value: &mut serde_json::Value) {
+        match value {
+            serde_json::Value::Object(map) => {
+                map.remove("adjacent_pairs");
+                map.remove("local_adjacent_pairs");
+                for value in map.values_mut() {
+                    erase(value);
+                }
+            }
+            serde_json::Value::Array(values) => {
+                for value in values {
+                    erase(value);
+                }
+            }
+            _ => {}
+        }
+    }
+    erase(&mut old);
+    let restored: symgcad::output::SolveResult = serde_json::from_value(old).unwrap();
+    assert!(symgcad::verify::verify(&restored).unwrap().verified);
+    let LocalEvidence::Local { options, .. } = restored.local.as_deref().unwrap() else {
+        panic!()
+    };
+    assert!(!options.adjacent_pairs);
+    p.solver.local_adjacent_pairs = true;
+    let parsed = Problem::from_toml(&toml::to_string(&p).unwrap()).unwrap();
+    assert!(parsed.solver.local_adjacent_pairs);
+    let adjacent = symgcad::solver::solve(&parsed).unwrap();
+    assert!(symgcad::verify::verify(&adjacent).unwrap().verified);
+    let LocalEvidence::Local { options, .. } = adjacent.local.as_deref().unwrap() else {
+        panic!()
+    };
+    assert!(options.adjacent_pairs);
+}
+
+#[test]
+fn adjacent_pair_degree_and_endpoint_obstructions_refine_before_projection() {
+    let p = problem(&["a", "z"], &["z>0"], &["a*z+1", "z-a", "z-1", "z-2"]);
+    let fast = local_solution(&p, &adjacent_options(true));
+    let global = symgcad::solver::solve(&p).unwrap();
+    assert_eq!(
+        symgcad::comparison::compare_generic(&fast, &global, &symgcad::Limits::default())
+            .unwrap()
+            .equivalent,
+        Some(true)
+    );
+    let mut changed = solve_local(&p, &adjacent_options(true)).unwrap();
+    let LocalEvidence::Local {
+        root: LocalNode::Stack { sectors, .. },
+        ..
+    } = &mut changed.evidence
+    else {
+        panic!()
+    };
+    sectors.pop();
+    assert!(verify_local(&changed).is_err());
+}
