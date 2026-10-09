@@ -254,8 +254,9 @@ nix develop -c cargo run --example aggregate_completion -- \
   --ledger artifacts/completion-deterministic/fixed/results/ledger.json \
   --ledger artifacts/completion-deterministic/symbolic/results/ledger.json \
   --ledger artifacts/completion-unscaled-retry-01/results/ledger.json \
+  --ledger artifacts/completion-baseline-retry-02/results/ledger.json \
   --supplemental artifacts/completion-deterministic/extra-verifications/report.json \
-  --output artifacts/completion-aggregate.json
+  --output artifacts/completion-aggregate-296.json
 ```
 
 Add further `--ledger` arguments for completed retries. The report includes all
@@ -268,7 +269,7 @@ full-problem campaign using the frozen baseline variable order:
 
 ```sh
 nix develop -c cargo run --example prepare_completion_retry -- \
-  --completion artifacts/completion-aggregate.json \
+  --completion artifacts/completion-aggregate-294.json \
   --parity artifacts/bench/parity-aggregate-9025.json \
   --output artifacts/completion-baseline-retry-02
 nix develop -c taskset -c 0 artifacts/bin/symgcad-fast-lifting-1d15d03 bench \

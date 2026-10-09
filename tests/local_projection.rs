@@ -1639,3 +1639,62 @@ fn reused_proofs_remain_exhaustive_and_reject_tampering_or_exhausted_budgets() {
     assert!(!options.reuse_completed_subtrees);
     assert!(verify_local(&restored).unwrap().verified);
 }
+
+#[test]
+fn configured_local_caps_keep_defaults_and_report_exhaustion_without_completion() {
+    let mut p = problem(&["x", "y"], &[], &["y^2+x"]);
+    p.solver.engine = "local".into();
+    let serialized = serde_json::to_value(&p).unwrap();
+    assert!(serialized["solver"].get("local_max_refinements").is_none());
+    assert!(serialized["solver"].get("local_max_nodes").is_none());
+    let normal = symgcad::solver::solve(&p).unwrap();
+    let LocalEvidence::Local { options, .. } = normal.local.as_deref().unwrap() else {
+        panic!()
+    };
+    assert_eq!(options.max_refinements, 10_000);
+    assert_eq!(options.max_nodes, 100_000);
+    assert!(symgcad::verify::verify(&normal).unwrap().verified);
+    for (refinements, nodes) in [(Some(0), None), (None, Some(1))] {
+        p.solver.local_max_refinements = refinements;
+        p.solver.local_max_nodes = nodes;
+        let restored = Problem::from_toml(&toml::to_string(&p).unwrap()).unwrap();
+        let result = symgcad::solver::solve(&restored).unwrap();
+        assert_eq!(result.status, Status::Incomplete);
+        assert!(result.cells.is_empty());
+        assert!(matches!(
+            result.local.as_deref(),
+            Some(LocalEvidence::Unfinished { .. })
+        ));
+        assert!(symgcad::verify::verify(&result).is_err());
+    }
+}
+
+#[test]
+fn configured_local_caps_survive_homogeneous_reduction_and_toml() {
+    let mut p = problem(&["r", "x", "y"], &["r>0"], &["y^2+r*x"]);
+    p.solver.engine = "local".into();
+    p.solver.homogeneous_anchor = Some("r".into());
+    p.solver.homogeneous_block = p.variables.clone();
+    p.solver.local_max_refinements = Some(123);
+    p.solver.local_max_nodes = Some(456);
+    let restored = Problem::from_toml(&toml::to_string(&p).unwrap()).unwrap();
+    let result = symgcad::solver::solve(&restored).unwrap();
+    assert_eq!(result.status, Status::CompleteGeneric);
+    let reduced = &result.homogeneous.as_ref().unwrap().reduced;
+    assert_eq!(reduced.problem.solver.local_max_refinements, Some(123));
+    assert_eq!(reduced.problem.solver.local_max_nodes, Some(456));
+    let LocalEvidence::Local { options, .. } = reduced.local.as_deref().unwrap() else {
+        panic!()
+    };
+    assert_eq!(options.max_refinements, 123);
+    assert_eq!(options.max_nodes, 456);
+    assert!(symgcad::verify::verify(&result).unwrap().verified);
+    for (refinements, nodes) in [(Some(0), None), (None, Some(1))] {
+        p.solver.local_max_refinements = refinements;
+        p.solver.local_max_nodes = nodes;
+        let result = symgcad::solver::solve(&p).unwrap();
+        assert_eq!(result.status, Status::Incomplete);
+        assert!(result.cells.is_empty());
+        assert!(symgcad::verify::verify(&result).is_err());
+    }
+}

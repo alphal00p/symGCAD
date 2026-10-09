@@ -44,6 +44,11 @@ pub struct SolverOptions {
     /// Bounded leading-term cancellations used to separate positive roots.
     #[serde(skip_serializing_if = "is_two")]
     pub local_pair_cancellations: usize,
+    /// Per-problem local search limits; omitted values keep LocalOptions defaults.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub local_max_refinements: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub local_max_nodes: Option<usize>,
     pub homogeneous_block: Vec<String>,
     pub homogeneous_anchor: Option<String>,
 }
@@ -66,6 +71,8 @@ impl Default for SolverOptions {
             local_batch_siblings: true,
             local_reuse_subtrees: true,
             local_pair_cancellations: 2,
+            local_max_refinements: None,
+            local_max_nodes: None,
             homogeneous_block: vec![],
             homogeneous_anchor: None,
         }

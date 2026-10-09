@@ -454,13 +454,19 @@ pub fn solve(problem: &Problem) -> Result<SolveResult> {
         return crate::monotone::solve_monotone(problem);
     }
     if problem.solver.engine == "local" {
+        let defaults = crate::local_projection::LocalOptions::default();
         let local = crate::local_projection::solve_local(
             problem,
             &crate::local_projection::LocalOptions {
                 batch_sibling_discovery: problem.solver.local_batch_siblings,
                 reuse_completed_subtrees: problem.solver.local_reuse_subtrees,
                 positive_pair_cancellations: problem.solver.local_pair_cancellations,
-                ..Default::default()
+                max_refinements: problem
+                    .solver
+                    .local_max_refinements
+                    .unwrap_or(defaults.max_refinements),
+                max_nodes: problem.solver.local_max_nodes.unwrap_or(defaults.max_nodes),
+                ..defaults
             },
         )?;
         let mut result = local.solution;

@@ -63,6 +63,12 @@ struct Args {
     /// Same-build ablation of a second exact pair cancellation.
     #[arg(long, default_value_t = 2, value_parser = clap::value_parser!(u8).range(1..=2))]
     pair_cancellations: u8,
+    /// Override the local refinement cap for this bounded experiment.
+    #[arg(long)]
+    local_max_refinements: Option<usize>,
+    /// Override the local speculative-node cap for this bounded experiment.
+    #[arg(long)]
+    local_max_nodes: Option<usize>,
     #[arg(long)]
     checkpoint_dir: Option<PathBuf>,
     #[arg(long)]
@@ -102,6 +108,8 @@ struct Campaign {
     batch_siblings: bool,
     reuse_subtrees: bool,
     pair_cancellations: usize,
+    local_max_refinements: Option<usize>,
+    local_max_nodes: Option<usize>,
 }
 
 fn available_cpus() -> Result<Vec<usize>> {
@@ -158,6 +166,10 @@ fn run_trial(campaign: &Campaign, trial: Trial) -> Result<Record> {
     problem.solver.local_batch_siblings = campaign.batch_siblings;
     problem.solver.local_reuse_subtrees = campaign.reuse_subtrees;
     problem.solver.local_pair_cancellations = campaign.pair_cancellations;
+    problem.solver.local_max_refinements = campaign
+        .local_max_refinements
+        .or(problem.solver.local_max_refinements);
+    problem.solver.local_max_nodes = campaign.local_max_nodes.or(problem.solver.local_max_nodes);
     problem.solver.positivity = true;
     problem.solver.homogeneous_block = campaign.block.clone();
     problem.solver.homogeneous_anchor = Some(trial.anchor.clone());
@@ -355,6 +367,8 @@ fn main() -> Result<()> {
         batch_siblings: !args.no_batch_siblings,
         reuse_subtrees: !args.no_reuse_subtrees,
         pair_cancellations: args.pair_cancellations as usize,
+        local_max_refinements: args.local_max_refinements,
+        local_max_nodes: args.local_max_nodes,
         problem,
         executable,
         output,
