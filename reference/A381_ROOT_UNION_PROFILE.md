@@ -36,7 +36,7 @@ inclusive `same_root` percentage is consequently an underestimate and is not
 used above. Its flat polynomial-GCD and integer-arithmetic costs corroborate
 the first recording. Both sampled endpoint fibers have integer coefficients.
 
-The measurements motivate two independent exact optimizations:
+The measurements motivate independent exact optimizations:
 
 - A bounded number of sign bisections before the first shared-root GCD can
   separate overlapping *intervals* that contain different roots. The bound is

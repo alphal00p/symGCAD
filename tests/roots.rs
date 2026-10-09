@@ -120,6 +120,43 @@ fn root_queue_separates_very_close_irrational_roots_without_merging() {
 }
 
 #[test]
+fn collision_memo_uses_input_identity_even_when_external_ids_repeat() {
+    let roots = isolate_union(vec![
+        (7, polynomial("x^2-2")),
+        (7, polynomial("x^2-2-1/1000000000000000000000000000000")),
+        (7, polynomial("(x^2-2)^3")),
+        (7, polynomial("(x^2-2-1/1000000000000000000000000000000)^2")),
+    ])
+    .unwrap();
+    assert_eq!(roots.len(), 4);
+    assert!(
+        roots
+            .windows(2)
+            .all(|pair| pair[0].interval.1 < pair[1].interval.0)
+    );
+    for root in &roots {
+        assert_eq!(
+            roots_in_open_interval(&root.fiber, &root.interval.0, &root.interval.1),
+            1
+        );
+    }
+}
+
+#[test]
+fn finite_bisection_delay_still_merges_many_coincident_branches() {
+    let roots = isolate_union(
+        (0..40)
+            .rev()
+            .map(|i| (i, polynomial(&format!("(x^2-2)*(x^2+{})", i + 1))))
+            .collect(),
+    )
+    .unwrap();
+    assert_eq!(roots.len(), 2);
+    assert!(roots.iter().all(|root| root.polynomial == 0));
+    assert!(roots[0].interval.1 < roots[1].interval.0);
+}
+
+#[test]
 fn sturm_excludes_endpoint_roots_and_counts_repeated_roots_once() {
     let p = polynomial("x^2*(x-1)^2*(x+1)^3");
     for (lo, hi, count) in [

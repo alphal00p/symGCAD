@@ -3,6 +3,9 @@ use anyhow::{Result, ensure};
 use std::{cmp::Ordering, collections::BinaryHeap};
 use symbolica::prelude::*;
 
+mod collision;
+mod integer_sign;
+
 /// Symbolica's certified real isolator currently converts to u16 exponents.
 pub const MAX_ROOT_DEGREE: usize = u16::MAX as usize;
 
@@ -17,7 +20,13 @@ pub struct FiberRoot {
 /// Reversed interval order makes BinaryHeap expose the lowest possible root.
 /// Refinement only shrinks intervals, so a root wholly left of the next lower
 /// endpoint is also wholly left of every other pending root.
-struct PendingRoot(FiberRoot);
+struct PendingRoot {
+    root: FiberRoot,
+    source: usize,
+    // Per-root, never reset on cache eviction or heap reinsertion. This gives
+    // a finite bound even for more coincident inputs than the memo can hold.
+    deferred_checks_left: u8,
+}
 impl PartialEq for PendingRoot {
     fn eq(&self, other: &Self) -> bool {
         self.cmp(other) == Ordering::Equal
@@ -32,12 +41,12 @@ impl PartialOrd for PendingRoot {
 impl Ord for PendingRoot {
     fn cmp(&self, other: &Self) -> Ordering {
         other
-            .0
+            .root
             .interval
             .0
-            .cmp(&self.0.interval.0)
-            .then(other.0.polynomial.cmp(&self.0.polynomial))
-            .then(other.0.index.cmp(&self.0.index))
+            .cmp(&self.root.interval.0)
+            .then(other.root.polynomial.cmp(&self.root.polynomial))
+            .then(other.root.index.cmp(&self.root.index))
     }
 }
 
@@ -45,9 +54,9 @@ impl Ord for PendingRoot {
 /// that are roots are handled by one-sided limits, so adjoining roots are not
 /// accidentally counted in an open interval.
 fn sign_at(poly: &UnivariatePolynomial<Q>, x: &Rational, right: bool) -> i8 {
-    let value = poly.evaluate(x);
-    if !value.is_zero() {
-        return if value.is_negative() { -1 } else { 1 };
+    let value = integer_sign::sign(poly, x);
+    if value != 0 {
+        return value;
     }
     if poly.is_zero() {
         return 0;
@@ -57,9 +66,8 @@ fn sign_at(poly: &UnivariatePolynomial<Q>, x: &Rational, right: bool) -> i8 {
     let mut p = poly.derivative();
     let mut parity = true;
     loop {
-        let value = p.evaluate(x);
-        if !value.is_zero() {
-            let sign = if value.is_negative() { -1 } else { 1 };
+        let sign = integer_sign::sign(&p, x);
+        if sign != 0 {
             return if !right && parity { -sign } else { sign };
         }
         if p.is_zero() {
@@ -147,30 +155,14 @@ pub fn refine_once(root: &mut FiberRoot) {
         return;
     }
     let mid = (lo + hi) / Rational::from(2);
-    let value = root.fiber.evaluate(&mid);
-    if value.is_zero() {
+    let value = integer_sign::sign(&root.fiber, &mid);
+    if value == 0 {
         root.interval = (mid.clone(), mid);
-    } else if sign_at(&root.fiber, lo, true) == if value.is_negative() { -1 } else { 1 } {
+    } else if sign_at(&root.fiber, lo, true) == value {
         root.interval.0 = mid;
     } else {
         root.interval.1 = mid;
     }
-}
-
-fn same_root(a: &FiberRoot, b: &FiberRoot) -> bool {
-    let lo = a.interval.0.clone().max(b.interval.0.clone());
-    let hi = a.interval.1.clone().min(b.interval.1.clone());
-    if lo > hi {
-        return false;
-    }
-    if lo == hi {
-        return a.fiber.evaluate(&lo).is_zero()
-            && b.fiber.evaluate(&lo).is_zero()
-            && (a.interval.0 == a.interval.1 || (a.interval.0 < lo && lo < a.interval.1))
-            && (b.interval.0 == b.interval.1 || (b.interval.0 < lo && lo < b.interval.1));
-    }
-    let gcd = a.fiber.gcd(&b.fiber);
-    roots_in_open_interval(&gcd, &lo, &hi) != 0
 }
 
 pub fn isolate_union(polynomials: Vec<(usize, UnivariatePolynomial<Q>)>) -> Result<Vec<FiberRoot>> {
@@ -185,7 +177,8 @@ pub fn isolate_union_observed(
     mut observer: impl FnMut(&str, usize, &UnivariatePolynomial<Q>, usize) -> Result<()>,
 ) -> Result<Vec<FiberRoot>> {
     let mut roots = Vec::new();
-    for (id, polynomial) in polynomials {
+    let mut sources = Vec::new();
+    for (source, (id, polynomial)) in polynomials.into_iter().enumerate() {
         ensure!(
             !polynomial.is_zero(),
             "projection polynomial {id} nullified at a supposedly generic sample"
@@ -203,6 +196,7 @@ pub fn isolate_union_observed(
                 interval: (root.clone(), root),
                 fiber: polynomial,
             });
+            sources.push(source);
             continue;
         }
         ensure!(
@@ -234,39 +228,58 @@ pub fn isolate_union_observed(
                 interval,
                 fiber: fiber.clone(),
             });
+            sources.push(source);
         }
     }
     // Every collision is either certified as a common root, or separated by
     // exact bisection. Each changed interval is reinserted in O(log n) order,
     // avoiding a full-list sort and rescan on every bisection. Close but unequal
     // roots are never numerically collapsed.
-    let mut pending: BinaryHeap<_> = roots.drain(..).map(PendingRoot).collect();
-    while let Some(PendingRoot(mut first)) = pending.pop() {
+    let mut collisions = collision::CollisionCache::new();
+    let mut pending: BinaryHeap<_> = roots
+        .drain(..)
+        .zip(sources)
+        .map(|(root, source)| PendingRoot {
+            root,
+            source,
+            deferred_checks_left: 2,
+        })
+        .collect();
+    while let Some(mut first) = pending.pop() {
         let Some(next) = pending.peek() else {
-            roots.push(first);
+            roots.push(first.root);
             break;
         };
-        if first.interval.1 < next.0.interval.0 {
-            roots.push(first);
+        if first.root.interval.1 < next.root.interval.0 {
+            roots.push(first.root);
             continue;
         }
-        let PendingRoot(mut second) = pending.pop().expect("peeked root");
+        let mut second = pending.pop().expect("peeked root");
         observer(
             "separate_roots",
-            first.polynomial,
-            &first.fiber,
+            first.root.polynomial,
+            &first.root.fiber,
             roots.len() + pending.len() + 2,
         )?;
-        if same_root(&first, &second) {
-            if second.polynomial < first.polynomial {
+        let defer_gcd = first.deferred_checks_left != 0 && second.deferred_checks_left != 0;
+        first.deferred_checks_left = first.deferred_checks_left.saturating_sub(1);
+        second.deferred_checks_left = second.deferred_checks_left.saturating_sub(1);
+        if collisions.same_root(
+            &first.root,
+            first.source,
+            &second.root,
+            second.source,
+            defer_gcd,
+        ) {
+            if second.root.polynomial < first.root.polynomial {
                 std::mem::swap(&mut first, &mut second);
             }
-            pending.push(PendingRoot(first));
+            pending.push(first);
         } else {
-            refine_once(&mut first);
-            refine_once(&mut second);
-            pending.push(PendingRoot(first));
-            pending.push(PendingRoot(second));
+            refine_once(&mut first.root);
+            refine_once(&mut second.root);
+            pending.push(first);
+            pending.push(second);
         }
     }
     Ok(roots)
@@ -286,8 +299,8 @@ fn open_or_exact_interval(
     if lo == hi {
         return Ok((lo, hi));
     }
-    let lower_root = fiber.evaluate(&lo).is_zero();
-    let upper_root = fiber.evaluate(&hi).is_zero();
+    let lower_root = integer_sign::sign(fiber, &lo) == 0;
+    let upper_root = integer_sign::sign(fiber, &hi) == 0;
     if !lower_root && !upper_root {
         return Ok((lo, hi));
     }
