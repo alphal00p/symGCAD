@@ -644,6 +644,7 @@ fn reconstruct(
             steps,
             base: Box::new(base),
         })),
+        local: None,
     })
 }
 

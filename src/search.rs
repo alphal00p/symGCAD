@@ -101,6 +101,11 @@ pub struct TrialOutcome {
     /// Used only to prioritize unfinished candidates, never as a certificate.
     pub progress_score: Option<f64>,
     pub message: Option<String>,
+    /// A measured, expensive elimination prefix. Search may avoid repeating
+    /// it during this bounded campaign; it is not an exceptional set or a
+    /// mathematical rejection. A later campaign/final solve may retry it.
+    #[serde(default)]
+    pub abandoned_prefix: Option<Vec<usize>>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -189,6 +194,7 @@ where
     let mut candidates = Vec::<Candidate>::new();
     let mut seen = BTreeMap::<Vec<usize>, usize>::new();
     let mut records = Vec::new();
+    let mut abandoned = BTreeMap::<Vec<usize>, Option<f64>>::new();
     let mut best: Option<usize> = None;
     let mut seed_index = 0;
     let mut fresh_since_promotion = 0;
@@ -253,7 +259,26 @@ where
             tier,
             seed: options.seed,
         };
-        let outcome = evaluate(&request)?;
+        let outcome = if let Some((prefix, score)) = abandoned.iter().find(|(prefix, _)| {
+            request
+                .order
+                .iter()
+                .rev()
+                .copied()
+                .take(prefix.len())
+                .eq(prefix.iter().copied())
+        }) {
+            TrialOutcome {
+                status: TrialStatus::Pruned,
+                elapsed_secs: 0.0,
+                cells: None,
+                progress_score: *score,
+                message: Some("shared prefix abandoned earlier in this search campaign".into()),
+                abandoned_prefix: Some(prefix.clone()),
+            }
+        } else {
+            evaluate(&request)?
+        };
         ensure!(
             outcome.elapsed_secs.is_finite() && outcome.elapsed_secs >= 0.0,
             "worker returned an invalid elapsed time"
@@ -264,6 +289,24 @@ where
                 .is_none_or(|x| x.is_finite() && x >= 0.0),
             "worker returned an invalid progress score"
         );
+        if let Some(prefix) = &outcome.abandoned_prefix {
+            ensure!(
+                outcome.status == TrialStatus::Pruned
+                    && !prefix.is_empty()
+                    && prefix.len() < variables
+                    && request
+                        .order
+                        .iter()
+                        .rev()
+                        .copied()
+                        .take(prefix.len())
+                        .eq(prefix.iter().copied()),
+                "worker returned an invalid abandoned prefix"
+            );
+            abandoned
+                .entry(prefix.clone())
+                .or_insert(outcome.progress_score);
+        }
         backpropagate(&mut nodes, &path, reward(&outcome));
         let id = match candidate_id {
             Some(id) => {
@@ -294,7 +337,7 @@ where
     }
     let fallback = candidates
         .iter()
-        .filter(|c| c.last.status == TrialStatus::Timeout)
+        .filter(|c| matches!(c.last.status, TrialStatus::Timeout | TrialStatus::Pruned))
         .min_by(|a, b| partial_cost(&a.last).total_cmp(&partial_cost(&b.last)))
         .map(|c| c.order.clone())
         .or_else(|| seeds.first().cloned())
@@ -447,11 +490,11 @@ fn partial_cost(outcome: &TrialOutcome) -> f64 {
 
 fn reward(outcome: &TrialOutcome) -> f64 {
     if outcome.status == TrialStatus::Completed {
-        1.0 / (1.0 + outcome.elapsed_secs.ln_1p())
+        0.5 + 0.5 / (1.0 + outcome.elapsed_secs.ln_1p())
     } else if outcome.status == TrialStatus::Timeout {
         outcome
             .progress_score
-            .map_or(0.0, |cost| 0.001 / (1.0 + cost.ln_1p()))
+            .map_or(0.0, |cost| 0.25 / (1.0 + cost.ln_1p()))
     } else {
         0.0
     }
@@ -485,6 +528,44 @@ fn promotion_candidate(
 }
 
 struct SplitMix64(u64);
+
+/// Cheap, deliberately conservative triggers for abandoning a search trial.
+/// Measurements refer to completed exact projection prefixes. These thresholds
+/// are predictions of cost, not bounds on solvability; the final selected solve
+/// and independent verifier do not call this function. Returns the elimination
+/// depth so the same expensive prefix can be avoided in this search campaign.
+pub fn growth_abandonment(
+    checkpoints: &[crate::optimized_projection::ProjectionCheckpoint],
+    variables: usize,
+) -> Option<(usize, String)> {
+    let mut depth = 0;
+    let mut previous_terms = None;
+    for checkpoint in checkpoints {
+        if checkpoint.eliminated_variable.is_some() {
+            depth += 1;
+        }
+        let remaining = variables.saturating_sub(depth);
+        let terms = checkpoint.term_count;
+        let explosive = depth > 0
+            && remaining >= 3
+            && terms >= 4_000
+            && previous_terms
+                .is_some_and(|previous: usize| terms >= previous.max(1).saturating_mul(8));
+        let absolute = depth > 0 && remaining >= 2 && terms >= 100_000;
+        if explosive || absolute {
+            return Some((
+                depth,
+                format!(
+                    "projection prefix of length {depth} has {terms} terms across {} factors with {remaining} variables remaining; heuristic restart required",
+                    checkpoint.polynomial_count
+                ),
+            ));
+        }
+        previous_terms = Some(terms);
+    }
+    None
+}
+
 impl SplitMix64 {
     fn next(&mut self) -> u64 {
         self.0 = self.0.wrapping_add(0x9e3779b97f4a7c15);

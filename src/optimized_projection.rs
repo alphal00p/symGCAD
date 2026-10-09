@@ -9,7 +9,7 @@
 use std::{
     collections::{HashMap, HashSet},
     fs::{self, File, OpenOptions},
-    io::Write,
+    io::{Read, Write},
     path::{Path, PathBuf},
     sync::atomic::{AtomicU64, Ordering},
     time::Instant,
@@ -18,18 +18,20 @@ use std::{
 use anyhow::{Context, Result, ensure};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use symbolica::{domains::InternalOrdering, prelude::*};
+use symbolica::{domains::InternalOrdering, poly::factor::Factorize, prelude::*};
 
 use crate::{
-    algebra::{Algebra, MAX_DEGREE, Poly, canonical, factors, factors_checked},
+    algebra::{Algebra, MAX_DEGREE, Poly, canonical, factors_checked},
     domain::{
         CertificateOptions, DomainCertificate, certify_nonzero, derive_domain, verify_certificate,
     },
-    projection::{Projection, ProjectionStep, discriminant},
+    projection::{Projection, ProjectionStep, discriminant, exact_resultant},
 };
 
 const CACHE_SCHEMA: u32 = 1;
-const ALGORITHM: &str = "symgcad-exact-gproj-v1";
+// Invalidate every prefix and operation produced by the former automatic
+// resultant dispatch, which could use Monte Carlo CRT early termination.
+const ALGORITHM: &str = "symgcad-deterministic-integer-ducos-gproj-v2";
 static TEMP_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -40,6 +42,10 @@ pub struct OptimizedProjectionOptions {
     /// remains readable if a bounded ordering worker is subsequently killed.
     /// It has no effect on the persistent algebra cache keys.
     pub progress_path: Option<PathBuf>,
+    /// Opt-in latest-operation snapshots, one atomic file per worker process.
+    /// An interrupted operation retains its exact operands for profiling.
+    pub capture_dir: Option<PathBuf>,
+    pub max_capture_bytes: usize,
     /// Conservative modeled retention budget; process RSS limits remain the
     /// hard bound, including transient Symbolica allocations and the result.
     pub memory_cache_bytes: usize,
@@ -54,6 +60,8 @@ impl Default for OptimizedProjectionOptions {
         Self {
             checkpoint_dir: None,
             progress_path: None,
+            capture_dir: None,
+            max_capture_bytes: 16 * 1024 * 1024,
             memory_cache_bytes: 128 * 1024 * 1024,
             max_checkpoint_bytes: 512 * 1024 * 1024,
             domain_fingerprint: "unrestricted".into(),
@@ -62,6 +70,7 @@ impl Default for OptimizedProjectionOptions {
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(default)]
 pub struct CacheMetrics {
     pub factor_hits: usize,
     pub factor_misses: usize,
@@ -69,6 +78,12 @@ pub struct CacheMetrics {
     pub resultant_misses: usize,
     pub discriminant_hits: usize,
     pub discriminant_misses: usize,
+    pub factor_disk_hits: usize,
+    pub resultant_disk_hits: usize,
+    pub discriminant_disk_hits: usize,
+    pub invalid_operation_checkpoints: usize,
+    pub written_operation_checkpoints: usize,
+    pub oversized_captures: usize,
     pub prefix_memory_hits: usize,
     pub prefix_disk_hits: usize,
     pub prefix_misses: usize,
@@ -175,6 +190,59 @@ struct CheckpointFile {
     cost: CheckpointCost,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AlgebraOperation {
+    Factor,
+    Resultant,
+    Discriminant,
+}
+
+#[derive(Serialize, Deserialize)]
+struct OperationFile {
+    schema_version: u32,
+    algorithm: String,
+    backend_version: String,
+    coefficient_domain: String,
+    variable_names: Vec<String>,
+    domain_fingerprint: String,
+    operation: AlgebraOperation,
+    variable: Option<usize>,
+    key: String,
+    input_hash: String,
+    output: Vec<String>,
+    output_hash: String,
+    multiplicities: Option<Vec<usize>>,
+    elapsed_seconds: f64,
+}
+
+struct OperationRequest {
+    operation: AlgebraOperation,
+    variable: Option<usize>,
+    key: String,
+    input_hash: String,
+    input: Vec<String>,
+}
+
+/// A profiling aid, not an algebra proof. A killed worker leaves complete=false.
+/// Oversized operands are omitted explicitly; the key and input hash remain.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct OperationCapture {
+    pub schema_version: u32,
+    pub backend_version: String,
+    pub coefficient_domain: String,
+    pub variable_names: Vec<String>,
+    pub operation: AlgebraOperation,
+    pub variable: Option<usize>,
+    pub key: String,
+    pub input_hash: String,
+    pub operands: Option<Vec<String>>,
+    pub operands_omitted_for_size: bool,
+    pub complete: bool,
+    pub elapsed_seconds: Option<f64>,
+    pub output_hash: Option<String>,
+}
+
 fn digest(value: &impl Serialize) -> Result<String> {
     Ok(format!("{:x}", Sha256::digest(serde_json::to_vec(value)?)))
 }
@@ -206,6 +274,18 @@ fn write_atomic(destination: &Path, bytes: &[u8]) -> Result<()> {
         let _ = fs::remove_file(&temporary);
     }
     written.with_context(|| format!("atomically save {}", destination.display()))
+}
+
+fn read_bounded(path: &Path, limit: usize) -> Result<Vec<u8>> {
+    let mut bytes = Vec::new();
+    File::open(path)?
+        .take((limit as u64).saturating_add(1))
+        .read_to_end(&mut bytes)?;
+    ensure!(
+        bytes.len() <= limit,
+        "checkpoint changed to an oversized file while reading"
+    );
+    Ok(bytes)
 }
 
 fn sorted_unique(polynomials: impl IntoIterator<Item = Poly>) -> Vec<Poly> {
@@ -300,7 +380,302 @@ impl<'a> ProjectionCache<'a> {
         true
     }
 
-    fn factor_basis(&mut self, polynomials: &[Poly]) -> Result<Vec<Poly>> {
+    fn operation_request(
+        &self,
+        operation: AlgebraOperation,
+        variable: Option<usize>,
+        inputs: &[&Poly],
+    ) -> Result<Option<OperationRequest>> {
+        if self.options.checkpoint_dir.is_none() && self.options.capture_dir.is_none() {
+            return Ok(None);
+        }
+        let input = inputs
+            .iter()
+            .map(|p| self.algebra.format(p))
+            .collect::<Vec<_>>();
+        let input_hash = digest(&input)?;
+        let key = digest(&(
+            CACHE_SCHEMA,
+            ALGORITHM,
+            "algebra-operation-v1",
+            operation,
+            variable,
+            LicenseManager::get_version(),
+            "Q",
+            "symgcad",
+            &self.algebra.names,
+            &self.options.domain_fingerprint,
+            &input_hash,
+        ))?;
+        Ok(Some(OperationRequest {
+            operation,
+            variable,
+            key,
+            input_hash,
+            input,
+        }))
+    }
+
+    fn load_operation(
+        &mut self,
+        request: &Option<OperationRequest>,
+        inputs: &[&Poly],
+    ) -> Result<Option<Vec<Poly>>> {
+        let (Some(directory), Some(request)) = (&self.options.checkpoint_dir, request) else {
+            return Ok(None);
+        };
+        let path = directory
+            .join("operations")
+            .join(format!("{}.json", request.key));
+        let metadata = match fs::metadata(&path) {
+            Ok(metadata) => metadata,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+            Err(_) => {
+                self.report.cache.invalid_operation_checkpoints += 1;
+                return Ok(None);
+            }
+        };
+        let loaded = (|| -> Result<Vec<Poly>> {
+            ensure!(
+                metadata.len() <= self.options.max_checkpoint_bytes as u64,
+                "oversized operation checkpoint"
+            );
+            let saved: OperationFile =
+                serde_json::from_slice(&read_bounded(&path, self.options.max_checkpoint_bytes)?)?;
+            ensure!(
+                saved.schema_version == CACHE_SCHEMA && saved.algorithm == ALGORITHM,
+                "operation schema/algorithm mismatch"
+            );
+            ensure!(
+                saved.backend_version == LicenseManager::get_version()
+                    && saved.coefficient_domain == "Q",
+                "operation backend/domain mismatch"
+            );
+            ensure!(
+                saved.variable_names == self.algebra.names
+                    && saved.domain_fingerprint == self.options.domain_fingerprint,
+                "operation variable/domain mismatch"
+            );
+            ensure!(
+                saved.operation == request.operation
+                    && saved.variable == request.variable
+                    && saved.key == request.key
+                    && saved.input_hash == request.input_hash,
+                "operation input key mismatch"
+            );
+            ensure!(
+                saved.elapsed_seconds.is_finite() && saved.elapsed_seconds >= 0.0,
+                "invalid operation elapsed time"
+            );
+            ensure!(
+                digest(&(&saved.output, &saved.multiplicities))? == saved.output_hash,
+                "operation output checksum mismatch"
+            );
+            let output = saved
+                .output
+                .iter()
+                .map(|s| self.algebra.parse(s))
+                .collect::<Result<Vec<_>>>()?;
+            ensure!(
+                output.iter().all(|p| canonical(p) == *p),
+                "operation output is not canonical"
+            );
+            for variable in 0..self.algebra.names.len() {
+                if inputs.iter().all(|p| p.degree(variable) == 0)
+                    || request.variable == Some(variable)
+                {
+                    ensure!(
+                        output.iter().all(|p| p.degree(variable) == 0),
+                        "operation output contains an absent or eliminated variable"
+                    );
+                }
+            }
+            match request.operation {
+                AlgebraOperation::Factor => {
+                    ensure!(
+                        !output.is_empty() && output.iter().all(|p| !p.is_constant()),
+                        "invalid factor basis"
+                    );
+                    ensure!(
+                        output.windows(2).all(|p| p[0].internal_cmp(&p[1]).is_lt()),
+                        "factor order or duplicates invalid"
+                    );
+                    let multiplicities = saved
+                        .multiplicities
+                        .as_ref()
+                        .ok_or_else(|| anyhow::anyhow!("factor multiplicities missing"))?;
+                    ensure!(
+                        multiplicities.len() == output.len()
+                            && multiplicities.iter().all(|&m| m > 0),
+                        "invalid factor multiplicities"
+                    );
+                    for variable in 0..self.algebra.names.len() {
+                        let degree =
+                            output
+                                .iter()
+                                .zip(multiplicities)
+                                .try_fold(0u64, |degree, (p, &m)| {
+                                    degree.checked_add(
+                                        u64::from(p.degree(variable))
+                                            .checked_mul(u64::try_from(m).ok()?)?,
+                                    )
+                                });
+                        ensure!(
+                            degree == Some(u64::from(inputs[0].degree(variable))),
+                            "factor reconstruction degree mismatch"
+                        );
+                    }
+                    let mut product = inputs[0].one();
+                    for (factor, &multiplicity) in output.iter().zip(multiplicities) {
+                        product = &product * &factor.pow(multiplicity);
+                    }
+                    ensure!(
+                        canonical(&product) == *inputs[0],
+                        "cached factor reconstruction failed"
+                    );
+                }
+                AlgebraOperation::Resultant | AlgebraOperation::Discriminant => {
+                    ensure!(
+                        output.len() == 1 && saved.multiplicities.is_none(),
+                        "invalid scalar operation output"
+                    );
+                }
+            }
+            Ok(output)
+        })();
+        match loaded {
+            Ok(output) => {
+                match request.operation {
+                    AlgebraOperation::Factor => self.report.cache.factor_disk_hits += 1,
+                    AlgebraOperation::Resultant => self.report.cache.resultant_disk_hits += 1,
+                    AlgebraOperation::Discriminant => self.report.cache.discriminant_disk_hits += 1,
+                }
+                Ok(Some(output))
+            }
+            Err(_) => {
+                self.report.cache.invalid_operation_checkpoints += 1;
+                Ok(None)
+            }
+        }
+    }
+
+    fn save_operation(
+        &mut self,
+        request: &Option<OperationRequest>,
+        output: &[Poly],
+        multiplicities: Option<Vec<usize>>,
+        elapsed_seconds: f64,
+    ) -> Result<()> {
+        let (Some(directory), Some(request)) = (&self.options.checkpoint_dir, request) else {
+            return Ok(());
+        };
+        let output = output
+            .iter()
+            .map(|p| self.algebra.format(p))
+            .collect::<Vec<_>>();
+        if output
+            .iter()
+            .map(String::len)
+            .sum::<usize>()
+            .saturating_add(4096)
+            > self.options.max_checkpoint_bytes
+        {
+            return Ok(());
+        }
+        let saved = OperationFile {
+            schema_version: CACHE_SCHEMA,
+            algorithm: ALGORITHM.into(),
+            backend_version: LicenseManager::get_version().into(),
+            coefficient_domain: "Q".into(),
+            variable_names: self.algebra.names.clone(),
+            domain_fingerprint: self.options.domain_fingerprint.clone(),
+            operation: request.operation,
+            variable: request.variable,
+            key: request.key.clone(),
+            input_hash: request.input_hash.clone(),
+            output_hash: digest(&(&output, &multiplicities))?,
+            output,
+            multiplicities,
+            elapsed_seconds,
+        };
+        let bytes = serde_json::to_vec(&saved)?;
+        if bytes.len() <= self.options.max_checkpoint_bytes {
+            write_atomic(
+                &directory
+                    .join("operations")
+                    .join(format!("{}.json", request.key)),
+                &bytes,
+            )?;
+            self.report.cache.written_operation_checkpoints += 1;
+        }
+        Ok(())
+    }
+
+    fn capture_operation(
+        &mut self,
+        request: &Option<OperationRequest>,
+        completed: Option<(&[Poly], f64)>,
+    ) -> Result<()> {
+        let (Some(directory), Some(request)) = (&self.options.capture_dir, request) else {
+            return Ok(());
+        };
+        let mut capture = OperationCapture {
+            schema_version: CACHE_SCHEMA,
+            backend_version: LicenseManager::get_version().into(),
+            coefficient_domain: "Q".into(),
+            variable_names: self.algebra.names.clone(),
+            operation: request.operation,
+            variable: request.variable,
+            key: request.key.clone(),
+            input_hash: request.input_hash.clone(),
+            operands: Some(request.input.clone()),
+            operands_omitted_for_size: false,
+            complete: completed.is_some(),
+            elapsed_seconds: completed.map(|(_, seconds)| seconds),
+            output_hash: completed
+                .map(|(output, _)| {
+                    digest(
+                        &output
+                            .iter()
+                            .map(|p| self.algebra.format(p))
+                            .collect::<Vec<_>>(),
+                    )
+                })
+                .transpose()?,
+        };
+        let mut bytes = serde_json::to_vec(&capture)?;
+        if bytes.len() > self.options.max_capture_bytes {
+            capture.operands = None;
+            capture.operands_omitted_for_size = true;
+            if completed.is_none() {
+                self.report.cache.oversized_captures += 1;
+            }
+            bytes = serde_json::to_vec(&capture)?;
+        }
+        let destination = directory.join(format!("active-{}.json", std::process::id()));
+        if bytes.len() <= self.options.max_capture_bytes {
+            write_atomic(&destination, &bytes)?;
+        } else {
+            // Do not leave an unrelated prior operation looking current.
+            match fs::remove_file(&destination) {
+                Ok(()) => {}
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+                Err(error) => return Err(error.into()),
+            }
+        }
+        Ok(())
+    }
+
+    /// Canonical square-free factor basis in this cache's fixed variable map.
+    /// Cached factors preserve zero sets; independent proof replay must still
+    /// reconstruct the requested factorization without trusting this cache.
+    pub fn factor_basis(&mut self, polynomials: &[Poly]) -> Result<Vec<Poly>> {
+        ensure!(
+            polynomials
+                .iter()
+                .all(|p| p.variables() == &self.algebra.variables),
+            "factor input has a different cache variable map"
+        );
         let mut result = Vec::new();
         for polynomial in polynomials {
             if polynomial.is_constant() {
@@ -311,8 +686,27 @@ impl<'a> ProjectionCache<'a> {
                 self.report.cache.factor_hits += 1;
                 fs.clone()
             } else {
-                self.report.cache.factor_misses += 1;
-                let fs = factors(std::slice::from_ref(&polynomial))?;
+                let request =
+                    self.operation_request(AlgebraOperation::Factor, None, &[&polynomial])?;
+                let fs = if let Some(fs) = self.load_operation(&request, &[&polynomial])? {
+                    fs
+                } else {
+                    self.report.cache.factor_misses += 1;
+                    self.capture_operation(&request, None)?;
+                    let started = Instant::now();
+                    let mut factorization = HashMap::<Poly, usize>::new();
+                    for (factor, multiplicity) in polynomial.factor() {
+                        if !factor.is_constant() {
+                            *factorization.entry(canonical(&factor)).or_default() += multiplicity;
+                        }
+                    }
+                    let fs = sorted_unique(factorization.keys().cloned());
+                    let multiplicities = fs.iter().map(|p| factorization[p]).collect();
+                    let elapsed = started.elapsed().as_secs_f64();
+                    self.capture_operation(&request, Some((&fs, elapsed)))?;
+                    self.save_operation(&request, &fs, Some(multiplicities), elapsed)?;
+                    fs
+                };
                 let bytes = 128usize
                     .saturating_add(polynomial_bytes(&polynomial))
                     .saturating_add(list_bytes(&fs));
@@ -326,7 +720,16 @@ impl<'a> ProjectionCache<'a> {
         Ok(sorted_unique(result))
     }
 
-    fn resultant(&mut self, a: &Poly, b: &Poly, variable: usize) -> Result<Poly> {
+    /// Canonical resultant, with nonzero scalar content and sign discarded.
+    pub fn resultant(&mut self, a: &Poly, b: &Poly, variable: usize) -> Result<Poly> {
+        ensure!(
+            a.variables() == &self.algebra.variables && b.variables() == &self.algebra.variables,
+            "resultant input has a different cache variable map"
+        );
+        ensure!(
+            variable < self.algebra.names.len(),
+            "resultant variable out of range"
+        );
         let (a, b) = if a.internal_cmp(b).is_gt() {
             (b, a)
         } else {
@@ -337,7 +740,8 @@ impl<'a> ProjectionCache<'a> {
             self.report.cache.resultant_hits += 1;
             return Ok(value.clone());
         }
-        self.report.cache.resultant_misses += 1;
+        let request =
+            self.operation_request(AlgebraOperation::Resultant, Some(variable), &[a, b])?;
         let m = a.degree(variable) as u64;
         let n = b.degree(variable) as u64;
         ensure!(
@@ -352,7 +756,18 @@ impl<'a> ProjectionCache<'a> {
                 );
             }
         }
-        let value = canonical(&<Q as PolynomialResultant<u32>>::resultant(a, b, variable));
+        let value = if let Some(mut output) = self.load_operation(&request, &[a, b])? {
+            output.remove(0)
+        } else {
+            self.report.cache.resultant_misses += 1;
+            self.capture_operation(&request, None)?;
+            let started = Instant::now();
+            let value = canonical(&exact_resultant(a, b, variable)?);
+            let elapsed = started.elapsed().as_secs_f64();
+            self.capture_operation(&request, Some((std::slice::from_ref(&value), elapsed)))?;
+            self.save_operation(&request, std::slice::from_ref(&value), None, elapsed)?;
+            value
+        };
         let bytes = 128usize
             .saturating_add(polynomial_bytes(a))
             .saturating_add(polynomial_bytes(b))
@@ -363,14 +778,38 @@ impl<'a> ProjectionCache<'a> {
         Ok(value)
     }
 
-    fn discriminant(&mut self, polynomial: &Poly, variable: usize) -> Result<Poly> {
+    /// Canonical discriminant, with nonzero scalar content and sign discarded.
+    pub fn discriminant(&mut self, polynomial: &Poly, variable: usize) -> Result<Poly> {
+        ensure!(
+            polynomial.variables() == &self.algebra.variables,
+            "discriminant input has a different cache variable map"
+        );
+        ensure!(
+            variable < self.algebra.names.len(),
+            "discriminant variable out of range"
+        );
         let key = (variable, polynomial.clone());
         if let Some(value) = self.discriminant_cache.get(&key) {
             self.report.cache.discriminant_hits += 1;
             return Ok(value.clone());
         }
-        self.report.cache.discriminant_misses += 1;
-        let value = canonical(&discriminant(polynomial, variable)?);
+        let request = self.operation_request(
+            AlgebraOperation::Discriminant,
+            Some(variable),
+            &[polynomial],
+        )?;
+        let value = if let Some(mut output) = self.load_operation(&request, &[polynomial])? {
+            output.remove(0)
+        } else {
+            self.report.cache.discriminant_misses += 1;
+            self.capture_operation(&request, None)?;
+            let started = Instant::now();
+            let value = canonical(&discriminant(polynomial, variable)?);
+            let elapsed = started.elapsed().as_secs_f64();
+            self.capture_operation(&request, Some((std::slice::from_ref(&value), elapsed)))?;
+            self.save_operation(&request, std::slice::from_ref(&value), None, elapsed)?;
+            value
+        };
         let bytes = 128usize
             .saturating_add(polynomial_bytes(polynomial))
             .saturating_add(polynomial_bytes(&value));
@@ -424,7 +863,8 @@ impl<'a> ProjectionCache<'a> {
                 metadata.len() <= self.options.max_checkpoint_bytes as u64,
                 "oversized checkpoint"
             );
-            let saved: CheckpointFile = serde_json::from_slice(&fs::read(&path)?)?;
+            let saved: CheckpointFile =
+                serde_json::from_slice(&read_bounded(&path, self.options.max_checkpoint_bytes)?)?;
             ensure!(
                 saved.schema_version == CACHE_SCHEMA && saved.algorithm == ALGORITHM,
                 "checkpoint schema/algorithm mismatch"
@@ -1094,4 +1534,283 @@ pub fn replay_certified_projection_with_inputs(
         levels[position - 1] = retained;
     }
     finish_projection(algebra, levels, steps, order)
+}
+
+#[cfg(test)]
+mod operation_tests {
+    use super::*;
+
+    struct Directory(PathBuf);
+    impl Directory {
+        fn new() -> Self {
+            Self(std::env::temp_dir().join(format!(
+                "symgcad-operations-{}-{}",
+                std::process::id(),
+                TEMP_SEQUENCE.fetch_add(1, Ordering::Relaxed)
+            )))
+        }
+    }
+    impl Drop for Directory {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.0);
+        }
+    }
+    fn algebra() -> Algebra {
+        Algebra::new(&["x".into(), "y".into(), "z".into()]).unwrap()
+    }
+
+    #[test]
+    fn operations_survive_a_stage_without_a_completed_prefix() {
+        let directory = Directory::new();
+        let algebra = algebra();
+        let input = [
+            algebra.parse("z^2+x").unwrap(),
+            algebra.parse("z+y").unwrap(),
+        ];
+        let options = OptimizedProjectionOptions {
+            checkpoint_dir: Some(directory.0.clone()),
+            memory_cache_bytes: 0,
+            ..Default::default()
+        };
+        {
+            let mut interrupted = ProjectionCache::new(&algebra, &options);
+            interrupted.factor_basis(&input).unwrap();
+            interrupted.discriminant(&input[0], 2).unwrap();
+            interrupted.resultant(&input[0], &input[1], 2).unwrap();
+            assert!(interrupted.report.checkpoints.is_empty());
+            assert_eq!(interrupted.report.cache.written_operation_checkpoints, 4);
+        }
+        let mut resumed = ProjectionCache::new(&algebra, &options);
+        let projection = resumed.project_ordered(&input, &[0, 1, 2]).unwrap();
+        assert_eq!(
+            projection.levels,
+            crate::projection::project(&algebra, &input).unwrap().levels
+        );
+        assert!(resumed.report.cache.factor_disk_hits >= 2);
+        assert!(resumed.report.cache.resultant_disk_hits >= 1);
+        assert!(resumed.report.cache.discriminant_disk_hits >= 1);
+        assert_eq!(resumed.report.cache.prefix_disk_hits, 0);
+    }
+
+    #[test]
+    fn operation_memory_hits_precede_disk_and_factor_multiplicities_reconstruct() {
+        let directory = Directory::new();
+        let algebra = algebra();
+        let polynomial = algebra.parse("(z+x)^7*(z+1)^3").unwrap();
+        let options = OptimizedProjectionOptions {
+            checkpoint_dir: Some(directory.0.clone()),
+            ..Default::default()
+        };
+        let mut first = ProjectionCache::new(&algebra, &options);
+        let expected = first
+            .factor_basis(std::slice::from_ref(&polynomial))
+            .unwrap();
+        assert_eq!(
+            first
+                .factor_basis(std::slice::from_ref(&polynomial))
+                .unwrap(),
+            expected
+        );
+        assert_eq!(first.report.cache.factor_hits, 1);
+        assert_eq!(first.report.cache.factor_disk_hits, 0);
+        let mut warm = ProjectionCache::new(&algebra, &options);
+        assert_eq!(
+            warm.factor_basis(std::slice::from_ref(&polynomial))
+                .unwrap(),
+            expected
+        );
+        assert_eq!(warm.report.cache.factor_disk_hits, 1);
+        let request = warm
+            .operation_request(AlgebraOperation::Factor, None, &[&polynomial])
+            .unwrap()
+            .unwrap();
+        let path = directory
+            .0
+            .join("operations")
+            .join(format!("{}.json", request.key));
+        let mut saved: OperationFile = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+        saved.output[0] = "z+2".into();
+        saved.output_hash = digest(&(&saved.output, &saved.multiplicities)).unwrap();
+        fs::write(&path, serde_json::to_vec(&saved).unwrap()).unwrap();
+        let mut damaged = ProjectionCache::new(&algebra, &options);
+        assert_eq!(
+            damaged
+                .factor_basis(std::slice::from_ref(&polynomial))
+                .unwrap(),
+            expected
+        );
+        assert_eq!(damaged.report.cache.invalid_operation_checkpoints, 1);
+        assert_eq!(damaged.report.cache.factor_misses, 1);
+    }
+
+    #[test]
+    fn scalar_operation_checkpoints_reject_corrupt_headers_and_polynomials() {
+        let directory = Directory::new();
+        let algebra = algebra();
+        let left = algebra.parse("z^2+x").unwrap();
+        let right = algebra.parse("z+1").unwrap();
+        let options = OptimizedProjectionOptions {
+            checkpoint_dir: Some(directory.0.clone()),
+            memory_cache_bytes: 0,
+            ..Default::default()
+        };
+        let mut original = ProjectionCache::new(&algebra, &options);
+        let expected = original.resultant(&left, &right, 2).unwrap();
+        let path = fs::read_dir(directory.0.join("operations"))
+            .unwrap()
+            .next()
+            .unwrap()
+            .unwrap()
+            .path();
+        let clean = fs::read(&path).unwrap();
+        for corruption in 0..15 {
+            let mut saved: OperationFile = serde_json::from_slice(&clean).unwrap();
+            match corruption {
+                0 => saved.input_hash = "wrong".into(),
+                1 => saved.backend_version = "wrong".into(),
+                2 => saved.variable_names.swap(0, 1),
+                3 => saved.operation = AlgebraOperation::Discriminant,
+                4 => saved.variable = Some(1),
+                5 => saved.output = vec!["unknown+1".into()],
+                6 => saved.output = vec!["z+1".into()],
+                7 => saved.output = vec!["y+1".into()],
+                8 => saved.output = vec![],
+                9 => saved.output = vec!["2*x+2".into()],
+                10 => saved.algorithm = "symgcad-exact-gproj-v1".into(),
+                11 => saved.domain_fingerprint = "wrong".into(),
+                12 => saved.schema_version = 99,
+                13 => saved.key = "wrong".into(),
+                14 => saved.coefficient_domain = "F_17".into(),
+                _ => unreachable!(),
+            }
+            saved.output_hash = digest(&(&saved.output, &saved.multiplicities)).unwrap();
+            fs::write(&path, serde_json::to_vec(&saved).unwrap()).unwrap();
+            let mut restarted = ProjectionCache::new(&algebra, &options);
+            assert_eq!(restarted.resultant(&left, &right, 2).unwrap(), expected);
+            assert_eq!(
+                restarted.report.cache.invalid_operation_checkpoints, 1,
+                "corruption {corruption}"
+            );
+            assert_eq!(restarted.report.cache.resultant_misses, 1);
+        }
+    }
+
+    #[test]
+    fn zero_and_constant_operations_are_reused_and_item_sizes_are_bounded() {
+        let directory = Directory::new();
+        let algebra = algebra();
+        let p = algebra.parse("z+x").unwrap();
+        let q = algebra.parse("z+x+1").unwrap();
+        let options = OptimizedProjectionOptions {
+            checkpoint_dir: Some(directory.0.clone()),
+            memory_cache_bytes: 0,
+            max_checkpoint_bytes: 8192,
+            ..Default::default()
+        };
+        let mut first = ProjectionCache::new(&algebra, &options);
+        assert!(first.resultant(&p, &p, 2).unwrap().is_zero());
+        assert!(first.resultant(&p, &q, 2).unwrap().is_one());
+        assert!(first.discriminant(&p.pow(2), 2).unwrap().is_zero());
+        let mut warm = ProjectionCache::new(&algebra, &options);
+        assert!(warm.resultant(&p, &p, 2).unwrap().is_zero());
+        assert!(warm.resultant(&p, &q, 2).unwrap().is_one());
+        assert!(warm.discriminant(&p.pow(2), 2).unwrap().is_zero());
+        assert_eq!(warm.report.cache.resultant_disk_hits, 2);
+        assert_eq!(warm.report.cache.discriminant_disk_hits, 1);
+        for file in fs::read_dir(directory.0.join("operations")).unwrap() {
+            assert!(file.unwrap().metadata().unwrap().len() <= 8192);
+        }
+        let tiny = OptimizedProjectionOptions {
+            max_checkpoint_bytes: 1,
+            ..options
+        };
+        let mut bounded = ProjectionCache::new(&algebra, &tiny);
+        assert!(bounded.resultant(&p, &q, 2).unwrap().is_one());
+        assert_eq!(bounded.report.cache.invalid_operation_checkpoints, 1);
+        assert_eq!(bounded.report.cache.written_operation_checkpoints, 0);
+    }
+
+    #[test]
+    fn active_capture_survives_unfinished_cache_and_marks_completion() {
+        let directory = Directory::new();
+        let algebra = algebra();
+        let p = algebra.parse("z^2+x").unwrap();
+        let q = algebra.parse("z+y").unwrap();
+        let options = OptimizedProjectionOptions {
+            capture_dir: Some(directory.0.clone()),
+            ..Default::default()
+        };
+        let path = directory
+            .0
+            .join(format!("active-{}.json", std::process::id()));
+        {
+            let mut interrupted = ProjectionCache::new(&algebra, &options);
+            let request = interrupted
+                .operation_request(AlgebraOperation::Resultant, Some(2), &[&p, &q])
+                .unwrap();
+            interrupted.capture_operation(&request, None).unwrap();
+        }
+        let saved: OperationCapture = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+        assert!(!saved.complete);
+        assert_eq!(saved.variable, Some(2));
+        assert_eq!(saved.operation, AlgebraOperation::Resultant);
+        let operands = saved.operands.unwrap();
+        assert_eq!(saved.input_hash, digest(&operands).unwrap());
+        assert_eq!(algebra.parse(&operands[0]).unwrap(), p);
+        let mut completed = ProjectionCache::new(&algebra, &options);
+        completed.resultant(&p, &q, 2).unwrap();
+        let saved: OperationCapture = serde_json::from_slice(&fs::read(path).unwrap()).unwrap();
+        assert!(saved.complete);
+        assert!(saved.elapsed_seconds.is_some_and(|t| t >= 0.0));
+        assert!(saved.output_hash.is_some());
+    }
+
+    #[test]
+    fn oversized_capture_omits_operands_and_cannot_leave_stale_snapshots() {
+        let directory = Directory::new();
+        let algebra = algebra();
+        let p = algebra
+            .parse(
+                &(1..80)
+                    .map(|i| format!("z^{i}"))
+                    .collect::<Vec<_>>()
+                    .join("+"),
+            )
+            .unwrap();
+        let options = OptimizedProjectionOptions {
+            capture_dir: Some(directory.0.clone()),
+            max_capture_bytes: 800,
+            ..Default::default()
+        };
+        let mut cache = ProjectionCache::new(&algebra, &options);
+        let request = cache
+            .operation_request(AlgebraOperation::Factor, None, &[&p])
+            .unwrap();
+        cache.capture_operation(&request, None).unwrap();
+        let path = directory
+            .0
+            .join(format!("active-{}.json", std::process::id()));
+        assert!(fs::metadata(&path).unwrap().len() <= 800);
+        let saved: OperationCapture = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+        assert!(saved.operands_omitted_for_size && saved.operands.is_none());
+        cache.options.max_capture_bytes = 1;
+        cache.capture_operation(&request, None).unwrap();
+        assert!(!path.exists());
+        let old_metrics: CacheMetrics = serde_json::from_str("{}").unwrap();
+        assert_eq!(old_metrics.resultant_disk_hits, 0);
+    }
+
+    #[test]
+    fn public_operation_cache_rejects_foreign_maps_and_invalid_variables() {
+        let algebra = algebra();
+        let foreign = Algebra::new(&["a".into(), "b".into(), "c".into()]).unwrap();
+        let p = algebra.parse("z+x").unwrap();
+        let q = foreign.parse("c+a").unwrap();
+        let mut cache = ProjectionCache::new(&algebra, &OptimizedProjectionOptions::default());
+        assert!(cache.factor_basis(std::slice::from_ref(&q)).is_err());
+        assert!(cache.resultant(&p, &q, 2).is_err());
+        assert!(cache.discriminant(&q, 2).is_err());
+        assert!(cache.resultant(&p, &p, 3).is_err());
+        assert!(cache.discriminant(&p, 3).is_err());
+    }
 }

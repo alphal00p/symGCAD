@@ -46,7 +46,8 @@ fn check_root(
     } else {
         ensure!(
             roots_in_open_interval(&fiber, &lo, &hi) == 1,
-            "interval does not isolate exactly one root"
+            "interval ({lo},{hi}) does not isolate exactly one root of {} at prefix {prefix:?}",
+            algebra.format(polynomial)
         );
     }
     let lc = fiber.coefficients().last().unwrap().abs();
@@ -212,6 +213,15 @@ impl Checker<'_> {
 }
 
 pub fn verify(result: &SolveResult) -> Result<Verification> {
+    if let Some(evidence) = &result.local {
+        return crate::local_projection::verify_local_parts(result, evidence);
+    }
+    verify_nonlocal(result)
+}
+
+/// A local engine's explicitly labeled global fallback uses the ordinary
+/// certificate checker without redispatching through its fallback metadata.
+pub(crate) fn verify_nonlocal(result: &SolveResult) -> Result<Verification> {
     if result.homogeneous.is_some() {
         return crate::homogeneity::verify_homogeneous(result);
     }
@@ -235,21 +245,21 @@ pub fn verify(result: &SolveResult) -> Result<Verification> {
     let normalized = normalize(&result.problem, &result.order)?;
     let algebra = &normalized.algebra;
     ensure!(
-        normalized
-            .positives
+        result
+            .normalized_constraints
             .iter()
-            .map(|p| algebra.format(p))
-            .collect::<Vec<_>>()
-            == result.normalized_constraints,
+            .map(|p| algebra.parse(p).map(crate::problem::positive_primitive))
+            .collect::<Result<Vec<_>>>()?
+            == normalized.positives,
         "normalized constraints differ from input"
     );
     ensure!(
-        normalized
-            .split
+        result
+            .split_polynomials
             .iter()
-            .map(|p| algebra.format(p))
-            .collect::<Vec<_>>()
-            == result.split_polynomials,
+            .map(|p| algebra.parse(p).map(crate::problem::positive_primitive))
+            .collect::<Result<Vec<_>>>()?
+            == normalized.split,
         "split polynomials differ from input"
     );
     let mut all = normalized.positives.clone();

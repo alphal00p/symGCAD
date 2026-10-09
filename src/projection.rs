@@ -4,7 +4,7 @@ use std::{collections::HashSet, time::Instant};
 
 use anyhow::{Result, ensure};
 use serde::{Deserialize, Serialize};
-use symbolica::{domains::InternalOrdering, prelude::*};
+use symbolica::domains::InternalOrdering;
 
 use crate::algebra::{Algebra, MAX_DEGREE, Poly, canonical, factors};
 
@@ -48,6 +48,58 @@ fn check_resultant_degrees(left: &Poly, right: &Poly, variable: usize) -> Result
     Ok(())
 }
 
+/// Deterministic resultant with its exact rational scale and sign preserved.
+/// Symbolica's automatic rational dispatch may select Monte Carlo CRT early
+/// termination, so proof construction and replay explicitly use integer Ducos.
+pub fn exact_resultant(left: &Poly, right: &Poly, variable: usize) -> Result<Poly> {
+    ensure!(
+        left.variables() == right.variables(),
+        "resultant variable maps differ"
+    );
+    ensure!(variable < left.nvars(), "resultant variable out of range");
+    check_resultant_degrees(left, right, variable)?;
+    // Use the signed homogeneous evaluation identity explicitly for a linear
+    // operand. The current Symbolica small-case implementation omits the
+    // (-1)^degree factor for Res(f, b0+b1*x) when degree(f) is odd.
+    if !left.is_zero() && !right.is_zero() {
+        if right.degree(variable) == 1 && left.degree(variable) > 0 {
+            return Ok(resultant_with_linear_second(left, right, variable));
+        }
+        if left.degree(variable) == 1 && right.degree(variable) > 0 {
+            let result = resultant_with_linear_second(right, left, variable);
+            return Ok(if right.degree(variable) % 2 == 1 {
+                -result
+            } else {
+                result
+            });
+        }
+    }
+    Ok(left
+        .to_univariate(variable)
+        .resultant_ducos_integer(&right.to_univariate(variable)))
+}
+
+fn resultant_with_linear_second(polynomial: &Poly, linear: &Poly, variable: usize) -> Poly {
+    let coefficients = polynomial.to_univariate(variable);
+    let linear = linear.to_univariate(variable);
+    let neg_constant = -linear.coefficients()[0].clone();
+    let leading = &linear.coefficients()[1];
+    let mut power = leading.clone();
+    let mut result = coefficients.coefficients().last().unwrap().clone();
+    for coefficient in coefficients.coefficients()[..coefficients.degree()]
+        .iter()
+        .rev()
+    {
+        result = &(&result * &neg_constant) + &(coefficient * &power);
+        power = &power * leading;
+    }
+    if coefficients.degree() % 2 == 1 {
+        -result
+    } else {
+        result
+    }
+}
+
 /// Exact discriminant, including its conventional sign. Degree-zero and
 /// degree-one inputs contribute no nonconstant discriminant to projection.
 pub fn discriminant(polynomial: &Poly, variable: usize) -> Result<Poly> {
@@ -63,8 +115,7 @@ pub fn discriminant(polynomial: &Poly, variable: usize) -> Result<Poly> {
         return Ok(polynomial.one());
     }
     let derivative = polynomial.derivative(variable);
-    check_resultant_degrees(polynomial, &derivative, variable)?;
-    let resultant = <Q as PolynomialResultant<u32>>::resultant(polynomial, &derivative, variable);
+    let resultant = exact_resultant(polynomial, &derivative, variable)?;
     let (mut quotient, remainder) =
         resultant.quot_rem(&polynomial.univariate_lcoeff(variable), false);
     ensure!(
@@ -106,10 +157,7 @@ pub fn projection_polynomials(polynomials: &[Poly], variable: usize) -> Result<V
             if other.is_constant() {
                 continue;
             }
-            check_resultant_degrees(polynomial, other, variable)?;
-            add(<Q as PolynomialResultant<u32>>::resultant(
-                polynomial, other, variable,
-            ));
+            add(exact_resultant(polynomial, other, variable)?);
         }
     }
     let mut output: Vec<Poly> = output.into_iter().collect();
@@ -175,6 +223,38 @@ mod tests {
 
     fn algebra() -> Algebra {
         Algebra::new(&["x".into(), "y".into()]).unwrap()
+    }
+
+    #[test]
+    fn deterministic_resultant_preserves_rational_scale_and_sign() {
+        let a = algebra();
+        // Reduce the second polynomial modulo y^2-x: x^3+x*y+1.
+        // Its product at the two conjugate roots is x^6+x^3+1.
+        let left = a.parse("(2/3)*(y^2-x)").unwrap();
+        let right = a.parse("(-3/5)*(y^6+x*y+1)").unwrap();
+        assert_eq!(
+            exact_resultant(&left, &right, 1).unwrap(),
+            a.parse("(64/2025)*(x^6+x^3+1)").unwrap()
+        );
+        assert_eq!(
+            exact_resultant(&a.parse("y^3+x").unwrap(), &a.parse("y+2").unwrap(), 1).unwrap(),
+            a.parse("8-x").unwrap()
+        );
+        assert_eq!(
+            exact_resultant(&a.parse("y+2").unwrap(), &a.parse("y^3+x").unwrap(), 1).unwrap(),
+            a.parse("x-8").unwrap()
+        );
+        assert_eq!(
+            exact_resultant(&a.parse("2*y+x").unwrap(), &a.parse("3*y+1").unwrap(), 1).unwrap(),
+            a.parse("2-3*x").unwrap()
+        );
+        assert_eq!(
+            exact_resultant(&a.parse("y^3-x").unwrap(), &a.parse("y^3-1").unwrap(), 1).unwrap(),
+            a.parse("(x-1)^3").unwrap()
+        );
+        assert!(exact_resultant(&left, &right, 2).is_err());
+        let other = Algebra::new(&["x".into(), "z".into()]).unwrap();
+        assert!(exact_resultant(&left, &other.parse("z+1").unwrap(), 1).is_err());
     }
 
     #[test]

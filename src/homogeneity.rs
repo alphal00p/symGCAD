@@ -418,6 +418,7 @@ fn reconstruct(problem: &Problem, order: Vec<String>, reduced: SolveResult) -> R
         merged_cells,
         homogeneous: Some(Box::new(evidence)),
         monotone: None,
+        local: None,
     })
 }
 

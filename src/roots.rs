@@ -2,6 +2,9 @@
 use anyhow::{Result, ensure};
 use symbolica::prelude::*;
 
+/// Symbolica's certified real isolator currently converts to u16 exponents.
+pub const MAX_ROOT_DEGREE: usize = u16::MAX as usize;
+
 #[derive(Clone, Debug)]
 pub struct FiberRoot {
     pub polynomial: usize,
@@ -107,6 +110,21 @@ pub fn isolate_union(polynomials: Vec<(usize, UnivariatePolynomial<Q>)>) -> Resu
         if polynomial.degree() == 0 {
             continue;
         }
+        if polynomial.degree() == 1 {
+            // Exact linear isolation needs neither a gcd nor VAS factorization.
+            let root = -polynomial.coefficients()[0].clone() / polynomial.coefficients()[1].clone();
+            roots.push(FiberRoot {
+                polynomial: id,
+                index: 0,
+                interval: (root.clone(), root),
+                fiber: polynomial,
+            });
+            continue;
+        }
+        ensure!(
+            polynomial.degree() <= MAX_ROOT_DEGREE,
+            "univariate degree exceeds the certified isolator's u16 exponent range"
+        );
         // Make square-free for sign-based bisection, keeping the same real roots.
         let gcd = polynomial.gcd(&polynomial.derivative());
         let (fiber, remainder) = polynomial.quot_rem(&gcd);
@@ -114,10 +132,11 @@ pub fn isolate_union(polynomials: Vec<(usize, UnivariatePolynomial<Q>)>) -> Resu
         let mut intervals = fiber.isolate_real_root_intervals();
         intervals.sort_by(|a, b| a.0.cmp(&b.0));
         for (index, (lo, hi, _)) in intervals.into_iter().enumerate() {
+            let interval = open_or_exact_interval(&fiber, index, lo, hi)?;
             roots.push(FiberRoot {
                 polynomial: id,
                 index,
-                interval: (lo, hi),
+                interval,
                 fiber: fiber.clone(),
             });
         }
@@ -148,6 +167,51 @@ pub fn isolate_union(polynomials: Vec<(usize, UnivariatePolynomial<Q>)>) -> Resu
         }
     }
     Ok(roots)
+}
+
+/// Symbolica can return a nondegenerate interval whose target rational root
+/// is an endpoint (e.g. 4*x^2-8*x gives (1,2)). Our exported contract requires
+/// either one root strictly inside or an exact point. An endpoint can also be
+/// a *different* root, so collapse only after exact open root counting and an
+/// ordinal check; blindly replacing any zero endpoint would merge roots.
+fn open_or_exact_interval(
+    fiber: &UnivariatePolynomial<Q>,
+    index: usize,
+    lo: Rational,
+    hi: Rational,
+) -> Result<(Rational, Rational)> {
+    if lo == hi {
+        return Ok((lo, hi));
+    }
+    let lower_root = fiber.evaluate(&lo).is_zero();
+    let upper_root = fiber.evaluate(&hi).is_zero();
+    if !lower_root && !upper_root {
+        return Ok((lo, hi));
+    }
+    let inside = roots_in_open_interval(fiber, &lo, &hi);
+    if inside == 1 {
+        return Ok((lo, hi));
+    }
+    ensure!(
+        inside == 0,
+        "backend interval contains multiple distinct roots"
+    );
+    let lc = fiber.coefficients().last().unwrap().abs();
+    let cauchy = fiber
+        .coefficients()
+        .iter()
+        .take(fiber.degree())
+        .map(|c| c.abs() / &lc)
+        .max()
+        .unwrap_or_else(Rational::zero)
+        + Rational::from(2);
+    let left = -cauchy;
+    for (endpoint, is_root) in [(&lo, lower_root), (&hi, upper_root)] {
+        if is_root && roots_in_open_interval(fiber, &left, endpoint) == index {
+            return Ok((endpoint.clone(), endpoint.clone()));
+        }
+    }
+    anyhow::bail!("backend endpoint root does not have the claimed real-root index {index}")
 }
 
 /// A small-denominator rational in a closed rational interval. Continued

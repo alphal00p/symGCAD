@@ -7,6 +7,7 @@ fn outcome(status: TrialStatus, elapsed_secs: f64) -> TrialOutcome {
         cells: Some(1),
         progress_score: None,
         message: None,
+        abandoned_prefix: None,
     }
 }
 
@@ -149,4 +150,76 @@ fn campaign_defaults_reserve_most_time_for_the_selected_exact_solve() {
         SearchOptions::default().candidate_timeouts_secs,
         vec![1.0, 10.0, 60.0]
     );
+}
+
+#[test]
+fn abandoned_prefix_is_reused_only_as_search_prediction() {
+    let mut executions = 0;
+    let opts = SearchOptions {
+        max_rollouts: 256,
+        ..SearchOptions::default()
+    };
+    let report = search(
+        &[vec![0, 1, 2]],
+        &[2, 1, 0],
+        &[vec![0, 1, 2], vec![1, 0, 2]],
+        &opts,
+        |request| {
+            executions += 1;
+            let mut result = outcome(TrialStatus::Pruned, 0.01);
+            result.progress_score = Some(4.0);
+            result.abandoned_prefix = Some(vec![*request.order.last().unwrap()]);
+            Ok(result)
+        },
+    )
+    .unwrap();
+    assert_eq!(executions, 3);
+    assert_eq!(report.trials.len(), 6);
+    assert!(report.best_order.is_none());
+    assert!(report.trials.iter().any(|r| r.outcome.elapsed_secs == 0.0));
+    assert_eq!(report.suggested_order.len(), 3);
+}
+
+#[test]
+fn explosive_prefix_abandonment_preserves_small_and_final_stages() {
+    use symgcad::{optimized_projection::ProjectionCheckpoint, search::growth_abandonment};
+    let stage = |variable, terms| ProjectionCheckpoint {
+        eliminated_variable: variable,
+        key: String::new(),
+        input_hash: String::new(),
+        output_hash: String::new(),
+        polynomial_count: 30,
+        term_count: terms,
+        max_degree: 8,
+        max_coefficient_bits: 64,
+        elapsed_seconds: 0.1,
+        cache_hit: false,
+    };
+    let mut checkpoints = vec![
+        stage(None, 100),
+        stage(Some(4), 762),
+        stage(Some(3), 10_396),
+    ];
+    assert_eq!(growth_abandonment(&checkpoints, 5).unwrap().0, 2);
+    assert!(growth_abandonment(&checkpoints, 3).is_none());
+    checkpoints[2].term_count = 3_999;
+    assert!(growth_abandonment(&checkpoints, 5).is_none());
+    checkpoints[2].term_count = 100_000;
+    assert!(growth_abandonment(&checkpoints, 4).is_some());
+}
+
+#[test]
+fn unrelated_abandoned_prefix_is_rejected() {
+    let result = search(
+        &[vec![0, 1]],
+        &[1, 0],
+        &[vec![0, 1]],
+        &SearchOptions::default(),
+        |_| {
+            let mut result = outcome(TrialStatus::Pruned, 0.01);
+            result.abandoned_prefix = Some(vec![0]);
+            Ok(result)
+        },
+    );
+    assert!(result.is_err());
 }

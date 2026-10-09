@@ -26,6 +26,9 @@ pub struct SolverOptions {
     pub seed: u64,
     pub max_rollouts: usize,
     pub search_time_secs: Option<f64>,
+    /// Heuristic abandonment of explosive ordering prefixes. This affects
+    /// search effort only; the selected final solve is never pruned this way.
+    pub search_pruning: bool,
     pub checkpoint_dir: Option<PathBuf>,
     pub cache_memory_mib: usize,
     pub positivity: bool,
@@ -43,6 +46,7 @@ impl Default for SolverOptions {
             seed: 0,
             max_rollouts: 256,
             search_time_secs: None,
+            search_pruning: true,
             checkpoint_dir: None,
             cache_memory_mib: 128,
             positivity: false,
@@ -141,7 +145,7 @@ impl Problem {
             }
         }
         ensure!(
-            ["baseline", "optimized", "monotone"].contains(&self.solver.engine.as_str()),
+            ["baseline", "optimized", "monotone", "local"].contains(&self.solver.engine.as_str()),
             "unknown engine"
         );
         ensure!(
@@ -154,7 +158,7 @@ impl Problem {
         );
         ensure!(
             !self.solver.positivity
-                || ["optimized", "monotone"].contains(&self.solver.engine.as_str()),
+                || ["optimized", "monotone", "local"].contains(&self.solver.engine.as_str()),
             "positivity certificates require an optimized engine"
         );
         ensure!(

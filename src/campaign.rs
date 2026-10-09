@@ -10,7 +10,7 @@ use sha2::{Digest, Sha256};
 use std::{
     collections::{BTreeMap, BTreeSet},
     fs,
-    io::{BufReader, Read},
+    io::{BufReader, BufWriter, Read, Write},
     path::{Path, PathBuf},
     process::Command,
     time::Instant,
@@ -151,7 +151,9 @@ fn resolve(base: &Path, path: &Path) -> PathBuf {
 }
 fn write_json(path: &Path, value: &impl Serialize) -> Result<()> {
     let temporary = path.with_extension("json.tmp");
-    serde_json::to_writer_pretty(fs::File::create(&temporary)?, value)?;
+    let mut writer = BufWriter::new(fs::File::create(&temporary)?);
+    serde_json::to_writer_pretty(&mut writer, value)?;
+    writer.flush()?;
     fs::rename(temporary, path)?;
     Ok(())
 }
@@ -604,6 +606,8 @@ mod tests {
         let outcome = ProcessOutcome {
             status: "completed".into(),
             wall_time_secs: 0.1,
+            user_cpu_secs: 0.05,
+            system_cpu_secs: 0.01,
             peak_rss_kib: 1,
             exit_code: Some(0),
             stdout: String::new(),

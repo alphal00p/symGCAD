@@ -2,10 +2,12 @@
 pub mod algebra;
 pub mod benchmark;
 pub mod campaign;
+pub mod comparison;
 pub mod config;
 pub mod corpus;
 pub mod domain;
 pub mod homogeneity;
+pub mod local_projection;
 pub mod monotone;
 pub mod optimized_projection;
 pub mod ordering;

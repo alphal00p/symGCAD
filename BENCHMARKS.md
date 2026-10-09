@@ -2,6 +2,8 @@
 
 The all-corpus goal remains unfinished. Results below identify the measured subset; fixed and symbolic ZZ domains are separate obligations.
 
+**Certification update:** the historical measurements below used Symbolica's automatic resultant dispatcher. Source review found probabilistic CRT early termination on sufficiently large operands. Production construction and verification now use deterministic integer Ducos and invalidate the old algebra caches. Historical reports retain their compatibility evidence and measured timings; fresh deterministic verification is required before those artifacts count toward exact all-corpus completion. The new method is also faster on the two captured degree-2-by-degree-8 operands (1.42 versus 5.73 seconds and 11.88 versus 18.30 seconds in exploratory builds). These operand measurements are not a release campaign speedup.
+
 ## Native baseline, fast core
 
 The frozen M1 implementation (`3125469`) was compiled in release mode and compared with the accelerated native upstream revision recorded in `PROVENANCE.toml`. The reference first qualified all 48 solve invocations from the 39 active, unmarked core test functions. Three fresh-process measurements per engine used identical explicit orders, one CPU, and no merging. Every Rust result passed the independent exhaustive verifier, and all raw cell counts matched upstream.
@@ -24,6 +26,8 @@ Local artifacts (excluded from Git):
 The build metadata and path-only dependency-manifest adjustment are next to the immutable binary. Detailed phase times, peak RSS, raw counts, verification evidence, hardware and compiler metadata are retained in the report directory.
 
 The fixed-kinematics active ZZ tier subsequently qualified and verified all 162 separate sign branches from 81 inputs. Its matched-phase geometric mean is 0.12308 and its fresh-process ratio is 0.19695; the largest matched-phase ratio is 0.72485. No branch was excluded or timed out. Report SHA-256: `f829d8fec7cce60f95655cf94a9735b8e7075aa87e32d71134ca000167dbdb8e` (`artifacts/bench/zz-fixed-completing-release/report.json`); frozen-set SHA-256: `0a157e753583900ce69fdafe9289466810006f4a0cae5574ea39b791477821a5`. The original symbolic tier is a separate ongoing benchmark.
+
+A separate aggressive-merge fast-core run matched all 48 raw counts, all 48 merged counts, and passed its verifier. Its matched-phase ratio was 0.06757; report SHA-256 `03107122443bd39d0d8f293b8420d2bc6f73305e80d5e036c3df66306c00124d`. The 23 non-solve API comparisons produced 16 exact ordering matches and one exact projection match; six large ordering calls timed out in both engines. API report SHA-256 `e0068fbad60e8f5c8faf33c55141ed7b3ce50242e2a47dafd00727131fa59e50`. The disabled `failing_test_ex43` expects projection level sizes `[16,4,2,1]`, but both the actual native implementation and Rust produce `[16,2,1,1]`; the source assertion is not treated as an oracle.
 
 ## A446 and Ax12 at fixed kinematics
 
@@ -48,6 +52,25 @@ Eight-cell artifact hashes:
 | `artifacts/hard-campaigns/ax12-446-monotone-debug-01/initial-x2-0/result.json` | `dd2a45cf5b503bb626122fd75efd9d13dd7dae00102304bf13f54e2978bebae4` |
 
 These remain exploratory debug measurements. Unrestricted symbolic trials exhausted both 60-second and 300-second limits; they are recorded as incomplete and are being pursued through further campaigns and algorithmic work.
+
+The subsequent release ablation used immutable `b69ec24`, three fresh processes per successful configuration, one CPU, 8 GiB, and no persistent cache. Both topologies independently verified again. These timings include the public CLI, preprocessing, algebra and export, with the anchor and any explicit order supplied by the configuration; they do not include the earlier research campaign that found those choices.
+
+| Configuration | A446 median seconds / cells | Ax12 median seconds / cells |
+|---|---:|---:|
+| Optimized, positivity and scale | 1.326 / 35 | 1.445 / 35 |
+| Monotone, positivity and scale | 0.825 / 8 | 0.452 / 8 |
+| Optimized, positivity, no scale | 2.409 / 35 | 1.032 / 35 |
+| Optimized, scale, no positivity | timeout at 60 s | timeout at 60 s |
+
+The no-positivity configurations were stopped after their first timeout and have no median. The ledger is `artifacts/bench/hard-fixed-release-ablation/ledger.json`, SHA-256 `7dd0edeffd85d02106fb0a145c46f5c19effbc769071ad11db8ff0d98985b31f`; the release executable hash is `df6ddd09c806cd1228db72b4cee0c60e85e95527e231d9fafe450f906c4b56ef`. Scale reduction is not a uniform speedup on these already-pruned inputs; positivity is essential to this tested projection configuration.
+
+## Symbolic export regression
+
+The first original-symbolic baseline campaign retained failures caused by unbuffered JSON output. For `finiteA_5_286/signs=-`, a 12-second syscall profile recorded 392,791 writes for 812,205 bytes. The unchanged M1 algebra, writing to local temporary storage, completed 3,308 cells in 1.354 s (projection 0.0353 s, lifting 1.3172 s), versus native matched phases of 1.8149 s. The independent M1 verifier checked 24,382 stacks and 75,721 rejections successfully. This establishes an export defect, not a slow resultant on that case.
+
+Production export now uses a buffered writer with explicit flush. A separately frozen M1 build changes only this output path and dependency locations; its SHA-256 is `2db92b0b6c4d7259a98f622611aa45bad2d1bbdea4ba97c91874a0374a9a6f47`. The exact build patch is `artifacts/bin/symgcad-baseline-buffered-3125469-build.patch` (SHA-256 `9753ed91129079a699a992ab1fe5e9a3bf7c045b53d1f01ada6be6041bbd0a32`). The full original frozen denominator is being rerun, and the failed campaign remains preserved. Worker control/progress files now use the system temporary directory; durable checkpoints and final exports retain their requested paths.
+
+The first buffered replay exposed a second harness issue: scanning all host PIDs every 20 ms consumed roughly half of a pinned CPU. The supervisor now follows the worker's own process tree and records `wait4` user/system CPU time. Historical pinned-supervisor wall times and deadline failures remain in their original reports; clean paired replays use the corrected supervisor. Profiling the 64,537-cell `finiteA_5_376/signs=-` case also identified rational root gcds and repeated substitution as real lifting costs. Exact linear isolation now bypasses unnecessary gcd/factorization, and lifting discards satisfied constant constraints while preserving original rejection IDs.
 
 ## Remaining acceptance work
 

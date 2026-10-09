@@ -498,49 +498,89 @@ fn inspect_prefix(args: &Args, progress_path: &Path) -> Result<()> {
     };
     let problem = Problem::from_toml(&fs::read_to_string(&args.fixture)?)?;
     let progress: Value = serde_json::from_slice(&fs::read(progress_path)?)?;
-    let checkpoints = progress["checkpoints"].as_array().context("missing checkpoints")?;
-    let directory = args.checkpoint_dir.as_ref().context("prefix inspection needs --checkpoint-dir")?;
+    let checkpoints = progress["checkpoints"]
+        .as_array()
+        .context("missing checkpoints")?;
+    let directory = args
+        .checkpoint_dir
+        .as_ref()
+        .context("prefix inspection needs --checkpoint-dir")?;
     let read = |checkpoint: &Value| -> Result<Value> {
-        let key = checkpoint["key"].as_str().context("missing checkpoint key")?;
-        Ok(serde_json::from_slice(&fs::read(directory.join(format!("{key}.json")))?)?)
+        let key = checkpoint["key"]
+            .as_str()
+            .context("missing checkpoint key")?;
+        Ok(serde_json::from_slice(&fs::read(
+            directory.join(format!("{key}.json")),
+        )?)?)
     };
     let initial = read(checkpoints.first().context("empty progress")?)?;
     let last = read(checkpoints.last().unwrap())?;
     let names: Vec<String> = serde_json::from_value(last["variable_names"].clone())?;
     let algebra = Algebra::new(&names)?;
     let parsed = |value: &Value| -> Result<Vec<symgcad::algebra::Poly>> {
-        value["output"].as_array().context("missing cached output")?.iter()
-            .map(|v| algebra.parse(v.as_str().context("cached polynomial must be text")?)).collect()
+        value["output"]
+            .as_array()
+            .context("missing cached output")?
+            .iter()
+            .map(|v| algebra.parse(v.as_str().context("cached polynomial must be text")?))
+            .collect()
     };
     let protected = parsed(&initial)?.into_iter().collect::<HashSet<_>>();
     let raw = parsed(&last)?;
     let original = normalize(&problem, &problem.variables)?;
-    let anchor = args.anchor.as_ref().context("prefix inspection needs an anchor")?;
-    let index = problem.variables.iter().position(|v| v == anchor).context("unknown anchor")?;
-    let constraints = original.positives.iter().map(|p| {
-        algebra.parse(&original.algebra.format(&p.replace(index, &Rational::one())))
-    }).collect::<Result<Vec<_>>>()?;
+    let anchor = args
+        .anchor
+        .as_ref()
+        .context("prefix inspection needs an anchor")?;
+    let index = problem
+        .variables
+        .iter()
+        .position(|v| v == anchor)
+        .context("unknown anchor")?;
+    let constraints = original
+        .positives
+        .iter()
+        .map(|p| algebra.parse(&original.algebra.format(&p.replace(index, &Rational::one()))))
+        .collect::<Result<Vec<_>>>()?;
     let domain = derive_domain(&algebra, &constraints, &[])?;
     let mut retained = Vec::new();
     let mut removed = Vec::new();
     for p in &raw {
         if !protected.contains(p)
-            && let Some(certificate) = certify_nonzero(&algebra, p, &domain, &CertificateOptions::default())? {
-                removed.push(json!({"terms":p.nterms(),"method":certificate.method}));
-            } else { retained.push(p.clone()); }
+            && let Some(certificate) =
+                certify_nonzero(&algebra, p, &domain, &CertificateOptions::default())?
+        {
+            removed.push(json!({"terms":p.nterms(),"method":certificate.method}));
+        } else {
+            retained.push(p.clone());
+        }
     }
-    let eliminated: HashSet<usize> = checkpoints.iter().filter_map(|c| c["eliminated_variable"].as_u64().map(|v|v as usize)).collect();
-    let candidates = (0..names.len()).filter(|v| !eliminated.contains(v) && args.block.contains(&names[*v])).collect::<Vec<_>>();
+    let eliminated: HashSet<usize> = checkpoints
+        .iter()
+        .filter_map(|c| c["eliminated_variable"].as_u64().map(|v| v as usize))
+        .collect();
+    let candidates = (0..names.len())
+        .filter(|v| !eliminated.contains(v) && args.block.contains(&names[*v]))
+        .collect::<Vec<_>>();
     let mut features = Vec::new();
     for &v in &candidates {
-        let active = retained.iter().filter(|p| p.degree(v) > 0).collect::<Vec<_>>();
-        let degrees = active.iter().map(|p|p.degree(v)).collect::<Vec<_>>();
+        let active = retained
+            .iter()
+            .filter(|p| p.degree(v) > 0)
+            .collect::<Vec<_>>();
+        let degrees = active.iter().map(|p| p.degree(v)).collect::<Vec<_>>();
         let mut max_sylvester_size = 0;
         let mut max_resultant_total_degree_bound = 0u64;
-        for (i,a) in active.iter().enumerate() {
-            for b in &active[i+1..] {
-                max_sylvester_size = max_sylvester_size.max(a.degree(v)+b.degree(v));
-                let bound = (0..names.len()).filter(|&w|w!=v).map(|w| u64::from(a.degree(v))*u64::from(b.degree(w))+u64::from(b.degree(v))*u64::from(a.degree(w))).sum();
+        for (i, a) in active.iter().enumerate() {
+            for b in &active[i + 1..] {
+                max_sylvester_size = max_sylvester_size.max(a.degree(v) + b.degree(v));
+                let bound = (0..names.len())
+                    .filter(|&w| w != v)
+                    .map(|w| {
+                        u64::from(a.degree(v)) * u64::from(b.degree(w))
+                            + u64::from(b.degree(v)) * u64::from(a.degree(w))
+                    })
+                    .sum();
                 max_resultant_total_degree_bound = max_resultant_total_degree_bound.max(bound);
             }
         }
@@ -551,8 +591,13 @@ fn inspect_prefix(args: &Args, progress_path: &Path) -> Result<()> {
     let rankings = [OrderingMethod::Mods,OrderingMethod::T1,OrderingMethod::Brown,OrderingMethod::Sparsity].into_iter().map(|method| {
         json!({"method":format!("{method:?}"),"elimination_priority":rank_candidates(&retained,&candidates,method).iter().map(|&v|names[v].clone()).collect::<Vec<_>>()})
     }).collect::<Vec<_>>();
-    println!("{}",serde_json::to_string_pretty(&json!({"diagnostic_only":true,"checkpoint":checkpoints.last(),"variables":names,
+    println!(
+        "{}",
+        serde_json::to_string_pretty(
+            &json!({"diagnostic_only":true,"checkpoint":checkpoints.last(),"variables":names,
         "raw_polynomials":raw.len(),"raw_terms":raw.iter().map(|p|p.nterms()).sum::<usize>(),"retained_polynomials":retained.len(),
-        "retained_terms":retained.iter().map(|p|p.nterms()).sum::<usize>(),"removed":removed,"features":features,"rankings":rankings}))?);
+        "retained_terms":retained.iter().map(|p|p.nterms()).sum::<usize>(),"removed":removed,"features":features,"rankings":rankings})
+        )?
+    );
     Ok(())
 }

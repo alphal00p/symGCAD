@@ -36,6 +36,19 @@ fn narrow_disconnected_components_and_close_roots() {
     let result = run(&["x"], &["(x^2-1)*(x^2-4)<0"], &[]);
     assert_eq!(result.cells.len(), 2);
 }
+
+#[test]
+fn three_spheres_with_rational_fiber_endpoint_roots_verify() {
+    run(
+        &["z", "y", "x"],
+        &[
+            "1-x^2-y^2-z^2>0",
+            "1-(x-1)^2-(y-1)^2-(z-1)^2>0",
+            "1-(x-1)^2-(y-1)^2-(z+1/2)^2>0",
+        ],
+        &[],
+    );
+}
 #[test]
 fn shared_roots_and_inactive_axis() {
     let result = run(&["x", "y"], &["x^2-1>0", "x-1>0"], &[]);
@@ -48,6 +61,20 @@ fn split_square_covers_both_signs() {
     assert_eq!(result.cells.len(), 2);
     assert!(result.cells.iter().any(|c| c.signs == vec![-1]));
     assert!(result.cells.iter().any(|c| c.signs == vec![1]));
+}
+#[test]
+fn saved_normalization_accepts_positive_rescaling_but_not_sign_changes() {
+    // Schema-1 results written before primitive-content normalization stored
+    // these rational coefficients. Their signs and polynomial zero sets agree.
+    let mut result = run(&["x"], &["x/3>0"], &["(x-1)/7"]);
+    result.normalized_constraints = vec!["x/3".into()];
+    result.split_polynomials = vec!["(x-1)/7".into()];
+    verify(&result).unwrap();
+    result.split_polynomials = vec!["(1-x)/7".into()];
+    assert!(verify(&result).is_err());
+    result.split_polynomials = vec!["(x-1)/7".into()];
+    result.normalized_constraints = vec!["-x/3".into()];
+    assert!(verify(&result).is_err());
 }
 #[test]
 fn verifier_detects_missing_branch_and_projection() {

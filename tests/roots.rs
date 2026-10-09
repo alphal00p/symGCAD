@@ -115,6 +115,76 @@ fn root_union_handles_exact_zero_repetition_and_constants() {
 }
 
 #[test]
+fn rational_roots_at_vas_interval_endpoints_remain_exact() {
+    let p = polynomial("4*x^2-8*x");
+    let raw = p.isolate_real_root_intervals();
+    let roots = isolate_union(vec![(0, p.clone())]).unwrap();
+    assert_eq!(roots.len(), 2, "raw: {raw:?}");
+    for root in roots {
+        let (lo, hi) = &root.interval;
+        assert!(
+            if lo == hi {
+                p.evaluate(lo).is_zero()
+            } else {
+                roots_in_open_interval(&p, lo, hi) == 1
+            },
+            "raw={raw:?}, invalid={root:?}"
+        );
+    }
+}
+
+#[test]
+fn root_isolation_rejects_backend_exponent_narrowing() {
+    let algebra = Algebra::new(&["x".into()]).unwrap();
+    let p = algebra.parse("x^65536+1").unwrap();
+    assert!(algebra.specialize_univariate(&p, 0, &[]).is_err());
+    // Library callers can also supply their own univariate polynomial.
+    let error = isolate_union(vec![(0, p.to_univariate_from_univariate(0))])
+        .unwrap_err()
+        .to_string();
+    assert!(error.contains("u16 exponent range"));
+}
+
+#[test]
+fn isolated_rational_roots_keep_distinct_ordinals_for_scaled_fibers() {
+    let values = [q("-2"), q("-1/2"), q("0"), q("1/3"), q("1"), q("2")];
+    for mask in 1usize..(1 << values.len()) {
+        let expected = values
+            .iter()
+            .enumerate()
+            .filter(|(i, _)| mask & (1 << i) != 0)
+            .map(|(_, v)| v.clone())
+            .collect::<Vec<_>>();
+        let expression = format!(
+            "4*{}",
+            expected
+                .iter()
+                .map(|v| format!("(x-({v}))"))
+                .collect::<Vec<_>>()
+                .join("*")
+        );
+        let p = polynomial(&expression);
+        let roots = isolate_union(vec![(0, p.clone())]).unwrap();
+        assert_eq!(roots.len(), expected.len(), "{expression}");
+        for (i, root) in roots.iter().enumerate() {
+            let (lo, hi) = &root.interval;
+            assert_eq!(root.index, i);
+            assert!(lo <= &expected[i] && &expected[i] <= hi);
+            assert!(if lo == hi {
+                p.evaluate(lo).is_zero()
+            } else {
+                roots_in_open_interval(&p, lo, hi) == 1
+            });
+        }
+        for gap in 0..=roots.len() {
+            let sample = sector_sample(gap.checked_sub(1).map(|i| &roots[i]), roots.get(gap));
+            assert!(gap == 0 || sample > expected[gap - 1]);
+            assert!(gap == roots.len() || sample < expected[gap]);
+        }
+    }
+}
+
+#[test]
 fn samples_are_strictly_between_all_fiber_roots() {
     let roots = isolate_union(vec![(0, polynomial("(x+2)*x*(x-1/3)*(x-1/2)*(x-2)"))]).unwrap();
     let expected = [q("-2"), q("0"), q("1/3"), q("1/2"), q("2")];

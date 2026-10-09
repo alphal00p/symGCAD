@@ -72,8 +72,9 @@ fn emit(value: &impl serde::Serialize, output: Option<&Path>) -> Result<()> {
             if let Some(parent) = path.parent() {
                 fs::create_dir_all(parent)?;
             }
-            let file = fs::File::create(path)?;
-            serde_json::to_writer(file, value)?;
+            let mut file = io::BufWriter::new(fs::File::create(path)?);
+            serde_json::to_writer(&mut file, value)?;
+            file.flush()?;
         }
         None => {
             let stdout = io::stdout();
@@ -105,7 +106,10 @@ fn read_problem(input: &Path, output: Option<&Path>) -> Result<Option<Problem>> 
 
 fn temporary(label: &str) -> Result<PathBuf> {
     static SERIAL: AtomicU64 = AtomicU64::new(0);
-    let directory = PathBuf::from("artifacts/workers");
+    // Worker control/progress traffic must stay off a potentially remote
+    // workspace filesystem. Durable algebra checkpoints and final results
+    // still use the caller's requested paths.
+    let directory = std::env::temp_dir().join("symgcad-workers");
     fs::create_dir_all(&directory)?;
     loop {
         let path = directory.join(format!(
@@ -129,6 +133,15 @@ fn bounded(
     problem: &Problem,
     operation: &str,
     search_report: Option<&Value>,
+) -> Result<(ProcessOutcome, PathBuf, Option<Value>)> {
+    bounded_trial(problem, operation, search_report, false)
+}
+
+fn bounded_trial(
+    problem: &Problem,
+    operation: &str,
+    search_report: Option<&Value>,
+    prune: bool,
 ) -> Result<(ProcessOutcome, PathBuf, Option<Value>)> {
     let input = temporary("input")?;
     let output = temporary("output")?;
@@ -155,7 +168,26 @@ fn bounded(
     if let Some(path) = &search_path {
         command.env("SYMGCAD_SEARCH_REPORT", path);
     }
-    let outcome = benchmark::run_bounded(&mut command, &problem.limits);
+    let mut last_check = std::time::Duration::ZERO;
+    let mut last_metadata = None;
+    let projection_variables =
+        problem.variables.len() - usize::from(problem.solver.homogeneous_anchor.is_some());
+    let outcome = benchmark::run_bounded_observed(&mut command, &problem.limits, |elapsed| {
+        if !prune || elapsed.saturating_sub(last_check).as_millis() < 100 {
+            return None;
+        }
+        last_check = elapsed;
+        let metadata = fs::metadata(&progress).ok()?;
+        let signature = (metadata.modified().ok()?, metadata.len());
+        if last_metadata == Some(signature) || metadata.len() > 16 * 1024 * 1024 {
+            return None;
+        }
+        last_metadata = Some(signature);
+        let report: symgcad::optimized_projection::OptimizedProjectionReport =
+            serde_json::from_slice(&fs::read(&progress).ok()?).ok()?;
+        symgcad::search::growth_abandonment(&report.checkpoints, projection_variables)
+            .map(|(_, reason)| reason)
+    });
     let evidence = serde_json::from_slice::<Value>(&fs::read(&progress)?).ok();
     fs::remove_file(progress)?;
     fs::remove_file(input)?;
@@ -290,7 +322,8 @@ fn run_search(problem: &Problem) -> Result<Value> {
             .collect();
         trial.solver.ordering = "given".into();
         trial.limits.wall_time_secs = request.timeout_secs;
-        let (process, path, progress) = bounded(&trial, "solve", None)?;
+        let prune = trial.solver.search_pruning && trial.solver.engine == "optimized";
+        let (process, path, progress) = bounded_trial(&trial, "solve", None, prune)?;
         let summary = serde_json::from_str::<Value>(&process.stdout).ok();
         let complete = summary
             .as_ref()
@@ -299,6 +332,7 @@ fn run_search(problem: &Problem) -> Result<Value> {
             "completed" if complete => TrialStatus::Completed,
             "timeout" => TrialStatus::Timeout,
             "memory_limit" => TrialStatus::MemoryLimit,
+            "pruned" => TrialStatus::Pruned,
             _ => TrialStatus::Failed,
         };
         let cells = summary
@@ -320,6 +354,19 @@ fn run_search(problem: &Problem) -> Result<Value> {
             .sum::<f64>();
             Some((1.0 + cost) / checkpoints.len().max(1) as f64)
         });
+        let abandoned_prefix = if status == TrialStatus::Pruned {
+            progress.as_ref().and_then(|p| {
+                let report: symgcad::optimized_projection::OptimizedProjectionReport =
+                    serde_json::from_value(p.clone()).ok()?;
+                let variables =
+                    trial.variables.len() - usize::from(trial.solver.homogeneous_anchor.is_some());
+                let (depth, _) =
+                    symgcad::search::growth_abandonment(&report.checkpoints, variables)?;
+                Some(request.order.iter().rev().copied().take(depth).collect())
+            })
+        } else {
+            None
+        };
         projection_progress.push(json!({"order":request.order,"progress":progress}));
         Ok(TrialOutcome {
             status,
@@ -327,6 +374,7 @@ fn run_search(problem: &Problem) -> Result<Value> {
             cells,
             progress_score,
             message: if complete { None } else { Some(process.stderr) },
+            abandoned_prefix,
         })
     })?;
     Ok(

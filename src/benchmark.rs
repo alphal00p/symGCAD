@@ -562,6 +562,11 @@ pub fn run_campaign(config_path: &Path, executable: &Path) -> Result<CampaignRep
 pub struct ProcessOutcome {
     pub status: String,
     pub wall_time_secs: f64,
+    /// CPU consumed by the reaped worker (and children it reaped), from wait4.
+    #[serde(default)]
+    pub user_cpu_secs: f64,
+    #[serde(default)]
+    pub system_cpu_secs: f64,
     pub peak_rss_kib: u64,
     pub exit_code: Option<i32>,
     pub stdout: String,
@@ -601,6 +606,18 @@ fn read_bounded(mut reader: impl Read) -> std::io::Result<(String, bool)> {
 /// concurrently so a verbose child cannot deadlock its supervisor.
 #[cfg(target_os = "linux")]
 pub fn run_bounded(command: &mut Command, limits: &Limits) -> Result<ProcessOutcome> {
+    run_bounded_observed(command, limits, |_| None)
+}
+
+/// As `run_bounded`, with an optional heuristic cancellation signal. The
+/// observer runs in the supervisor and must return promptly. Cancellation is
+/// reported as `pruned`; it is never evidence of mathematical emptiness.
+#[cfg(target_os = "linux")]
+pub fn run_bounded_observed(
+    command: &mut Command,
+    limits: &Limits,
+    mut observer: impl FnMut(Duration) -> Option<String>,
+) -> Result<ProcessOutcome> {
     use std::os::unix::process::{CommandExt, ExitStatusExt};
     ensure!(
         limits.wall_time_secs.is_finite() && limits.wall_time_secs > 0.0,
@@ -682,6 +699,8 @@ pub fn run_bounded(command: &mut Command, limits: &Limits) -> Result<ProcessOutc
     let err_thread = thread::spawn(move || read_bounded(stderr));
     let mut peak = 0;
     let mut forced_status = None;
+    let mut prune_reason = None;
+    let worker_usage;
     let status = loop {
         let rss = process_group_rss(pid);
         peak = peak.max(rss);
@@ -695,12 +714,21 @@ pub fn run_bounded(command: &mut Command, limits: &Limits) -> Result<ProcessOutc
             unsafe {
                 libc::kill(-pid, libc::SIGKILL);
             }
+        } else if forced_status.is_none() {
+            if let Some(reason) = observer(started.elapsed()) {
+                prune_reason = Some(reason);
+                forced_status = Some("pruned");
+                unsafe {
+                    libc::kill(-pid, libc::SIGKILL);
+                }
+            }
         }
         let mut raw_status = 0;
         let mut usage = unsafe { std::mem::zeroed::<libc::rusage>() };
         let waited = unsafe { libc::wait4(pid, &mut raw_status, libc::WNOHANG, &mut usage) };
         if waited == pid {
             peak = peak.max(usage.ru_maxrss.max(0) as u64);
+            worker_usage = usage;
             break std::process::ExitStatus::from_raw(raw_status);
         }
         if waited < 0 {
@@ -722,9 +750,13 @@ pub fn run_bounded(command: &mut Command, limits: &Limits) -> Result<ProcessOutc
     let (stdout, out_truncated) = out_thread
         .join()
         .map_err(|_| anyhow::anyhow!("stdout reader panicked"))??;
-    let (stderr, err_truncated) = err_thread
+    let (mut stderr, err_truncated) = err_thread
         .join()
         .map_err(|_| anyhow::anyhow!("stderr reader panicked"))??;
+    if let Some(reason) = prune_reason {
+        stderr.push_str("\nsymGCAD search abandonment: ");
+        stderr.push_str(&reason);
+    }
     Ok(ProcessOutcome {
         status: forced_status
             .unwrap_or(if status.success() {
@@ -734,6 +766,10 @@ pub fn run_bounded(command: &mut Command, limits: &Limits) -> Result<ProcessOutc
             })
             .into(),
         wall_time_secs: elapsed,
+        user_cpu_secs: worker_usage.ru_utime.tv_sec as f64
+            + worker_usage.ru_utime.tv_usec as f64 / 1_000_000.0,
+        system_cpu_secs: worker_usage.ru_stime.tv_sec as f64
+            + worker_usage.ru_stime.tv_usec as f64 / 1_000_000.0,
         peak_rss_kib: peak,
         exit_code: status.code(),
         stdout,
@@ -747,35 +783,18 @@ pub fn run_bounded(_command: &mut Command, _limits: &Limits) -> Result<ProcessOu
     bail!("resource supervision currently requires Linux")
 }
 
+#[cfg(not(target_os = "linux"))]
+pub fn run_bounded_observed(
+    _command: &mut Command,
+    _limits: &Limits,
+    _observer: impl FnMut(Duration) -> Option<String>,
+) -> Result<ProcessOutcome> {
+    bail!("resource supervision currently requires Linux")
+}
+
 #[cfg(target_os = "linux")]
 fn process_group_rss(group: libc::pid_t) -> u64 {
-    let Ok(entries) = fs::read_dir("/proc") else {
-        return 0;
-    };
-    let mut processes = Vec::new();
-    for entry in entries.flatten() {
-        let Ok(pid) = entry.file_name().to_string_lossy().parse::<libc::pid_t>() else {
-            continue;
-        };
-        let Ok(stat) = fs::read_to_string(entry.path().join("stat")) else {
-            continue;
-        };
-        // comm can contain spaces and parentheses; fields after its final ')'
-        // begin with state (3), ppid (4), pgrp (5).
-        let Some((_, tail)) = stat.rsplit_once(')') else {
-            continue;
-        };
-        let mut fields = tail.split_whitespace();
-        fields.next();
-        let (Some(parent), Some(process_group)) = (fields.next(), fields.next()) else {
-            continue;
-        };
-        let (Ok(parent), Ok(process_group)) = (parent.parse(), process_group.parse()) else {
-            continue;
-        };
-        processes.push((pid, parent, process_group));
-    }
-    let members = process_tree_members(&processes, group);
+    let members = live_process_tree(group);
     let mut rss = 0;
     for pid in members {
         if let Ok(status) = fs::read_to_string(format!("/proc/{pid}/status")) {
@@ -792,24 +811,32 @@ fn process_group_rss(group: libc::pid_t) -> u64 {
 }
 
 #[cfg(target_os = "linux")]
-fn process_tree_members(
-    processes: &[(libc::pid_t, libc::pid_t, libc::pid_t)],
-    group: libc::pid_t,
-) -> std::collections::HashSet<libc::pid_t> {
-    let mut members = std::collections::HashSet::from([group]);
-    // A public CLI worker may itself supervise children in new process groups.
-    // Keep direct-group accounting and include descendants across those groups.
-    loop {
-        let previous = members.len();
-        for &(pid, parent, process_group) in processes {
-            if process_group == group || members.contains(&parent) {
-                members.insert(pid);
+fn live_process_tree(root: libc::pid_t) -> std::collections::HashSet<libc::pid_t> {
+    let mut members = std::collections::HashSet::from([root]);
+    let mut pending = vec![root];
+    // Follow every thread's children: a child can be created by a nonleader
+    // thread, and nested CLI workers deliberately establish new process groups.
+    // Do not scan the host's /proc directory: on shared machines that scan can
+    // consume half of the worker's assigned CPU and distort its wall deadline.
+    // Controlled workers retain their parent tree and use PDEATHSIG. A child
+    // orphaned between samples could escape RSS accounting; this is not a
+    // general-purpose sandbox for arbitrary daemonizing executables.
+    while let Some(pid) = pending.pop() {
+        let Ok(tasks) = fs::read_dir(format!("/proc/{pid}/task")) else {
+            continue;
+        };
+        for task in tasks.flatten() {
+            let Ok(children) = fs::read_to_string(task.path().join("children")) else {
+                continue;
+            };
+            for child in children.split_whitespace().filter_map(|s| s.parse().ok()) {
+                if members.insert(child) {
+                    pending.push(child);
+                }
             }
         }
-        if members.len() == previous {
-            return members;
-        }
     }
+    members
 }
 
 /// Invoke only the independently built native upstream package. The adapter
@@ -852,12 +879,15 @@ pub fn append_record(path: &Path, record: &BenchmarkRecord) -> Result<()> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;
     }
-    let mut file = fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(path)?;
+    let mut file = std::io::BufWriter::new(
+        fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(path)?,
+    );
     serde_json::to_writer(&mut file, record)?;
     writeln!(file)?;
+    file.flush()?;
     Ok(())
 }
 
@@ -879,6 +909,24 @@ mod tests {
         assert!(outcome.wall_time_secs < 2.0);
     }
     #[test]
+    fn heuristic_observer_kills_worker_without_claiming_completion() {
+        let limits = Limits {
+            wall_time_secs: 10.0,
+            memory_mib: 128,
+            workers: 1,
+            ..Limits::default()
+        };
+        let mut command = Command::new("sh");
+        command.args(["-c", "sleep 10 & wait"]);
+        let outcome = run_bounded_observed(&mut command, &limits, |elapsed| {
+            (elapsed.as_millis() >= 50).then(|| "measured term growth".into())
+        })
+        .unwrap();
+        assert_eq!(outcome.status, "pruned");
+        assert!(outcome.stderr.contains("measured term growth"));
+        assert!(outcome.wall_time_secs < 2.0);
+    }
+    #[test]
     fn supervisor_captures_both_streams() {
         let mut command = Command::new("sh");
         command.args(["-c", "printf result; printf diagnostic >&2"]);
@@ -889,15 +937,28 @@ mod tests {
     }
     #[test]
     fn nested_worker_groups_remain_in_memory_accounting() {
-        // Deliberately reverse ancestry order, and include an unrelated worker.
-        let processes = [
-            (30, 20, 30),
-            (20, 10, 20),
-            (11, 1, 10),
-            (99, 1, 99),
-            (10, 1, 10),
-        ];
-        let members = process_tree_members(&processes, 10);
-        assert_eq!(members, std::collections::HashSet::from([10, 11, 20, 30]));
+        let mut child = Command::new("sh")
+            .args(["-c", "setsid sh -c 'sleep 10 & wait' & wait"])
+            .spawn()
+            .unwrap();
+        let root = child.id() as libc::pid_t;
+        let started = Instant::now();
+        let members = loop {
+            let members = live_process_tree(root);
+            if members.len() >= 3 || started.elapsed() > Duration::from_secs(2) {
+                break members;
+            }
+            thread::sleep(Duration::from_millis(10));
+        };
+        let rss = process_group_rss(root);
+        // Clean up before assertions, including the child's distinct group.
+        for &pid in &members {
+            unsafe { libc::kill(pid, libc::SIGKILL); }
+        }
+        let _ = child.kill();
+        let _ = child.wait();
+        assert!(members.len() >= 3, "missing child/grandchild: {members:?}");
+        assert!(rss > 0);
+        assert!(!members.contains(&(std::process::id() as libc::pid_t)));
     }
 }

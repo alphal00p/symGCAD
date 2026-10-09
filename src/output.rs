@@ -100,6 +100,8 @@ pub struct SolveResult {
     pub homogeneous: Option<Box<crate::homogeneity::HomogeneousEvidence>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub monotone: Option<Box<crate::monotone::MonotoneEvidence>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub local: Option<Box<crate::local_projection::LocalEvidence>>,
 }
 
 impl SolveResult {
@@ -121,6 +123,7 @@ impl SolveResult {
             merged_cells: None,
             homogeneous: None,
             monotone: None,
+            local: None,
         }
     }
 }

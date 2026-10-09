@@ -144,3 +144,29 @@ importer's schema.
 Full-corpus completion is a mathematical solve workload. In particular, solving
 an inequality extracted from an ordering/projection unit test does not reproduce
 that test's original API assertion; the corpus inventory retains this distinction.
+
+The separate API comparison invokes all 22 extracted ordering calls and the one
+projection call through both implementations. Projection comparison canonicalizes
+the per-level polynomial sets with Symbolica; ordering comparisons retain the
+actual returned variable lists. Resource failures stay explicit in the report:
+
+```sh
+nix develop -c cargo run --example api_compare -- \
+  --solver artifacts/bin/symgcad-baseline-3125469
+```
+
+To replay a previously frozen reference-completing set after an infrastructure
+fix, without changing its denominator or orders, use the Rust replay driver:
+
+```sh
+nix develop -c cargo run --example frozen_replay -- \
+  --frozen artifacts/bench/zz-symbolic-completing-release/frozen-reference-set.json \
+  --solver artifacts/bin/symgcad-baseline-buffered-3125469 \
+  --output artifacts/bench/zz-symbolic-buffered-release
+```
+
+The output directory must be empty. The replay records the frozen manifest's
+hash, runs three paired measurements and independently verifies each complete
+case. Its kernel and fresh-process timing policies match the original baseline
+campaign. It preserves the frozen worker input schema so new CLI options cannot
+silently alter the committed baseline's mathematical workload.

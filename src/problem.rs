@@ -97,7 +97,7 @@ pub fn normalize(problem: &Problem, order: &[String]) -> Result<NormalizedProble
 
 /// Clear rational denominators and content using a strictly positive scale.
 /// In particular a negative one-term polynomial must retain its sign.
-fn positive_primitive(polynomial: Poly) -> Poly {
+pub(crate) fn positive_primitive(polynomial: Poly) -> Poly {
     if polynomial.is_zero() {
         return polynomial;
     }

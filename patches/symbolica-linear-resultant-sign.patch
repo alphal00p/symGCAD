@@ -1,0 +1,59 @@
+--- a/src/poly/resultant.rs
++++ b/src/poly/resultant.rs
+@@ -123,7 +123,13 @@
+             self.ring.mul_assign(&mut b1_power, b1);
+         }
+ 
+-        result
++        // Homogeneous Horner gives b1^degree * f(-b0/b1), which is
++        // Res(b0+b1*x, f). Res(f, b0+b1*x) has the extra parity sign.
++        if self.degree() % 2 == 1 {
++            self.ring.neg(&result)
++        } else {
++            result
++        }
+     }
+ }
+ 
+@@ -1080,7 +1086,7 @@
+         assert_eq!(q_constant.resultant_euclidean(&q_zero), 0u64);
+ 
+         let expected =
+-            parse!("-2*y^7+243*z*y^2+2187*y+2187").to_polynomial::<_, u8>(&Z, Some(vars.clone()));
++            parse!("2*y^7-243*z*y^2-2187*y-2187").to_polynomial::<_, u8>(&Z, Some(vars.clone()));
+         let high = high.to_univariate(0);
+         let linear = linear.to_univariate(0);
+         assert_eq!(high.resultant_brown(&linear), expected);
+@@ -1098,6 +1104,32 @@
+         assert_eq!(quadratic_a.resultant_brown(&quadratic_b), expected);
+         assert_eq!(quadratic_a.resultant(&quadratic_b), expected);
+         assert_eq!(quadratic_a.resultant_primitive(&quadratic_b), expected);
++    }
++
++    #[test]
++    fn resultant_linear_operand_has_sylvester_sign() {
++        let (x, y) = symbol!("x", "y");
++        let vars = Arc::new(vec![x.into(), y.into()]);
++        let cubic = parse!("x^3+y")
++            .to_polynomial::<_, u8>(&Q, Some(vars.clone())).to_univariate(0);
++        let linear = parse!("x+2")
++            .to_polynomial::<_, u8>(&Q, Some(vars.clone())).to_univariate(0);
++        let expected = parse!("8-y").to_polynomial::<_, u8>(&Q, Some(vars.clone()));
++        assert_eq!(cubic.resultant(&linear), expected);
++        assert_eq!(cubic.resultant_brown(&linear), expected);
++        assert_eq!(cubic.resultant_primitive(&linear), expected);
++        assert_eq!(cubic.resultant_ducos_integer(&linear), expected);
++        assert_eq!(cubic.resultant_crt(&linear), expected);
++        assert_eq!(cubic.resultant_auto(&linear), expected);
++        assert_eq!(linear.resultant(&cubic), -expected);
++
++        let first = parse!("2*x+y")
++            .to_polynomial::<_, u8>(&Q, Some(vars.clone())).to_univariate(0);
++        let second = parse!("3*x+1")
++            .to_polynomial::<_, u8>(&Q, Some(vars.clone())).to_univariate(0);
++        let determinant = parse!("2-3*y").to_polynomial::<_, u8>(&Q, Some(vars));
++        assert_eq!(first.resultant(&second), determinant);
++        assert_eq!(second.resultant(&first), -determinant);
+     }
+ 
+     #[test]

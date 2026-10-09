@@ -97,7 +97,9 @@ fn completed_steps_survive_new_cache_instances() {
     assert!(
         fs::read_dir(&directory.0)
             .unwrap()
-            .all(|entry| entry.unwrap().path().extension().unwrap() == "json")
+            .map(|entry| entry.unwrap().path())
+            .filter(|path| path.is_file())
+            .all(|path| path.extension().unwrap() == "json")
     );
 }
 
@@ -114,6 +116,9 @@ fn damaged_input_keys_are_recomputed_and_replaced() {
     let (first, _) = project_optimized(&a, &input, &options).unwrap();
     for entry in fs::read_dir(&directory.0).unwrap() {
         let path = entry.unwrap().path();
+        if !path.is_file() {
+            continue;
+        }
         let mut saved: serde_json::Value =
             serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
         saved["input_hash"] = "damaged".into();

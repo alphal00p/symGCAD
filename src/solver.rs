@@ -22,6 +22,9 @@ pub fn selected_order(problem: &Problem) -> Result<Vec<String>> {
     if problem.solver.engine == "monotone" {
         return crate::monotone::selected_order(problem);
     }
+    if problem.solver.engine == "local" {
+        return crate::local_projection::selected_order(problem);
+    }
     if !problem.solver.order.is_empty() || problem.solver.ordering == "given" {
         let order = if problem.solver.order.is_empty() && !problem.variable_groups.is_empty() {
             problem.variable_groups.iter().flatten().cloned().collect()
@@ -72,6 +75,7 @@ fn projection_options(problem: &Problem) -> Result<OptimizedProjectionOptions> {
         checkpoint_dir: problem.solver.checkpoint_dir.clone(),
         memory_cache_bytes: problem.solver.cache_memory_mib * 1024 * 1024,
         progress_path: std::env::var_os("SYMGCAD_PROGRESS_PATH").map(std::path::PathBuf::from),
+        capture_dir: std::env::var_os("SYMGCAD_CAPTURE_DIR").map(std::path::PathBuf::from),
         domain_fingerprint: serde_json::to_string(&(
             &problem.variables,
             &problem.constraints,
@@ -225,7 +229,7 @@ impl Lifter<'_> {
         &mut self,
         prefix: &mut Vec<Rational>,
         axes: &mut Vec<Axis>,
-        positives: Vec<Poly>,
+        positives: Vec<(usize, Poly)>,
     ) -> Result<LiftTrace> {
         if self.incomplete {
             return Ok(LiftTrace::Unfinished {
@@ -238,10 +242,10 @@ impl Lifter<'_> {
                 reason: "wall time limit".into(),
             });
         }
-        for (i, p) in positives.iter().enumerate() {
+        for (i, p) in &positives {
             if p.is_constant() && p.get_constant() <= Rational::zero() {
                 self.statistics.rejected_branches += 1;
-                return Ok(LiftTrace::Rejected { constraint: i });
+                return Ok(LiftTrace::Rejected { constraint: *i });
             }
         }
         let level = prefix.len();
@@ -259,7 +263,7 @@ impl Lifter<'_> {
                 });
             }
             ensure!(
-                positives.iter().all(|p| p.is_constant()),
+                positives.iter().all(|(_, p)| p.is_constant()),
                 "not all coordinates substituted at leaf"
             );
             let signs = self
@@ -295,10 +299,22 @@ impl Lifter<'_> {
                 upper: hi.map(bound),
             });
             prefix.push(sample.clone());
-            let next = positives
-                .iter()
-                .map(|p| p.replace(level, &sample))
-                .collect();
+            // Keep original IDs for exact rejection witnesses, but stop carrying
+            // constraints already proved strictly positive on this branch.
+            // Once a constraint fails, later substitutions cannot rescue it.
+            let mut next = Vec::new();
+            for (constraint, p) in &positives {
+                let specialized = p.replace(level, &sample);
+                if specialized.is_constant() {
+                    if specialized.get_constant() <= Rational::zero() {
+                        next.clear();
+                        next.push((*constraint, specialized));
+                        break;
+                    }
+                } else {
+                    next.push((*constraint, specialized));
+                }
+            }
             let child = self.visit(prefix, axes, next)?;
             sectors.push(SectorTrace {
                 sample: sample_text,
@@ -437,6 +453,12 @@ pub fn solve(problem: &Problem) -> Result<SolveResult> {
     if problem.solver.engine == "monotone" {
         return crate::monotone::solve_monotone(problem);
     }
+    if problem.solver.engine == "local" {
+        let local = crate::local_projection::solve_local(problem, &Default::default())?;
+        let mut result = local.solution;
+        result.local = Some(Box::new(local.evidence));
+        return Ok(result);
+    }
     let started = Instant::now();
     let (order, normalized, projection, optimized_report, ordering_seconds, projection_seconds) =
         if problem.solver.engine == "optimized" {
@@ -478,7 +500,11 @@ pub fn solve(problem: &Problem) -> Result<SolveResult> {
         statistics: Statistics::default(),
     };
     let lifting_start = Instant::now();
-    let trace = lifter.visit(&mut vec![], &mut vec![], normalized.positives.clone())?;
+    let trace = lifter.visit(
+        &mut vec![],
+        &mut vec![],
+        normalized.positives.iter().cloned().enumerate().collect(),
+    )?;
     lifter.statistics.lifting_seconds = lifting_start.elapsed().as_secs_f64();
     lifter.statistics.ordering_seconds = ordering_seconds;
     lifter.statistics.projection_seconds = projection_seconds;
@@ -523,6 +549,7 @@ pub fn solve(problem: &Problem) -> Result<SolveResult> {
         merged_cells,
         homogeneous: None,
         monotone: None,
+        local: None,
     })
 }
 
