@@ -22,11 +22,22 @@ Fresh measurements with deterministic release `9025e71` and the corrected proces
 |---|---:|---:|---:|
 | Fast core | 48 / 48 | 0.0907102 | 0.0421028 |
 | Active fixed ZZ | 162 / 162 | 0.099492 | 0.037431 |
+| Active symbolic ZZ | 162 / 162 | 0.1728793 | 0.0802922 |
 | Remaining fixed ZZ, batch 1 | 32 / 32 reference completions | 0.37554 | 0.12773 |
 
 Each row uses three fresh-process measurements and independent verification; none has a matched-phase regression above 2×. The remaining-fixed batch also retains eight native timeouts outside its frozen completing denominator. Its 40 branches were selected before reference qualification. These subset results do not establish all-corpus parity. Report hashes, respectively, are `0207ff140fef37b630ca9e36835c6bcb6d08d50d9331717dfefcf456d17fae54`, `b52583b33d6738d6265f7cca074cb1e17651687d950927e1a8dbbb0d2da817a2`, and `8784104ed8fb362664724f3aba631a06c420da2f6d523fa60255c676a2214e80` under `artifacts/bench/{core-fast,zz-fixed-completing,zz-fixed-remaining-batch1}-deterministic-release/report.json`.
 
 The deterministic replay of 23 non-solve API calls again produced 16 ordering matches and one projection match; six ordering calls timed out in both engines at 60 seconds. No completed mismatch was observed. Report SHA-256: `391e0532e42d1d86eb5928e01a0fd3f2d9643285f568699ec843f98a030ec99a` (`artifacts/bench/core-api-deterministic/report.json`).
+
+The active-symbolic report is `artifacts/bench/zz-symbolic-deterministic-release/report.json`, SHA-256 `5dbb84a64c8e9e0473d6db188e60ffd0c32730d34a1a7cd915cc63eefe886686`; its largest matched-phase ratio is 1.30258. Additional core qualification now covers all 83 distinct core groups: 72 native completions were reproduced and independently verified, with 11 native timeouts retained. The remaining-core cohort's matched-phase geometric mean is 0.692953 (`report.json` SHA-256 `2d6d7747bf338b2fc5f6d7f16ab58455328b8f40bb978eefed9c890211d4efda` under `artifacts/bench/core-remaining-deterministic-release`). Its three regressions above 2× are `test_ex_e5/solve/2` (2.6896), `test_ex_e5/solve/3` (2.1083), and `hanging_test_ex38/solve/1` (3.0738). Their projections are faster than native; lifting profiles identify redundant rational polynomial GCDs, repeated substitutions, and root-refinement coefficient cloning. The implementation addresses each cost, with controlled release follow-up measurements kept separate from this immutable baseline denominator.
+
+The nine reference-completing supplemental ordering-only inputs also verify as mathematical solve workloads; four further native timeouts remain. Their matched-phase ratio is 0.122974 and report SHA-256 is `c59dcf0c7afd8f306f2e48ea221d3f1b6e77871048c17f534bd3448fe1d19da9`. Original ordering API assertions remain separate from these solves.
+
+## Captured algebra and lifting costs
+
+On the captured Ax12 quartic discriminant (642 input terms; 69,474 output terms), the exact quartic invariant identity took 2.71166 seconds and 49,152 KiB in release versus 29.76537 seconds and 483,248 KiB for the generic deterministic Ducos construction. This is one exploratory measurement per method, a 10.98× time and 9.83× RSS reduction on that operand, not a corpus speedup. Both outputs have SHA-256 `242b27647e64007bfe0ca993456be36a5b8d32f3761ee78c69e3ebe2d24f29be`. The summary `artifacts/profile/quartic-discriminant/summary.json` has SHA-256 `3054b1c66a868212418f6529f9f83c755532c8ae4d09ff9062e0311c35bde715`.
+
+Three rotated same-debug measurements of specialization on 2,000 recorded prefixes found 0.40136/0.25165/0.25177 seconds for sequential replacement/single-pass replacement/shared-power batch replacement in `ex_e5/solve/2`; the corresponding `ex38` measurements were 0.07895/0.05717/0.05191 seconds. All specialized polynomials matched exactly. These isolate substitution costs and do not predict the full solve ratio. The summary `artifacts/profile/core-outliers-9025/specialization-summary.json` has SHA-256 `193409e27d8e20dc434641bf2ca8d4602112b5c3e2af79fc82be3b8d407cc2bd`.
 
 The frozen M1 implementation (`3125469`) was compiled in release mode and compared with the accelerated native upstream revision recorded in `PROVENANCE.toml`. The reference first qualified all 48 solve invocations from the 39 active, unmarked core test functions. Three fresh-process measurements per engine used identical explicit orders, one CPU, and no merging. Every Rust result passed the independent exhaustive verifier, and all raw cell counts matched upstream.
 

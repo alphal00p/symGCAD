@@ -136,20 +136,12 @@ impl Checker<'_> {
             LiftTrace::Stack { roots, sectors } => {
                 ensure!(level < self.algebra.names.len(), "excess lifting level");
                 let ids = &self.result.projection_levels[level];
-                let fibers = ids
-                    .iter()
-                    .map(|&id| {
-                        Ok((
-                            id,
-                            self.algebra.specialize_univariate(
-                                &self.polynomials[id],
-                                level,
-                                prefix,
-                            )?,
-                        ))
-                    })
-                    .collect::<Result<Vec<_>>>()?;
-                let expected = isolate_union(fibers)?;
+                let fibers = self.algebra.specialize_univariate_batch(
+                    ids.iter().map(|&id| &self.polynomials[id]),
+                    level,
+                    prefix,
+                )?;
+                let expected = isolate_union(ids.iter().copied().zip(fibers).collect())?;
                 ensure!(roots.len() == expected.len(), "root union is incomplete");
                 ensure!(
                     sectors.len() == roots.len() + 1,

@@ -17,8 +17,17 @@ pub struct FiberRoot {
 /// that are roots are handled by one-sided limits, so adjoining roots are not
 /// accidentally counted in an open interval.
 fn sign_at(poly: &UnivariatePolynomial<Q>, x: &Rational, right: bool) -> i8 {
-    let mut p = poly.clone();
-    let mut parity = false;
+    let value = poly.evaluate(x);
+    if !value.is_zero() {
+        return if value.is_negative() { -1 } else { 1 };
+    }
+    if poly.is_zero() {
+        return 0;
+    }
+    // Derivatives are needed only at a zero endpoint. Ordinary bisection and
+    // Sturm evaluations can borrow the fiber without cloning its coefficients.
+    let mut p = poly.derivative();
+    let mut parity = true;
     loop {
         let value = p.evaluate(x);
         if !value.is_zero() {

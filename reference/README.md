@@ -122,6 +122,7 @@ campaign_time_secs = 3600.0
 workers = 1
 memory_mib = 8192
 resume = true
+cache_policy = "auto" # cold for ablations; shared for completion
 
 [[variants]]
 name = "optimized-mods"
@@ -136,6 +137,14 @@ normalization, decomposition and export. It independently verifies every
 completed repetition. Verification time is recorded separately. Completion
 runs use one repetition; ablations default to three. These runs certify results
 without requiring the same number of cells as the upstream engine.
+
+Ablations default to a fresh persistent-cache directory for each repetition,
+including when the source input names an existing checkpoint directory. Ordering
+trials and the final solve share work within that one measurement. The ledger
+records each actual trial input and its hash. Set `cache_policy = "shared"`
+explicitly for warm-cache measurements, or `"cold"` to isolate completion runs
+as well. Shared results must be labelled as warm; a new process alone does not
+make a persistent algebra cache cold.
 
 `ledger.json` retains every scheduled identifier, equivalence alias and attempt,
 including timeouts, resource failures and inputs not started within the budget.
@@ -190,3 +199,19 @@ remaining campaign budget. Supply that manifest to `frozen_replay`, with
 `--campaign-time-secs` no larger than the recorded remaining budget. A separate
 `--verification-timeout` can give exhaustive proof checking more time than each
 measured solve while remaining inside the shared campaign limit.
+
+`cargo run --example aggregate_parity -- --report REPORT_JSON` accepts repeated
+`--report` arguments for the final corpus audit. It maps aliases through both
+equivalence manifests and requires all 331 groups: 124 fixed ZZ, 124 symbolic ZZ,
+and 83 core groups. Sign expansion gives 579 solve problems. The 83 core groups
+include 70 original solve calls and 13 ordering-only inputs treated as additional
+solve problems; their original ordering assertions remain separate API checks.
+
+Supply the fast-core, remaining-core, supplemental API-input, active ZZ, and all
+three remaining ZZ batch reports for each kinematic domain. Do not include the
+aggressive-merge replay or API comparison in this aggregate: they check separate
+assertions and would duplicate solve groups. The audit rejects duplicate groups
+and mixed worker executables. Missing qualification coverage or missing timing
+ratios suppress the aggregate geometric mean and prevent a passing gate. Native
+timeouts stay explicit. The output records every report and manifest hash, all
+aliases, missing cases, and every matched-phase slowdown above two times native.

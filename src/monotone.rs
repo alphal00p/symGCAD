@@ -545,7 +545,10 @@ fn reconstruct(
         "base certificate uses an incompatible order"
     );
     if base.status != Status::CompleteGeneric && base.projection_levels.is_empty() {
-        ensure!(base.cells.is_empty(), "partial cells lack projection levels");
+        ensure!(
+            base.cells.is_empty(),
+            "partial cells lack projection levels"
+        );
         base.projection_levels.resize(base_dimension, vec![]);
     }
     ensure!(

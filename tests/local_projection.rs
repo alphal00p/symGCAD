@@ -1077,3 +1077,178 @@ fn descartes_zero_variations_omit_only_negative_root_collisions() {
     assert!(alter(root));
     assert!(symgcad::verify::verify(&changed).is_err());
 }
+
+fn pair_witnesses<'a>(
+    node: &'a LocalNode,
+    output: &mut Vec<&'a local_projection::PositivePairSeparation>,
+) {
+    if let LocalNode::Stack {
+        projection,
+        sectors,
+        ..
+    } = node
+    {
+        if let Some(ray) = &projection.positive_ray {
+            output.extend(&ray.separations);
+        }
+        for sector in sectors {
+            pair_witnesses(&sector.child, output);
+        }
+    }
+}
+
+#[test]
+fn positive_pair_separation_omits_only_negative_intersections() {
+    let p = problem(&["x", "z"], &["x>0", "z>0"], &["z^2-x", "z^2-z-x-1"]);
+    let separated = compare_positive_ray(&p);
+    let ordinary_pairs = local_solution(
+        &p,
+        &LocalOptions {
+            positive_pair_separation: false,
+            ..LocalOptions::default()
+        },
+    );
+    assert_eq!(separated.cells.len(), 3);
+    assert!(ordinary_pairs.cells.len() > separated.cells.len());
+    assert_eq!(
+        symgcad::comparison::compare_generic(
+            &separated,
+            &ordinary_pairs,
+            &symgcad::Limits::default()
+        )
+        .unwrap()
+        .equivalent,
+        Some(true)
+    );
+    let algebra = symgcad::algebra::Algebra::new(&separated.order).unwrap();
+    let irrelevant = symgcad::algebra::canonical(&algebra.parse("x-1").unwrap());
+    assert!(
+        separated
+            .exceptional_polynomials
+            .iter()
+            .all(|&id| algebra.parse(&separated.polynomials[id]).unwrap() != irrelevant)
+    );
+    let LocalEvidence::Local { root, report, .. } = separated.local.as_deref().unwrap() else {
+        panic!()
+    };
+    let mut proofs = Vec::new();
+    pair_witnesses(root, &mut proofs);
+    assert!(!proofs.is_empty());
+    assert!(proofs.iter().all(|proof| proof.shift == 0));
+    assert!(report.pair_resultants_omitted > 0);
+}
+
+#[test]
+fn positive_pair_separation_handles_unequal_degrees_and_negative_leading_signs() {
+    for cubic in ["z^3-(x+1)*z-1", "-z^3+(x+1)*z+1"] {
+        let p = problem(&["x", "z"], &["x>0", "z>0"], &[cubic, "z^2-x"]);
+        let separated = compare_positive_ray(&p);
+        let ordinary = local_solution(
+            &p,
+            &LocalOptions {
+                positive_pair_separation: false,
+                ..LocalOptions::default()
+            },
+        );
+        assert_eq!(
+            symgcad::comparison::compare_generic(
+                &separated,
+                &ordinary,
+                &symgcad::Limits::default()
+            )
+            .unwrap()
+            .equivalent,
+            Some(true)
+        );
+        let LocalEvidence::Local { root, .. } = separated.local.as_deref().unwrap() else {
+            panic!()
+        };
+        let mut proofs = Vec::new();
+        pair_witnesses(root, &mut proofs);
+        assert!(proofs.iter().any(|proof| proof.shift == 1));
+    }
+}
+
+#[test]
+fn positive_pair_mixed_and_zero_coefficient_samples_use_the_ordinary_resultant() {
+    let p = problem(&["x", "z"], &["x>0", "z>0"], &["z^2-x", "z^2+z-x-1"]);
+    let result = compare_positive_ray(&p);
+    assert!(result.cells.iter().all(|cell| cell.axes[0].sample != "1"));
+    compare_positive_ray(&problem(
+        &["x", "y", "z"],
+        &["y>0", "z>0"],
+        &["z^2-y", "z^2-x*z-y-1"],
+    ));
+}
+
+#[test]
+fn positive_pair_replay_rejects_changed_identity_sign_and_missing_coefficient_obligations() {
+    let p = problem(&["x", "y", "z"], &["y>0", "z>0"], &["z^2-y", "z^2-x*z-y-1"]);
+    let original = local(&p);
+    fn alter(node: &mut LocalNode, modification: usize) -> bool {
+        if let LocalNode::Stack {
+            projection,
+            sectors,
+            ..
+        } = node
+        {
+            if let Some(ray) = &mut projection.positive_ray {
+                if let Some(proof) = ray.separations.first_mut() {
+                    match modification {
+                        0 => proof.coefficient_sign *= -1,
+                        1 => proof.shift += 1,
+                        2 => proof.higher = proof.lower,
+                        3 => ray.separations.clear(),
+                        4 => projection.guards.clear(),
+                        _ => unreachable!(),
+                    }
+                    return true;
+                }
+            }
+            return sectors
+                .iter_mut()
+                .any(|sector| alter(&mut sector.child, modification));
+        }
+        false
+    }
+    for modification in 0..5 {
+        let mut changed = original.clone();
+        let LocalEvidence::Local { root, .. } = &mut changed.evidence else {
+            panic!()
+        };
+        assert!(alter(root, modification));
+        assert!(
+            verify_local(&changed).is_err(),
+            "modification {modification}"
+        );
+    }
+    let mut changed = original;
+    let LocalEvidence::Local { options, .. } = &mut changed.evidence else {
+        panic!()
+    };
+    options.positive_pair_separation = false;
+    assert!(verify_local(&changed).is_err());
+}
+
+#[test]
+fn evidence_without_the_new_pair_option_replays_its_original_resultants() {
+    let original = solve_local(
+        &problem(&["x", "z"], &["x>0", "z>0"], &["z^2-x", "z^2-z-x-1"]),
+        &LocalOptions {
+            positive_pair_separation: false,
+            ..LocalOptions::default()
+        },
+    )
+    .unwrap();
+    let mut serialized = serde_json::to_value(&original).unwrap();
+    serialized["evidence"]["options"]
+        .as_object_mut()
+        .unwrap()
+        .remove("positive_pair_separation");
+    let restored: local_projection::LocalSolveResult = serde_json::from_value(serialized).unwrap();
+    let LocalEvidence::Local { options, .. } = &restored.evidence else {
+        panic!()
+    };
+    assert!(!options.positive_pair_separation);
+    assert!(verify_local(&restored).unwrap().verified);
+}

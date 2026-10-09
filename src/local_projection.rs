@@ -68,6 +68,10 @@ pub struct LocalOptions {
     /// Use an exact positive-ray theorem only with an original k*x>0 bound.
     /// False retains the full-real local projection for controlled ablations.
     pub positive_ray: bool,
+    /// Try a bounded one-step pseudo-remainder to separate positive roots.
+    /// Older evidence omitted this field and must replay the original pairs.
+    #[serde(default)]
+    pub positive_pair_separation: bool,
 }
 impl Default for LocalOptions {
     fn default() -> Self {
@@ -78,6 +82,7 @@ impl Default for LocalOptions {
             cache_enabled: true,
             domain_pruning: true,
             positive_ray: true,
+            positive_pair_separation: true,
         }
     }
 }
@@ -91,6 +96,7 @@ pub struct LocalPhaseCosts {
     pub root_classification_seconds: f64,
     pub root_isolation_seconds: f64,
     pub domain_certificate_seconds: f64,
+    pub pair_separation_seconds: f64,
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
@@ -104,6 +110,9 @@ pub struct LocalReport {
     pub phases: LocalPhaseCosts,
     pub elapsed_seconds: f64,
     pub current_level: Option<usize>,
+    /// Rational coordinates already assigned at the current stack. In a
+    /// parameter-outer problem these identify the exact kinematic branch.
+    pub current_prefix: Vec<String>,
     pub active_phase: String,
     pub guard_certificate_attempts: usize,
     pub guard_certificate_hits: usize,
@@ -111,6 +120,8 @@ pub struct LocalReport {
     pub positive_ray_stacks: usize,
     pub quadratic_discriminants_omitted: usize,
     pub descartes_discriminants_omitted: usize,
+    pub pair_separation_candidates: usize,
+    pub pair_resultants_omitted: usize,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -134,6 +145,19 @@ pub struct PositiveRayProjection {
     pub constraint: usize,
     pub coordinate: usize,
     pub rules: Vec<PositiveRayRule>,
+    #[serde(default)]
+    pub separations: Vec<PositivePairSeparation>,
+}
+
+/// For deg(p)>=deg(q), the exact identity
+/// R=lc(q)*p-lc(p)*z^shift*q has coefficients of one strict sign on the base.
+/// Thus R cannot vanish on z>0, excluding every common positive root of p,q.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PositivePairSeparation {
+    pub higher: usize,
+    pub lower: usize,
+    pub shift: u32,
+    pub coefficient_sign: i8,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -339,9 +363,36 @@ impl ProjectionOperations for IndependentOperations {
 struct CachedOperations<'a> {
     cache: ProjectionCache<'a>,
     phases: LocalPhaseCosts,
+    progress_path: Option<PathBuf>,
+    progress_context: Option<LocalReport>,
+    last_captured_context: Option<(Option<usize>, Vec<String>)>,
+    started: Instant,
 }
 impl CachedOperations<'_> {
+    /// Captured large operations must have a matching prefix even when the
+    /// ordinary progress timer has not fired. This is diagnostic metadata;
+    /// it changes neither the projection set nor the proof tree. Repeat cache
+    /// calls from the same stack need no additional filesystem write.
+    fn capture_context(&mut self) -> Result<()> {
+        let (Some(path), Some(context)) = (&self.progress_path, &self.progress_context) else {
+            return Ok(());
+        };
+        let key = (context.current_level, context.current_prefix.clone());
+        if self.last_captured_context.as_ref() == Some(&key) {
+            return Ok(());
+        }
+        let mut report = context.clone();
+        report.cache = self.cache.report.cache.clone();
+        report.phases = self.phases.clone();
+        report.elapsed_seconds = self.started.elapsed().as_secs_f64();
+        write_progress(path, &report)?;
+        self.last_captured_context = Some(key);
+        Ok(())
+    }
     fn factors(&mut self, polynomials: &[Poly]) -> Result<Vec<Poly>> {
+        if polynomials.iter().any(|p| p.nterms() >= 64) {
+            self.capture_context()?;
+        }
         let started = Instant::now();
         let result = self.cache.factor_basis(polynomials);
         self.phases.factor_seconds += started.elapsed().as_secs_f64();
@@ -350,12 +401,20 @@ impl CachedOperations<'_> {
 }
 impl ProjectionOperations for CachedOperations<'_> {
     fn discriminant(&mut self, p: &Poly, variable: usize) -> Result<Poly> {
+        if p.degree(variable) >= 3 || p.nterms() >= 64 {
+            self.capture_context()?;
+        }
         let started = Instant::now();
         let result = self.cache.discriminant(p, variable);
         self.phases.discriminant_seconds += started.elapsed().as_secs_f64();
         result
     }
     fn resultant(&mut self, p: &Poly, q: &Poly, variable: usize) -> Result<Poly> {
+        if p.degree(variable).saturating_add(q.degree(variable)) >= 5
+            || p.nterms().saturating_add(q.nterms()) >= 64
+        {
+            self.capture_context()?;
+        }
         let started = Instant::now();
         let result = self.cache.resultant(p, q, variable);
         self.phases.resultant_seconds += started.elapsed().as_secs_f64();
@@ -503,6 +562,8 @@ fn positive_projection_raw(
     prefix: &[Rational],
     constraint: usize,
     coordinate: usize,
+    pair_separation: bool,
+    pair_seconds: &mut f64,
     operations: &mut impl ProjectionOperations,
 ) -> Result<(
     Vec<usize>,
@@ -650,10 +711,11 @@ fn positive_projection_raw(
             case,
         });
     }
-    let ray = PositiveRayProjection {
+    let mut ray = PositiveRayProjection {
         constraint,
         coordinate,
         rules,
+        separations: Vec::new(),
     };
     if raw
         .iter()
@@ -664,6 +726,16 @@ fn positive_projection_raw(
     let mut pairs = 0;
     for (j, &id) in bearing.iter().enumerate() {
         for &other in &bearing[j + 1..] {
+            if pair_separation {
+                let started = Instant::now();
+                let attempt = separate_positive_pair(polynomials, id, other, variable, prefix);
+                *pair_seconds += started.elapsed().as_secs_f64();
+                if let Some((proof, coefficients)) = attempt? {
+                    raw.extend(coefficients);
+                    ray.separations.push(proof);
+                    continue;
+                }
+            }
             let r = operations.resultant(&polynomials[id], &polynomials[other], variable)?;
             ensure!(
                 !r.is_zero(),
@@ -674,7 +746,83 @@ fn positive_projection_raw(
         }
     }
     let all_pairs = cuts.len().saturating_mul(cuts.len().saturating_sub(1)) / 2;
-    Ok((bearing, raw, pairs, all_pairs - pairs, root_seconds, ray))
+    let rootless = all_pairs
+        - bearing
+            .len()
+            .saturating_mul(bearing.len().saturating_sub(1))
+            / 2;
+    Ok((bearing, raw, pairs, rootless, root_seconds, ray))
+}
+
+/// Bounded sufficient condition, never a completeness assumption. Inconclusive
+/// coefficient signs (including a nonconstant zero at the prefix) use the
+/// ordinary resultant without introducing an unnecessary coefficient seam.
+fn separate_positive_pair(
+    polynomials: &[Poly],
+    first: usize,
+    second: usize,
+    variable: usize,
+    prefix: &[Rational],
+) -> Result<Option<(PositivePairSeparation, Vec<Poly>)>> {
+    let (higher, lower) =
+        if polynomials[first].degree(variable) >= polynomials[second].degree(variable) {
+            (first, second)
+        } else {
+            (second, first)
+        };
+    let p = &polynomials[higher];
+    let q = &polynomials[lower];
+    // Linear pairs already have an inexpensive exact resultant. Limit both
+    // temporary products by their monomial-pair count before multiplying.
+    if p.degree(variable) <= 1 {
+        return Ok(None);
+    }
+    let a = p.univariate_lcoeff(variable);
+    let b = q.univariate_lcoeff(variable);
+    let estimate = p
+        .nterms()
+        .saturating_mul(b.nterms())
+        .saturating_add(q.nterms().saturating_mul(a.nterms()));
+    if estimate > 4096
+        || (0..p.nvars())
+            .any(|i| p.degree(i) as u64 + q.degree(i) as u64 > crate::algebra::MAX_DEGREE)
+    {
+        return Ok(None);
+    }
+    let shift = p.degree(variable) - q.degree(variable);
+    let mut exponents = vec![0; p.nvars()];
+    exponents[variable] = shift;
+    let shifted = q.clone().mul_monomial(&Rational::one(), &exponents);
+    let remainder = &b * p - &a * &shifted;
+    if remainder.is_zero() {
+        return Ok(None);
+    }
+    ensure!(
+        remainder.degree(variable) < p.degree(variable),
+        "pseudo-remainder failed to lower degree"
+    );
+    let coefficients = remainder
+        .to_univariate_polynomial_list(variable)
+        .into_iter()
+        .map(|(coefficient, _)| coefficient)
+        .collect::<Vec<_>>();
+    let values = coefficients
+        .iter()
+        .map(|c| prefix_value(c, prefix))
+        .collect::<Result<Vec<_>>>()?;
+    let coefficient_sign = sign(&values[0]);
+    if coefficient_sign == 0 || values.iter().any(|v| sign(v) != coefficient_sign) {
+        return Ok(None);
+    }
+    Ok(Some((
+        PositivePairSeparation {
+            higher,
+            lower,
+            shift,
+            coefficient_sign,
+        },
+        coefficients,
+    )))
 }
 
 struct Builder<'a> {
@@ -703,6 +851,16 @@ struct Built {
     cells: usize,
 }
 
+fn write_progress(path: &std::path::Path, report: &LocalReport) -> Result<()> {
+    if let Some(parent) = path.parent().filter(|p| !p.as_os_str().is_empty()) {
+        std::fs::create_dir_all(parent)?;
+    }
+    let temporary = path.with_extension(format!("local-{}.tmp", std::process::id()));
+    std::fs::write(&temporary, serde_json::to_vec(report)?)?;
+    std::fs::rename(temporary, path)?;
+    Ok(())
+}
+
 impl Builder<'_> {
     fn snapshot(&self) -> LocalReport {
         let mut report = self.report.clone();
@@ -718,12 +876,10 @@ impl Builder<'_> {
         if !force && self.last_progress.elapsed().as_secs_f64() < 0.5 {
             return Ok(());
         }
-        if let Some(parent) = path.parent().filter(|p| !p.as_os_str().is_empty()) {
-            std::fs::create_dir_all(parent)?;
-        }
-        let temporary = path.with_extension(format!("local-{}.tmp", std::process::id()));
-        std::fs::write(&temporary, serde_json::to_vec(&self.snapshot())?)?;
-        std::fs::rename(temporary, path)?;
+        write_progress(path, &self.snapshot())?;
+        // A periodic snapshot may describe a different small stack than the
+        // last captured operation, so the next large operation must refresh.
+        self.operations.last_captured_context = None;
         self.last_progress = Instant::now();
         Ok(())
     }
@@ -879,8 +1035,11 @@ impl Builder<'_> {
     ) -> Work<LocalProjectionCertificate> {
         self.check_budget()?;
         self.report.current_level = Some(level);
+        self.report.current_prefix = prefix.iter().map(ToString::to_string).collect();
         self.report.active_phase = "local_projection".into();
         self.publish(false)?;
+        self.operations.progress_context = Some(self.snapshot());
+        let mut pair_seconds = 0.0;
         let ray_constraint = self
             .options
             .positive_ray
@@ -899,8 +1058,17 @@ impl Builder<'_> {
                     prefix,
                     constraint,
                     coordinate,
+                    self.options.positive_pair_separation,
+                    &mut pair_seconds,
                     &mut self.operations,
                 )?;
+                if self.options.positive_pair_separation {
+                    self.report.pair_separation_candidates += bearing
+                        .len()
+                        .saturating_mul(bearing.len().saturating_sub(1))
+                        / 2;
+                    self.report.pair_resultants_omitted += ray.separations.len();
+                }
                 self.report.positive_ray_stacks += 1;
                 self.report.quadratic_discriminants_omitted += ray
                     .rules
@@ -931,6 +1099,7 @@ impl Builder<'_> {
                 (bearing, raw, pairs, omitted, seconds, None)
             };
         self.operations.phases.root_classification_seconds += root_seconds;
+        self.operations.phases.pair_separation_seconds += pair_seconds;
         self.report.projected_pairs += pairs;
         self.report.omitted_rootless_pairs += omitted;
         let factors = self.operations.factors(&raw)?;
@@ -1250,6 +1419,14 @@ pub fn solve_local(problem: &Problem, options: &LocalOptions) -> Result<LocalSol
         operations: CachedOperations {
             cache: ProjectionCache::new(&normalized.algebra, &cache_options),
             phases: LocalPhaseCosts::default(),
+            progress_path: cache_options
+                .capture_dir
+                .as_ref()
+                .and_then(|_| std::env::var_os("SYMGCAD_PROGRESS_PATH"))
+                .map(PathBuf::from),
+            progress_context: None,
+            last_captured_context: None,
+            started,
         },
         progress_path: std::env::var_os("SYMGCAD_PROGRESS_PATH").map(PathBuf::from),
         last_progress: started,
@@ -1330,13 +1507,15 @@ pub fn solve_local(problem: &Problem, options: &LocalOptions) -> Result<LocalSol
         ));
     }
     builder.report.current_level = None;
+    builder.report.current_prefix.clear();
     builder.report.active_phase = "complete".into();
     builder.publish(true)?;
     let report = builder.snapshot();
     statistics.projection_seconds = report.phases.factor_seconds
         + report.phases.discriminant_seconds
         + report.phases.resultant_seconds
-        + report.phases.domain_certificate_seconds;
+        + report.phases.domain_certificate_seconds
+        + report.phases.pair_separation_seconds;
     statistics.lifting_seconds =
         report.phases.root_classification_seconds + report.phases.root_isolation_seconds;
     let solution = SolveResult {
@@ -1392,6 +1571,7 @@ struct Checker<'a> {
     protected: BTreeSet<usize>,
     domain_pruning: bool,
     positive_ray: bool,
+    positive_pair_separation: bool,
 }
 impl Checker<'_> {
     fn check_registry(&self) -> Result<()> {
@@ -1538,6 +1718,8 @@ impl Checker<'_> {
                         prefix,
                         ray.constraint,
                         ray.coordinate,
+                        self.positive_pair_separation,
+                        &mut 0.0,
                         &mut IndependentOperations,
                     )?;
                     ensure!(
@@ -1785,6 +1967,7 @@ pub fn verify_local_parts(
         protected: input_factors.iter().flatten().copied().collect(),
         domain_pruning: options.domain_pruning && solution.problem.solver.positivity,
         positive_ray: options.positive_ray,
+        positive_pair_separation: options.positive_pair_separation,
     };
     checker.check_registry()?;
     ensure!(
@@ -1837,4 +2020,48 @@ pub fn verify_local_parts(
         stacks: statistics.visited_stacks,
         rejected_branches: statistics.rejected_branches,
     })
+}
+
+#[cfg(test)]
+mod pair_separation_tests {
+    use super::*;
+
+    #[test]
+    fn zero_remainder_mixed_signs_and_zero_prefix_coefficients_fall_back() {
+        let algebra = Algebra::new(&["x".into(), "z".into()]).unwrap();
+        for (left, right, x) in [
+            ("(x+1)*(z^2+1)", "z^2+1", 1),
+            ("z^2-x", "z^2+z-x-1", 2),
+            ("z^2-1", "z^2-x*z-2", 0),
+        ] {
+            let polynomials = vec![algebra.parse(left).unwrap(), algebra.parse(right).unwrap()];
+            assert!(
+                separate_positive_pair(&polynomials, 0, 1, 1, &[Rational::from(x)])
+                    .unwrap()
+                    .is_none()
+            );
+        }
+    }
+
+    #[test]
+    fn excessive_monomial_product_estimate_skips_separation_before_multiplication() {
+        let mut names = (0..70).map(|i| format!("x{i}")).collect::<Vec<_>>();
+        names.push("z".into());
+        let algebra = Algebra::new(&names).unwrap();
+        let a = names[..70].join("+");
+        let b = names[..70]
+            .iter()
+            .map(|name| format!("{name}^2"))
+            .collect::<Vec<_>>()
+            .join("+");
+        let polynomials = vec![
+            algebra.parse(&format!("({a})*z^2-1")).unwrap(),
+            algebra.parse(&format!("({b})*z^2-2")).unwrap(),
+        ];
+        assert!(
+            separate_positive_pair(&polynomials, 0, 1, 70, &vec![Rational::one(); 70])
+                .unwrap()
+                .is_none()
+        );
+    }
 }

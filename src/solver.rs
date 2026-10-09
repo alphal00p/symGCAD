@@ -281,11 +281,9 @@ impl Lifter<'_> {
             });
             return Ok(LiftTrace::Accepted { cell });
         }
-        let polynomials = self.projection.levels[level]
-            .iter()
-            .zip(&self.levels[level])
-            .map(|(p, id)| Ok((*id, algebra.specialize_univariate(p, level, prefix)?)))
-            .collect::<Result<Vec<_>>>()?;
+        let fibers =
+            algebra.specialize_univariate_batch(&self.projection.levels[level], level, prefix)?;
+        let polynomials = self.levels[level].iter().copied().zip(fibers).collect();
         let roots = isolate_union(polynomials)?;
         self.statistics.visited_stacks += 1;
         let mut sectors = Vec::with_capacity(roots.len() + 1);

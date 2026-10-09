@@ -31,6 +31,8 @@ pub struct CampaignConfig {
     pub memory_mib: u64,
     pub workers: usize,
     pub resume: bool,
+    /// `auto` uses cold caches for ablations and shared checkpoints for completion.
+    pub cache_policy: String,
 }
 impl Default for CampaignConfig {
     fn default() -> Self {
@@ -47,6 +49,7 @@ impl Default for CampaignConfig {
             memory_mib: 8192,
             workers: 1,
             resume: true,
+            cache_policy: "auto".into(),
         }
     }
 }
@@ -70,6 +73,10 @@ impl Default for Variant {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Trial {
     pub repetition: usize,
+    #[serde(default)]
+    pub input_file: Option<PathBuf>,
+    #[serde(default)]
+    pub input_sha256: Option<String>,
     pub status: String,
     pub solve: ProcessOutcome,
     pub result_file: PathBuf,
@@ -204,6 +211,25 @@ fn apply_variant(input: &Problem, variant: &Variant, limits: &Limits) -> Result<
     Ok(problem)
 }
 
+/// Give every cold measurement a fresh persistent-cache namespace, while
+/// allowing its ordering trials and final solve to share completed work.
+fn trial_input(input: &str, run_dir: &Path, repetition: usize, cold: bool) -> Result<PathBuf> {
+    if !cold {
+        return Ok(run_dir.join("input.toml"));
+    }
+    let trial_dir = run_dir.join(format!("{repetition}-cold"));
+    fs::create_dir(&trial_dir)?;
+    let mut problem = Problem::from_toml(input)?;
+    // This also overrides an explicitly supplied warm checkpoint directory.
+    // MCTS otherwise silently enables the shared artifacts/checkpoints path.
+    if problem.solver.engine == "optimized" || problem.solver.checkpoint_dir.is_some() {
+        problem.solver.checkpoint_dir = Some(trial_dir.join("checkpoints"));
+    }
+    let path = trial_dir.join("input.toml");
+    fs::write(&path, toml::to_string_pretty(&problem)?)?;
+    Ok(path)
+}
+
 #[derive(Deserialize)]
 struct ResultSummary {
     status: String,
@@ -230,6 +256,11 @@ fn reusable(run: &CaseRun, identity: &str, binary_hash: &str) -> bool {
     }
     run.trials.iter().all(|trial| {
         trial.verified
+            && match (&trial.input_file, &trial.input_sha256) {
+                (Some(path), Some(hash)) => hash_file(path).ok().as_ref() == Some(hash),
+                (None, None) => true,
+                _ => false,
+            }
             && trial.status == "complete_verified"
             && trial.result_sha256.is_some()
             && hash_file(&trial.result_file).ok() == trial.result_sha256
@@ -319,6 +350,13 @@ pub fn run_campaign(config_path: &Path, executable: &Path) -> Result<CompletionR
         config.repeats
     };
     ensure!(repeats > 0, "repeats must be positive");
+    ensure!(
+        ["auto", "cold", "shared"].contains(&config.cache_policy.as_str()),
+        "cache_policy must be auto, cold, or shared"
+    );
+    let cold = config.cache_policy == "cold"
+        || (config.cache_policy == "auto" && config.mode == "ablation");
+    let cache_policy = if cold { "cold" } else { "shared" };
     let base = config_path.canonicalize()?.parent().unwrap().to_owned();
     let output = resolve(&base, &config.output_dir);
     fs::create_dir_all(&output)?;
@@ -361,8 +399,10 @@ pub fn run_campaign(config_path: &Path, executable: &Path) -> Result<CompletionR
         "executable":executable,"frozen_executable":frozen_executable,"executable_sha256":binary_hash,"config_sha256":hash_file(config_path)?,
             "timing_policy":"fresh public solve process, including order search, preprocessing, normalization, solve and export; verification separate",
             "operation":"solve","workers":config.workers,"memory_mib":config.memory_mib,
+            "cache_policy":cache_policy,
             "solve_timeout_secs":config.solve_timeout_secs,"verify_timeout_secs":config.verify_timeout_secs,
-            "profile":if cfg!(debug_assertions){"debug"}else{"release"},
+            "harness_profile":if cfg!(debug_assertions){"debug"}else{"release"},
+            "worker_profile":"not inferred; identify the frozen executable by its content hash",
             "cpu_model":fs::read_to_string("/proc/cpuinfo").ok().and_then(|s|s.lines().find(|l|l.starts_with("model name")).map(str::to_owned))
         }),
         scheduled: vec![],
@@ -394,7 +434,8 @@ pub fn run_campaign(config_path: &Path, executable: &Path) -> Result<CompletionR
                 binary_hash,
                 config.mode,
                 variant.name,
-                repeats
+                repeats,
+                cache_policy
             ]))?);
             report.scheduled.push(ScheduledCase {
                 identity_sha256: identity.clone(),
@@ -442,7 +483,7 @@ pub fn run_campaign(config_path: &Path, executable: &Path) -> Result<CompletionR
         }
         let run_dir = fresh_attempt_directory(&output, report.runs.len(), &identity)?;
         let input_file = run_dir.join("input.toml");
-        fs::write(&input_file, input_text)?;
+        fs::write(&input_file, &input_text)?;
         let mut run = CaseRun {
             identity_sha256: identity,
             input_sha256: input_hash,
@@ -468,10 +509,11 @@ pub fn run_campaign(config_path: &Path, executable: &Path) -> Result<CompletionR
             }
             let result_file = run_dir.join(format!("{repetition}-result.json"));
             let verification_file = run_dir.join(format!("{repetition}-verification.json"));
+            let input_file = trial_input(&input_text, &run_dir, repetition, cold)?;
             let mut command = Command::new(&frozen_executable);
             command
                 .arg("solve")
-                .arg(&run.input_file)
+                .arg(&input_file)
                 .arg("--output")
                 .arg(&result_file);
             let mut child_limits = limits.clone();
@@ -481,6 +523,8 @@ pub fn run_campaign(config_path: &Path, executable: &Path) -> Result<CompletionR
             let summary = result_summary(&result_file).ok();
             let mut trial = Trial {
                 repetition,
+                input_sha256: Some(hash_file(&input_file)?),
+                input_file: Some(input_file),
                 status: solve.status.clone(),
                 solve,
                 result_sha256: hash_file(&result_file).ok(),
@@ -587,6 +631,45 @@ mod tests {
         assert_eq!(summary.statistics.unwrap()["raw_cells"], 1);
     }
     #[test]
+    fn cold_measurements_isolate_explicit_and_automatic_checkpoints() {
+        let root = std::env::temp_dir().join(format!(
+            "symgcad-cold-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        fs::create_dir_all(&root).unwrap();
+        let mut problem = Problem::default();
+        problem.variables = vec!["x".into()];
+        problem.constraints = vec!["x > 0".into()];
+        problem.solver.engine = "optimized".into();
+        problem.solver.ordering = "mcts".into();
+        let text = toml::to_string_pretty(&problem).unwrap();
+        fs::write(root.join("input.toml"), &text).unwrap();
+        let first = trial_input(&text, &root, 0, true).unwrap();
+        let first = Problem::from_toml(&fs::read_to_string(first).unwrap()).unwrap();
+        let first_cache = first.solver.checkpoint_dir.unwrap();
+        fs::create_dir_all(&first_cache).unwrap();
+        fs::write(first_cache.join("existing.json"), "completed work").unwrap();
+        problem.solver.checkpoint_dir = Some(first_cache.clone());
+        let warm_text = toml::to_string_pretty(&problem).unwrap();
+        let second = trial_input(&warm_text, &root, 1, true).unwrap();
+        let second = Problem::from_toml(&fs::read_to_string(second).unwrap()).unwrap();
+        let second_cache = second.solver.checkpoint_dir.unwrap();
+        assert_ne!(first_cache, second_cache);
+        assert!(!second_cache.exists());
+        assert!(first_cache.join("existing.json").exists());
+        assert_eq!(
+            trial_input(&warm_text, &root, 2, false).unwrap(),
+            root.join("input.toml")
+        );
+        assert!(!root.join("2-cold").exists());
+        assert!(trial_input(&text, &root, 0, true).is_err());
+        fs::remove_dir_all(root).unwrap();
+    }
+    #[test]
     fn resume_requires_unchanged_input_binary_and_verified_artifacts() {
         let dir = std::env::temp_dir().join(format!(
             "symgcad-ledger-{}-{}",
@@ -616,6 +699,8 @@ mod tests {
         };
         let trial = Trial {
             repetition: 0,
+            input_file: Some(input.clone()),
+            input_sha256: Some(hash_file(&input).unwrap()),
             status: "complete_verified".into(),
             solve: outcome.clone(),
             result_file: result.clone(),
