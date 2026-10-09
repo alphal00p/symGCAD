@@ -124,6 +124,21 @@ fn permutations(
         }
     }
 }
+#[test]
+fn negative_crossing_and_permutation_preserve_the_exact_split_identity() -> Result<()> {
+    let algebra = Algebra::new(&["s".into(), "t".into(), "y0".into(), "y1".into()])?;
+    let target = primitive(algebra.parse("s*y0^2*y1+t*y1+3*y0-5")?);
+    let donor = algebra.parse("-2*(s*y1^2*y0+(5/9-s-t)*y0+3*y1-5)")?;
+    let reflected = primitive(donor.replace_with_poly(1, &algebra.parse("5/9-s-t")?));
+    let zero = algebra.parse("0")?;
+    assert_ne!(rename(&reflected, &zero, &[0, 1, 3, 2]), target);
+    let oriented = -reflected;
+    assert_eq!(signature(&oriented, 2), signature(&target, 3));
+    assert_eq!(signature(&oriented, 3), signature(&target, 2));
+    assert_eq!(rename(&oriented, &zero, &[0, 1, 3, 2]), target);
+    Ok(())
+}
+
 fn main() -> Result<()> {
     let args = Args::parse();
     ensure!(
@@ -207,12 +222,17 @@ fn main() -> Result<()> {
         if xs.len() != count {
             continue;
         }
-        for reflection in [false, true] {
+        for (reflection, orientation) in [(false, 1), (false, -1), (true, 1), (true, -1)] {
             let transformed = primitive(if reflection {
                 f.replace_with_poly(1, &reflected_t)
             } else {
                 f.clone()
             });
+            let transformed = if orientation == 1 {
+                transformed
+            } else {
+                -transformed
+            };
             if transformed.nterms() != target_f.nterms() {
                 continue;
             }
@@ -226,7 +246,7 @@ fn main() -> Result<()> {
                 .collect::<Vec<_>>();
             let mut candidates = Vec::new();
             permutations(&allowed, 0, &mut vec![], &mut candidates);
-            checked.push(json!({"donor":donor["identifier"],"reflection":reflection,"candidate_permutations":candidates.len()}));
+            checked.push(json!({"donor":donor["identifier"],"reflection":reflection,"split_orientation":orientation,"candidate_permutations":candidates.len()}));
             for permutation in candidates {
                 let mut map = vec![0, 1];
                 map.extend(permutation.iter().map(|v| v + 2));
@@ -303,7 +323,7 @@ fn main() -> Result<()> {
                 fs::write(&path, toml::to_string_pretty(&retry)?)?;
                 let triangular = !reflection
                     || order.iter().position(|v| v == "s") < order.iter().position(|v| v == "t");
-                matches.push(json!({"donor":donor["identifier"],"donor_input":donor_path,"donor_input_sha256":digest(&donor_bytes),"source_result":attempt["result_file"],"source_result_sha256":attempt["actual_result_sha256"],"feynman_renaming":renaming,"t_reflection":reflection,"t_map":if reflection{"5/9-s-t"}else{"t"},"normalized_split_identity":true,"normalized_domain_identity":true,"source_order":source_order,"retry_order":order,"affine_map_triangular_in_order":triangular,"retry_input":path}));
+                matches.push(json!({"donor":donor["identifier"],"donor_input":donor_path,"donor_input_sha256":digest(&donor_bytes),"source_result":attempt["result_file"],"source_result_sha256":attempt["actual_result_sha256"],"feynman_renaming":renaming,"t_reflection":reflection,"t_map":if reflection{"5/9-s-t"}else{"t"},"split_orientation":orientation,"normalized_split_identity":true,"normalized_domain_identity":true,"source_order":source_order,"retry_order":order,"affine_map_triangular_in_order":triangular,"retry_input":path}));
                 if cases.len() < 2 {
                     cases.push(path);
                 }

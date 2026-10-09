@@ -307,8 +307,9 @@ reported as unknown; it does not prove that the coefficient changes sign.
 
 `crossing_identity` compares a selected symbolic ZZ original against verified
 same-size donors from the completion audit using exact Symbolica polynomial
-equality, positive primitive normalization, compatible propagator permutations,
-and the crossing `t -> 5/9-s-t`. It also checks the transformed strict domain and
+equality, rational content normalization, compatible propagator permutations,
+both overall polynomial signs, and the crossing `t -> 5/9-s-t`. Matches record
+the required split-sign orientation. It also checks the transformed strict domain and
 original fixed-order/group obligations. Matches emit retry inputs, never reused
 completion certificates. For example:
 
@@ -321,3 +322,13 @@ nix develop -c cargo run --example crossing_identity -- \
 
 The C438/Cx438 positive control finds the expected crossing. The retained
 all-27 unresolved batch and its hashes are documented in `BENCHMARKS.md`.
+The subsequent search including both polynomial orientations also found zero
+matches for all 27 unresolved originals (0.317 seconds combined polynomial
+work); every search finished. Its summary is
+`artifacts/crossing-all-symbolic-signed-02/summary.json`, SHA-256
+`68ed9a6eaf9194617fc3d2a391d56fd749638e098e1762df812a231e928f0f1d`.
+The frozen helper SHA-256 is
+`8fd22238bd0f86bd537b3cf3c6247b94898ca88741c3d824b379b9909d38c4fd`.
+Its regression checks the exact combination of negative rational content,
+crossing, and propagator permutation; the C438/Cx438 control again finds four
+matches. No additional full-problem completion is claimed.
