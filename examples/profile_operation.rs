@@ -24,6 +24,8 @@ enum Strategy {
     Brown,
     Primitive,
     Crt,
+    /// Production exact low-degree discriminant identities.
+    Formula,
 }
 
 #[derive(Parser)]
@@ -45,6 +47,7 @@ fn resultant(left: &Poly, right: &Poly, variable: usize, strategy: Strategy) -> 
         Strategy::Brown => left.resultant_brown(&right),
         Strategy::Primitive => left.resultant_primitive(&right),
         Strategy::Crt => left.resultant_crt(&right),
+        Strategy::Formula => unreachable!("formula strategy is discriminant-only"),
     }
 }
 
@@ -65,6 +68,11 @@ fn main() -> Result<()> {
         .iter()
         .map(|p| algebra.parse(p))
         .collect::<Result<Vec<_>>>()?;
+    ensure!(
+        !matches!(args.strategy, Strategy::Formula)
+            || capture.operation == AlgebraOperation::Discriminant,
+        "formula strategy requires a discriminant capture"
+    );
     let start = Instant::now();
     let output = match capture.operation {
         AlgebraOperation::Factor => {
@@ -116,7 +124,9 @@ fn main() -> Result<()> {
             );
             let p = &polynomials[0];
             let degree = p.degree(variable);
-            if degree < 2 {
+            if matches!(args.strategy, Strategy::Formula) {
+                vec![symgcad::projection::discriminant(p, variable)?]
+            } else if degree < 2 {
                 vec![if degree == 0 { p.zero() } else { p.one() }]
             } else {
                 let r = resultant(p, &p.derivative(variable), variable, args.strategy);

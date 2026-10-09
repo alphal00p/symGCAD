@@ -534,7 +534,7 @@ fn reconstruct(
     problem: &Problem,
     order: Vec<String>,
     steps: Vec<MonotoneStep>,
-    base: SolveResult,
+    mut base: SolveResult,
     started: Option<Instant>,
 ) -> Result<SolveResult> {
     let normalized = normalize(problem, &order)?;
@@ -544,6 +544,10 @@ fn reconstruct(
         base.order == order[..base_dimension],
         "base certificate uses an incompatible order"
     );
+    if base.status != Status::CompleteGeneric && base.projection_levels.is_empty() {
+        ensure!(base.cells.is_empty(), "partial cells lack projection levels");
+        base.projection_levels.resize(base_dimension, vec![]);
+    }
     ensure!(
         base.projection_levels.len() == base_dimension,
         "base projection has incorrect dimension"

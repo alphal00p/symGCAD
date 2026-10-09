@@ -5,6 +5,7 @@ use std::{collections::HashSet, time::Instant};
 use anyhow::{Result, ensure};
 use serde::{Deserialize, Serialize};
 use symbolica::domains::InternalOrdering;
+use symbolica::prelude::Rational;
 
 use crate::algebra::{Algebra, MAX_DEGREE, Poly, canonical, factors};
 
@@ -115,6 +116,11 @@ pub fn discriminant(polynomial: &Poly, variable: usize) -> Result<Poly> {
         return Ok(polynomial.one());
     }
     let derivative = polynomial.derivative(variable);
+    check_resultant_degrees(polynomial, &derivative, variable)?;
+    if degree <= 4 {
+        let coefficients = polynomial.to_univariate(variable);
+        return Ok(low_degree_discriminant(coefficients.coefficients()));
+    }
     let resultant = exact_resultant(polynomial, &derivative, variable)?;
     let (mut quotient, remainder) =
         resultant.quot_rem(&polynomial.univariate_lcoeff(variable), false);
@@ -126,6 +132,39 @@ pub fn discriminant(polynomial: &Poly, variable: usize) -> Result<Poly> {
         quotient = -quotient;
     }
     Ok(quotient)
+}
+
+/// Exact coefficient identities over Q. They introduce no polynomial
+/// denominators and remain valid when the symbolic leading coefficient
+/// vanishes after specialization. The generic-coefficient tests independently
+/// reconstruct each identity by the deterministic resultant definition.
+fn low_degree_discriminant(coefficients: &[Poly]) -> Poly {
+    let scale = |polynomial: Poly, scalar: i64| polynomial.mul_coeff(Rational::from(scalar));
+    match coefficients {
+        [c, b, a] => &(b * b) - &scale(a * c, 4),
+        [d, c, b, a] => {
+            let bc = b * c;
+            let ad = a * d;
+            let ac3 = a * &c.pow(3);
+            let b3d = &b.pow(3) * d;
+            let first = &bc.pow(2) - &scale(&ac3 + &b3d, 4);
+            &(&first - &scale(ad.pow(2), 27)) + &scale(&ad * &bc, 18)
+        }
+        [e, d, c, b, a] => {
+            // Binary-quartic invariants: disc=(4 I^3-J^2)/27,
+            // I=12ae-3bd+c^2, J=72ace+9bcd-27ad^2-27b^2e-2c^3.
+            // Grouping through I and J avoids repeated polynomial quotients
+            // and shares products while retaining the conventional scaling.
+            let c2 = c * c;
+            let bd = b * d;
+            let invariant_i = &(&scale(a * e, 12) - &scale(bd.clone(), 3)) + &c2;
+            let positive_j = &scale(&(a * c) * e, 72) + &scale(&bd * c, 9);
+            let negative_j = &scale(a * &d.pow(2), 27) + &scale(&b.pow(2) * e, 27);
+            let invariant_j = &(&positive_j - &negative_j) - &scale(&c2 * c, 2);
+            (&scale(invariant_i.pow(3), 4) - &invariant_j.pow(2)).div_coeff(&Rational::from(27))
+        }
+        _ => unreachable!("low-degree discriminant requires degree two, three or four"),
+    }
 }
 
 /// Raw PR: leading coefficients, discriminants, and pairwise resultants.
@@ -267,6 +306,80 @@ mod tests {
         assert_eq!(
             discriminant(&a.parse("y^3+x").unwrap(), 1).unwrap(),
             a.parse("-27*x^2").unwrap()
+        );
+    }
+
+    fn independent_discriminant(polynomial: &Poly, variable: usize) -> Poly {
+        let degree = polynomial.degree(variable);
+        let resultant =
+            exact_resultant(polynomial, &polynomial.derivative(variable), variable).unwrap();
+        let (mut value, remainder) =
+            resultant.quot_rem(&polynomial.univariate_lcoeff(variable), false);
+        assert!(remainder.is_zero());
+        if degree % 4 == 2 || degree % 4 == 3 {
+            value = -value;
+        }
+        value
+    }
+
+    #[test]
+    fn low_degree_identities_equal_generic_resultant_definitions() {
+        let algebra = Algebra::new(&["a", "b", "c", "d", "e", "y"].map(String::from)).unwrap();
+        for expression in [
+            "a*y^2+b*y+c",
+            "a*y^3+b*y^2+c*y+d",
+            "a*y^4+b*y^3+c*y^2+d*y+e",
+            "((a-1)/3)*(y^4+(2/5)*y+7)",
+            "(y^2+a)^2",
+            "(y-a)^3*(y+b)",
+        ] {
+            let polynomial = algebra.parse(expression).unwrap();
+            assert_eq!(
+                discriminant(&polynomial, 5).unwrap(),
+                independent_discriminant(&polynomial, 5),
+                "{expression}"
+            );
+        }
+        let polynomial = algebra.parse("((a-1)/3)*(y^4+(2/5)*y+7)").unwrap();
+        assert_eq!(
+            discriminant(&polynomial, 5).unwrap(),
+            algebra.parse("((a-1)/3)^6*(256*7^3-27*(2/5)^4)").unwrap()
+        );
+    }
+
+    #[test]
+    fn low_degree_formal_discriminants_handle_vanishing_leading_coefficients() {
+        let algebra = Algebra::new(&["a", "b", "c", "d", "e", "y"].map(String::from)).unwrap();
+        let zero = Rational::from(0);
+        for expression in [
+            "a*y^2+b*y+c",
+            "a*y^3+b*y^2+c*y+d",
+            "a*y^4+b*y^3+c*y^2+d*y+e",
+        ] {
+            let polynomial = algebra.parse(expression).unwrap();
+            let formal_discriminant = discriminant(&polynomial, 5).unwrap();
+            let lower_degree = polynomial.replace(0, &zero);
+            // Formal degree-n discriminants specialize to b^2 times the
+            // degree-(n-1) discriminant, rather than commuting with degree drop.
+            assert_eq!(
+                formal_discriminant.replace(0, &zero),
+                &algebra.parse("b^2").unwrap() * &discriminant(&lower_degree, 5).unwrap()
+            );
+            assert!(
+                formal_discriminant
+                    .replace(0, &zero)
+                    .replace(1, &zero)
+                    .is_zero()
+            );
+        }
+        assert_eq!(
+            discriminant(&algebra.parse("b*y+c").unwrap(), 5).unwrap(),
+            algebra.parse("1").unwrap()
+        );
+        assert!(
+            discriminant(&algebra.parse("c").unwrap(), 5)
+                .unwrap()
+                .is_zero()
         );
     }
 

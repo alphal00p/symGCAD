@@ -31,6 +31,20 @@ fn basic() -> Problem {
 }
 
 #[test]
+fn interrupted_local_discovery_preserves_incomplete_scale_evidence() {
+    let mut p = basic();
+    p.solver.engine = "local".into();
+    p.limits.max_cells = Some(1);
+    let result = solve(&p).unwrap();
+    assert_eq!(result.status, Status::Incomplete);
+    assert!(result.cells.is_empty());
+    let reduced = &result.homogeneous.as_ref().unwrap().reduced;
+    assert_eq!(reduced.status, Status::Incomplete);
+    assert!(reduced.local.is_some());
+    assert!(verify(&result).is_err());
+}
+
+#[test]
 fn positive_scale_reduction_reconstructs_original_cells_and_singular_seams() {
     let p = basic();
     let result = solve(&p).unwrap();

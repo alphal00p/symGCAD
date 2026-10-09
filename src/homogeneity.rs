@@ -324,7 +324,7 @@ fn reconstructed_cells(
         .collect()
 }
 
-fn reconstruct(problem: &Problem, order: Vec<String>, reduced: SolveResult) -> Result<SolveResult> {
+fn reconstruct(problem: &Problem, order: Vec<String>, mut reduced: SolveResult) -> Result<SolveResult> {
     let data = reconstruction(problem, &order)?;
     let algebra = &data.normalized.algebra;
     let reduced_order: Vec<_> = order
@@ -336,6 +336,13 @@ fn reconstruct(problem: &Problem, order: Vec<String>, reduced: SolveResult) -> R
         reduced.order == reduced_order,
         "reduced certificate uses a different order"
     );
+    // Local discovery may exhaust its budget before it has an exportable
+    // projection or any cells. Preserve that incomplete status and evidence;
+    // an absent partial projection is not a malformed complete certificate.
+    if reduced.status != Status::CompleteGeneric && reduced.projection_levels.is_empty() {
+        ensure!(reduced.cells.is_empty(), "partial cells lack projection levels");
+        reduced.projection_levels.resize(reduced_order.len(), vec![]);
+    }
     ensure!(
         reduced.projection_levels.len() == reduced_order.len(),
         "reduced projection has incorrect dimension"
