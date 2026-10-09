@@ -78,3 +78,49 @@ nix develop -c perf report --stdio --children --call-graph none --no-inline \
 These profiles establish a bottleneck, not a completed A381 decomposition or
 an optimization speedup. Any later change needs a fresh, separately identified
 measurement and independently checked complete outputs.
+
+## Matched debug follow-up with root reuse and integer signs
+
+The subsequent frozen debug build `e43a2c4` clears the first root-union barrier
+on this input. A matched pair used exactly the original 90-second input,
+one CPU (CPU 1), a 4 GiB address-space cap, the same warm projection checkpoint
+directory, and lifting diagnostics. Both runs hit all six checkpoints. The
+new build ran first, then the older frozen `7629a91` debug build; neither used
+perf sampling. This is one diagnostic pair, not a repeated performance gate.
+
+| Measurement | Older debug build | Newer debug build |
+|---|---:|---:|
+| External deadline | 90 seconds | 90 seconds |
+| Final diagnostic elapsed time | 89.340 s | 89.982 s |
+| First root union separated | No, still at level zero | Yes, between sampled times 66.096–68.124 s |
+| Visited stacks at last sample | 0 | 34,151 |
+| Accepted cells at last sample | 0 | 28,737 |
+| User + system CPU time | 89.11 s | 89.28 s |
+| Peak RSS | 76,212 KiB | 183,680 KiB |
+| Exit status | External timeout (124) | External timeout (124) |
+
+The first-axis union had 12,054 candidate roots in both runs. The new build
+combines bounded coprime-pair reuse, bounded pre-GCD bisection, and integer
+homogeneous Horner signs; this pair does not isolate their individual effects.
+Its larger RSS accompanies further lifting and accumulated partial cells.
+Neither run produced a completed, independently verified result, and the
+accepted-cell counters do not increase full-corpus completion coverage.
+
+Evidence and the exact shell replay are retained under
+`artifacts/profile/a381-root-reuse-debug-comparison/`. `input.json` is copied
+unchanged from the original debug input. `new/` and `old/` contain binary and
+input hashes, resource logs, final projection/lifting snapshots, a sampled
+lifting timeline, and timeout status. `run.sh` reproduces both bounded runs;
+`summary.json` records the comparison. An initial launcher failure caused by
+an unavailable `/usr/bin/time` is retained separately in `launcher-attempt/`;
+neither worker started in that failed launch. The replay uses Nix's `time`.
+
+| Artifact | SHA-256 |
+|---|---|
+| Original comparison `input.json` | `683148cdeff3f5e48a9d1a1317631614bfc25217ae8d16d2d363b44f4fc1c3af` |
+| Older debug executable | `f5fff2648369b263339c1ddbd24f3f790431c9436d867aaffacc9cd4987cbfde` |
+| Newer debug executable | `e1cbdf183aea9fde73951889f1a41839f8c03b2719b9ebd33da9f69c8cbde8c7` |
+| `old/lifting.json` | `9485948a873b891216db2f3e9748f849c74fb6b9c0792165af32107a9bad55f6` |
+| `new/lifting.json` | `011979e48159cfda0ab770b56cd196899c430b4b30cdde25f5e782d5206fc60b` |
+| `old/resources.txt` | `2526360a20b394e6d5db0fc0dfb5b01bbb5e08089b43b562ab0a2a44e28ee9e0` |
+| `new/resources.txt` | `6f8eb0389e49ea97a1824356386a55e399a39377d9f1bc1f53337863a7d568ec` |
