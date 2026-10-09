@@ -42,6 +42,9 @@ struct Args {
     campaign_secs: f64,
     #[arg(long, default_value_t = 8192)]
     memory_mib: u64,
+    /// Transfer an unsplit sign constraint and compare both endpoint engines.
+    #[arg(long)]
+    monotone: bool,
 }
 #[derive(Clone)]
 struct Job {
@@ -191,19 +194,30 @@ fn jobs(args: &Args) -> Result<Vec<Job>> {
                         .collect(),
                 ]
             };
-            for (seed, order) in orders.into_iter().take(2).enumerate() {
+            for (seed, order) in orders
+                .into_iter()
+                .take(if args.monotone { 1 } else { 2 })
+                .enumerate()
+            {
                 for engine in ["local", "optimized"] {
                     let mut p = original.clone();
+                    let dynamic = args.monotone && original.solver.order.is_empty();
                     p.solver = SolverOptions {
-                        engine: engine.into(),
-                        ordering: "given".into(),
-                        order: order
-                            .iter()
-                            .map(|&i| original.variables[i].clone())
-                            .collect(),
+                        engine: if args.monotone { "monotone" } else { engine }.into(),
+                        ordering: if dynamic { "brown" } else { "given" }.into(),
+                        order: if dynamic {
+                            vec![]
+                        } else {
+                            order
+                                .iter()
+                                .map(|&i| original.variables[i].clone())
+                                .collect()
+                        },
                         positivity: true,
                         input_positivity: true,
                         prune_operations: engine == "optimized",
+                        monotone_base_engine: if args.monotone { engine } else { "optimized" }
+                            .into(),
                         ..Default::default()
                     };
                     if let Some(a) = anchor {
@@ -228,7 +242,8 @@ fn jobs(args: &Args) -> Result<Vec<Job>> {
                         source: source.clone(),
                         aliases: serde_json::from_value(group["aliases"].clone())?,
                         label: format!(
-                            "{}-{}-seed{}",
+                            "{}{}-{}-seed{}",
+                            if args.monotone { "monotone-" } else { "" },
                             engine,
                             anchor.map_or("unscaled", |a| original.variables[a].as_str()),
                             seed
@@ -273,7 +288,7 @@ fn main() -> Result<()> {
     let mut report = CompletionReport {
         schema_version: 1,
         mode: "completion".into(),
-        provenance: json!({"executable":args.executable.canonicalize()?,"frozen_executable":binary,"executable_sha256":binary_hash,"operation":"direct solve worker with explicit legal order","workers":1,"memory_mib":args.memory_mib,"initial_secs":args.initial_secs,"promotion_secs":args.promotion_secs,"verify_timeout_secs":args.verify_secs,"campaign_secs":args.campaign_secs,"harness_sha256":hash(&std::env::current_exe()?)?}),
+        provenance: json!({"executable":args.executable.canonicalize()?,"frozen_executable":binary,"executable_sha256":binary_hash,"operation":"direct solve worker preserving original fixed orders and variable groups","monotone":args.monotone,"workers":1,"memory_mib":args.memory_mib,"initial_secs":args.initial_secs,"promotion_secs":args.promotion_secs,"verify_timeout_secs":args.verify_secs,"campaign_secs":args.campaign_secs,"harness_sha256":hash(&std::env::current_exe()?)?}),
         scheduled: vec![],
         runs: vec![],
         complete_verified: 0,
@@ -294,7 +309,11 @@ fn main() -> Result<()> {
             promotions.sort_by(|a, b| b.0.cmp(&a.0).then_with(|| a.1.total_cmp(&b.1)));
             let mut picked = BTreeSet::new();
             for (_, _, j) in promotions.drain(..) {
-                let key = (j.problem.name.clone(), j.problem.solver.engine.clone());
+                let key = (
+                    j.problem.name.clone(),
+                    j.problem.solver.engine.clone(),
+                    j.problem.solver.monotone_base_engine.clone(),
+                );
                 if !solved.contains(j.problem.name.as_ref().unwrap()) && picked.insert(key) {
                     queue.push_back((j, args.promotion_secs, true));
                 }
