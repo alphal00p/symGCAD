@@ -1,5 +1,6 @@
 //! Certified root unions and exact rational open-sector samples.
 use anyhow::{Result, ensure};
+use std::{cmp::Ordering, collections::BinaryHeap};
 use symbolica::prelude::*;
 
 /// Symbolica's certified real isolator currently converts to u16 exponents.
@@ -11,6 +12,33 @@ pub struct FiberRoot {
     pub index: usize,
     pub interval: (Rational, Rational),
     pub fiber: UnivariatePolynomial<Q>,
+}
+
+/// Reversed interval order makes BinaryHeap expose the lowest possible root.
+/// Refinement only shrinks intervals, so a root wholly left of the next lower
+/// endpoint is also wholly left of every other pending root.
+struct PendingRoot(FiberRoot);
+impl PartialEq for PendingRoot {
+    fn eq(&self, other: &Self) -> bool {
+        self.cmp(other) == Ordering::Equal
+    }
+}
+impl Eq for PendingRoot {}
+impl PartialOrd for PendingRoot {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+impl Ord for PendingRoot {
+    fn cmp(&self, other: &Self) -> Ordering {
+        other
+            .0
+            .interval
+            .0
+            .cmp(&self.0.interval.0)
+            .then(other.0.polynomial.cmp(&self.0.polynomial))
+            .then(other.0.index.cmp(&self.0.index))
+    }
 }
 
 /// Sign-variation counts use polynomial arithmetic from Symbolica. Endpoints
@@ -209,34 +237,36 @@ pub fn isolate_union_observed(
         }
     }
     // Every collision is either certified as a common root, or separated by
-    // exact bisection. Close but unequal roots are never numerically collapsed.
-    loop {
-        roots.sort_by(|a, b| {
-            a.interval
-                .0
-                .cmp(&b.interval.0)
-                .then(a.polynomial.cmp(&b.polynomial))
-        });
-        let collision = roots
-            .windows(2)
-            .position(|w| w[0].interval.1 >= w[1].interval.0);
-        let Some(i) = collision else {
+    // exact bisection. Each changed interval is reinserted in O(log n) order,
+    // avoiding a full-list sort and rescan on every bisection. Close but unequal
+    // roots are never numerically collapsed.
+    let mut pending: BinaryHeap<_> = roots.drain(..).map(PendingRoot).collect();
+    while let Some(PendingRoot(mut first)) = pending.pop() {
+        let Some(next) = pending.peek() else {
+            roots.push(first);
             break;
         };
+        if first.interval.1 < next.0.interval.0 {
+            roots.push(first);
+            continue;
+        }
+        let PendingRoot(mut second) = pending.pop().expect("peeked root");
         observer(
             "separate_roots",
-            roots[i].polynomial,
-            &roots[i].fiber,
-            roots.len(),
+            first.polynomial,
+            &first.fiber,
+            roots.len() + pending.len() + 2,
         )?;
-        if same_root(&roots[i], &roots[i + 1]) {
-            if roots[i + 1].polynomial < roots[i].polynomial {
-                roots.swap(i, i + 1);
+        if same_root(&first, &second) {
+            if second.polynomial < first.polynomial {
+                std::mem::swap(&mut first, &mut second);
             }
-            roots.remove(i + 1);
+            pending.push(PendingRoot(first));
         } else {
-            refine_once(&mut roots[i]);
-            refine_once(&mut roots[i + 1]);
+            refine_once(&mut first);
+            refine_once(&mut second);
+            pending.push(PendingRoot(first));
+            pending.push(PendingRoot(second));
         }
     }
     Ok(roots)

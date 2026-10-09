@@ -49,10 +49,41 @@ fn check_resultant_degrees(left: &Poly, right: &Poly, variable: usize) -> Result
     Ok(())
 }
 
-/// Deterministic resultant with its exact rational scale and sign preserved.
-/// Symbolica's automatic rational dispatch may select Monte Carlo CRT early
-/// termination, so proof construction and replay explicitly use integer Ducos.
+/// Deterministic resultant, preserving its exact rational scale and sign.
+/// Bounded bivariate inputs may use exact interpolation; all others use Ducos.
 pub fn exact_resultant(left: &Poly, right: &Poly, variable: usize) -> Result<Poly> {
+    Ok(exact_resultant_with_statistics(left, right, variable)?.0)
+}
+
+pub fn exact_resultant_with_statistics(
+    left: &Poly,
+    right: &Poly,
+    variable: usize,
+) -> Result<(Poly, Option<crate::resultant_interpolation::Statistics>)> {
+    ensure!(
+        left.variables() == right.variables(),
+        "resultant variable maps differ"
+    );
+    ensure!(variable < left.nvars(), "resultant variable out of range");
+    check_resultant_degrees(left, right, variable)?;
+    // Existing library calls have no deadline context. Callers needing
+    // cooperative cancellation may use try_resultant's callback directly;
+    // supervised CLI workers retain hard process deadlines.
+    if let Some((result, stats)) = crate::resultant_interpolation::try_resultant(
+        left,
+        right,
+        variable,
+        &crate::resultant_interpolation::Options::default(),
+        || Ok(()),
+    )? {
+        return Ok((result, Some(stats)));
+    }
+    Ok((exact_resultant_ducos(left, right, variable)?, None))
+}
+
+/// Deterministic direct backend, also used for independent interpolation
+/// regressions and exact numeric images. No automatic/Monte Carlo dispatch.
+pub fn exact_resultant_ducos(left: &Poly, right: &Poly, variable: usize) -> Result<Poly> {
     ensure!(
         left.variables() == right.variables(),
         "resultant variable maps differ"

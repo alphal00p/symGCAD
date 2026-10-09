@@ -27,6 +27,10 @@
 //! other cases retain the ordinary discriminant. Pair resultants are then
 //! needed only between positive-root-bearing cuts. One explicit rejected
 //! negative half-line and every positive sector prove exhaustive coverage.
+//!
+//! At the first lifting axis the base consists of a single rational point.
+//! Exact univariate root isolation then suffices: constant projection guards
+//! cannot refine that base, and no pair resultants or discriminants are needed.
 use crate::{
     Problem,
     algebra::{Algebra, Poly, canonical, factors_checked},
@@ -95,6 +99,10 @@ pub struct LocalOptions {
     /// Historical evidence retains its full discriminant obligations.
     #[serde(default)]
     pub descartes_one: bool,
+    /// At level zero isolate the complete univariate root union directly.
+    /// Missing historical evidence retains ordinary local projection replay.
+    #[serde(default)]
+    pub base_point_projection: bool,
 }
 fn one_cancellation() -> usize {
     1
@@ -114,6 +122,7 @@ impl Default for LocalOptions {
             reuse_completed_subtrees: true,
             reuse_learned_cuts: true,
             descartes_one: true,
+            base_point_projection: true,
         }
     }
 }
@@ -178,11 +187,20 @@ pub struct LocalReport {
     pub learned_cut_cache_peak_bytes: usize,
     pub learned_cut_cache_retained_ids: usize,
     pub learned_cut_cache_retained_entries: usize,
+    pub base_point_stacks: usize,
+    /// All potential pairs avoided, including pairs with rootless cuts.
+    pub base_point_candidate_pairs_skipped: usize,
+    pub base_point_max_cuts: usize,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct LocalProjectionCertificate {
+    /// The zero-dimensional-base theorem uses the complete univariate root
+    /// union directly. No root-bearing subset or projection guards are used.
+    #[serde(default)]
+    pub base_point: bool,
     /// Cuts with real roots, or strictly positive roots for a positive-ray proof.
+    /// Empty for the base-point theorem, which isolates every cut instead.
     pub root_bearing: Vec<usize>,
     /// Square-free irreducible factors of all required lc, disc and resultants.
     pub guards: Vec<usize>,
@@ -343,7 +361,30 @@ enum Stop {
 type Work<T> = std::result::Result<T, Stop>;
 impl From<anyhow::Error> for Stop {
     fn from(error: anyhow::Error) -> Self {
-        Self::Unsupported(error.to_string())
+        if error
+            .downcast_ref::<crate::resultant_interpolation::Stopped>()
+            .is_some()
+        {
+            Self::Resource(error.to_string())
+        } else {
+            Self::Unsupported(error.to_string())
+        }
+    }
+}
+
+#[cfg(test)]
+mod stop_tests {
+    use super::Stop;
+
+    #[test]
+    fn interpolation_resource_stop_never_requests_global_fallback() {
+        let error = anyhow::Error::new(crate::resultant_interpolation::Stopped("budget".into()))
+            .context("local resultant");
+        assert!(matches!(Stop::from(error), Stop::Resource(_)));
+        assert!(matches!(
+            Stop::from(anyhow::anyhow!("unsupported algebra")),
+            Stop::Unsupported(_)
+        ));
     }
 }
 
@@ -555,6 +596,30 @@ fn local_projection_raw(
     }
     let all_pairs = cuts.len().saturating_mul(cuts.len().saturating_sub(1)) / 2;
     Ok((bearing, raw, pairs, all_pairs - pairs, root_seconds))
+}
+
+/// No specialization may hide parameter dependence here: every polynomial
+/// must already lie in Q[x_0], and the base prefix must be empty.
+fn check_base_point_cuts(
+    polynomials: &[Poly],
+    cuts: &[usize],
+    level: usize,
+    prefix: &[Rational],
+) -> Result<()> {
+    ensure!(
+        level == 0 && prefix.is_empty(),
+        "base-point projection has an ancestor"
+    );
+    for &id in cuts {
+        let p = polynomials
+            .get(id)
+            .ok_or_else(|| anyhow!("invalid base-point cut"))?;
+        ensure!(
+            highest(p) == Some(0),
+            "base-point cut is not an exact nonconstant univariate polynomial"
+        );
+    }
+    Ok(())
 }
 
 fn positive_coordinate(normalized: &NormalizedProblem, variable: usize) -> Option<usize> {
@@ -1269,6 +1334,22 @@ impl Builder<'_> {
         self.report.active_phase = "local_projection".into();
         self.publish(false)?;
         self.operations.progress_context = Some(self.snapshot());
+        if level == 0 && self.options.base_point_projection {
+            check_base_point_cuts(&self.polynomials, cuts, level, prefix)?;
+            self.report.base_point_stacks += 1;
+            self.report.base_point_max_cuts = self.report.base_point_max_cuts.max(cuts.len());
+            self.report.base_point_candidate_pairs_skipped +=
+                cuts.len().saturating_mul(cuts.len().saturating_sub(1)) / 2;
+            // stack_roots with no ray proof uses every cut and full-real
+            // ordinals. Ordinary constraint checks reject negative sectors.
+            return Ok(LocalProjectionCertificate {
+                base_point: true,
+                root_bearing: vec![],
+                guards: vec![],
+                removals: vec![],
+                positive_ray: None,
+            });
+        }
         let mut pair_seconds = 0.0;
         let ray_constraint = self
             .options
@@ -1360,6 +1441,7 @@ impl Builder<'_> {
         self.publish(false)?;
         self.check_budget()?;
         Ok(LocalProjectionCertificate {
+            base_point: false,
             root_bearing,
             guards: guards.into_iter().collect(),
             removals,
@@ -1392,7 +1474,7 @@ impl Builder<'_> {
             let cut_list: Vec<_> = cuts.iter().copied().collect();
             let projection = self.project(&cut_list, level, prefix)?;
             self.report.active_phase = "root_isolation".into();
-            self.publish(false)?;
+            self.publish(level == 0 && cut_list.len() > 64)?;
             let root_started = Instant::now();
             let roots = stack_roots(
                 &self.normalized.algebra,
@@ -1881,6 +1963,7 @@ struct Checker<'a> {
     positive_pair_separation: bool,
     positive_pair_cancellations: usize,
     descartes_one: bool,
+    base_point_projection: bool,
 }
 impl Checker<'_> {
     fn check_registry(&self) -> Result<()> {
@@ -2009,7 +2092,21 @@ impl Checker<'_> {
                     cuts == &cut_set.iter().copied().collect::<Vec<_>>(),
                     "cuts are not unique and sorted"
                 );
-                let (bearing, raw) = if let Some(ray) = &projection.positive_ray {
+                let (bearing, raw) = if projection.base_point {
+                    ensure!(
+                        self.base_point_projection,
+                        "base-point projection is disabled"
+                    );
+                    check_base_point_cuts(self.polynomials, cuts, level, prefix)?;
+                    ensure!(
+                        projection.positive_ray.is_none()
+                            && projection.root_bearing.is_empty()
+                            && projection.guards.is_empty()
+                            && projection.removals.is_empty(),
+                        "base-point projection carries incompatible conditional evidence"
+                    );
+                    (vec![], vec![])
+                } else if let Some(ray) = &projection.positive_ray {
                     ensure!(self.positive_ray, "positive-ray projection is disabled");
                     ensure!(
                         positive_coordinate(self.normalized, level) == Some(ray.constraint),
@@ -2285,6 +2382,7 @@ pub fn verify_local_parts(
         positive_pair_separation: options.positive_pair_separation,
         positive_pair_cancellations: options.positive_pair_cancellations,
         descartes_one: options.descartes_one,
+        base_point_projection: options.base_point_projection,
     };
     checker.check_registry()?;
     ensure!(

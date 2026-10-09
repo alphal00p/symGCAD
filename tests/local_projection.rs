@@ -1887,3 +1887,252 @@ fn global_trace_rejects_positive_scope_and_merge_does_not_confuse_ordinals() {
     ];
     assert_eq!(symgcad::solver::merge(&cells).len(), 2);
 }
+
+#[test]
+fn base_point_root_union_handles_duplicate_shared_and_repeated_roots() {
+    let p = problem(
+        &["x"],
+        &[],
+        &["(x-1)^2*(x+1)", "(x^2-1)^3", "x^2-2", "2*(x^2-2)", "0"],
+    );
+    let fast = local(&p);
+    assert_eq!(fast.solution.cells.len(), 5);
+    assert!(fast.solution.cells.iter().all(|cell| cell.signs[4] == 0));
+    let LocalEvidence::Local {
+        root:
+            LocalNode::Stack {
+                projection,
+                roots,
+                sectors,
+                ..
+            },
+        report,
+        ..
+    } = &fast.evidence
+    else {
+        panic!()
+    };
+    assert!(projection.base_point);
+    assert!(projection.root_bearing.is_empty());
+    assert!(projection.guards.is_empty());
+    assert!(projection.positive_ray.is_none());
+    assert_eq!(roots.len(), 4);
+    assert_eq!(sectors.len(), 5);
+    assert!(
+        roots
+            .iter()
+            .all(|r| r.index_domain == symgcad::output::RootIndexDomain::Real)
+    );
+    assert_eq!(report.cache.resultant_misses, 0);
+    assert_eq!(report.cache.discriminant_misses, 0);
+    assert!(report.base_point_candidate_pairs_skipped > 0);
+
+    let ordinary = local_solution(
+        &p,
+        &LocalOptions {
+            base_point_projection: false,
+            ..Default::default()
+        },
+    );
+    let fast = local_solution(&p, &LocalOptions::default());
+    let global = symgcad::solver::solve(&p).unwrap();
+    for other in [&ordinary, &global] {
+        assert_eq!(
+            symgcad::comparison::compare_generic(&fast, other, &symgcad::Limits::default())
+                .unwrap()
+                .equivalent,
+            Some(true)
+        );
+    }
+}
+
+#[test]
+fn base_point_preserves_strict_boundaries_and_positive_ray_domain() {
+    for p in [
+        problem(&["x"], &["x>0"], &["(x+3)*(x+1)*(x-2)"]),
+        problem(&["x"], &["x<0"], &["x^2-2"]),
+        problem(&["x"], &["0>0"], &["x"]),
+        problem(&["x"], &["x>0", "-x>0"], &["0"]),
+        problem(&["x"], &["x^2>0"], &["x"]),
+    ] {
+        let fast = local_solution(&p, &LocalOptions::default());
+        let ordinary = local_solution(
+            &p,
+            &LocalOptions {
+                base_point_projection: false,
+                ..Default::default()
+            },
+        );
+        assert_eq!(
+            symgcad::comparison::compare_generic(&fast, &ordinary, &symgcad::Limits::default())
+                .unwrap()
+                .equivalent,
+            Some(true)
+        );
+    }
+    let positive = local(&problem(&["x"], &["x>0"], &["x^2-2"]));
+    assert_eq!(positive.solution.cells.len(), 2);
+    assert!(positive.solution.cells.iter().all(|cell| {
+        symgcad::algebra::rational(&cell.axes[0].sample).unwrap()
+            > symgcad::algebra::rational("0").unwrap()
+    }));
+    let LocalEvidence::Local {
+        root: LocalNode::Stack { roots, sectors, .. },
+        ..
+    } = &positive.evidence
+    else {
+        panic!()
+    };
+    assert_eq!(roots.len(), 3); // -sqrt(2), 0, sqrt(2), with every real sector present.
+    assert!(
+        sectors
+            .iter()
+            .take(2)
+            .all(|sector| matches!(sector.child, LocalNode::Rejected { .. }))
+    );
+}
+
+#[test]
+fn base_point_verifier_rejects_missing_roots_sectors_and_false_scope() {
+    let original = local(&problem(&["x"], &[], &["x^2-2", "x-1"]));
+    for modification in 0..5 {
+        let mut changed = original.clone();
+        let LocalEvidence::Local {
+            root:
+                LocalNode::Stack {
+                    projection,
+                    roots,
+                    sectors,
+                    ..
+                },
+            options,
+            ..
+        } = &mut changed.evidence
+        else {
+            panic!()
+        };
+        match modification {
+            0 => {
+                roots.pop();
+            }
+            1 => {
+                sectors.pop();
+            }
+            2 => {
+                projection.root_bearing.push(0);
+            }
+            3 => {
+                options.base_point_projection = false;
+            }
+            4 => {
+                projection.base_point = false;
+            }
+            _ => unreachable!(),
+        }
+        assert!(verify_local(&changed).is_err(), "tamper {modification}");
+    }
+    let mut deeper = local(&problem(&["x", "y"], &[], &["y^2-x"]));
+    fn wrong_level(node: &mut LocalNode, depth: usize) -> bool {
+        if let LocalNode::Stack {
+            projection,
+            sectors,
+            ..
+        } = node
+        {
+            if depth > 0 {
+                projection.base_point = true;
+                projection.positive_ray = None;
+                projection.root_bearing.clear();
+                projection.guards.clear();
+                projection.removals.clear();
+                return true;
+            }
+            return sectors
+                .iter_mut()
+                .any(|sector| wrong_level(&mut sector.child, depth + 1));
+        }
+        false
+    }
+    let LocalEvidence::Local { root, .. } = &mut deeper.evidence else {
+        panic!()
+    };
+    assert!(wrong_level(root, 0));
+    assert!(verify_local(&deeper).is_err());
+}
+
+#[test]
+fn base_point_verifier_rejects_a_cut_with_later_parameter_dependence() {
+    let mut changed = local(&problem(&["x", "y"], &[], &["y^2-x"]));
+    let algebra = symgcad::algebra::Algebra::new(&changed.solution.order).unwrap();
+    let later = changed
+        .solution
+        .polynomials
+        .iter()
+        .position(|text| algebra.parse(text).unwrap().degree(1) > 0)
+        .unwrap();
+    let LocalEvidence::Local {
+        root: LocalNode::Stack { cuts, .. },
+        ..
+    } = &mut changed.evidence
+    else {
+        panic!()
+    };
+    cuts.push(later);
+    cuts.sort_unstable();
+    cuts.dedup();
+    assert!(verify_local(&changed).is_err());
+}
+
+#[test]
+fn base_point_historical_evidence_and_solver_ablation_remain_explicit() {
+    let mut p = problem(&["x", "y"], &["x>0", "y>0"], &["y^2-x"]);
+    p.solver.engine = "local".into();
+    p.solver.local_base_point_projection = false;
+    let ordinary = symgcad::solver::solve(&p).unwrap();
+    let LocalEvidence::Local { options, .. } = ordinary.local.as_deref().unwrap() else {
+        panic!()
+    };
+    assert!(!options.base_point_projection);
+    assert!(symgcad::verify::verify(&ordinary).unwrap().verified);
+    let mut old = serde_json::to_value(&ordinary).unwrap();
+    fn drop_new_fields(value: &mut serde_json::Value) {
+        match value {
+            serde_json::Value::Object(map) => {
+                map.remove("base_point");
+                map.remove("base_point_projection");
+                map.remove("local_base_point_projection");
+                for value in map.values_mut() {
+                    drop_new_fields(value);
+                }
+            }
+            serde_json::Value::Array(values) => {
+                for value in values {
+                    drop_new_fields(value);
+                }
+            }
+            _ => {}
+        }
+    }
+    drop_new_fields(&mut old);
+    let restored: symgcad::output::SolveResult = serde_json::from_value(old).unwrap();
+    let LocalEvidence::Local { options, .. } = restored.local.as_deref().unwrap() else {
+        panic!()
+    };
+    assert!(!options.base_point_projection);
+    assert!(symgcad::verify::verify(&restored).unwrap().verified);
+    p.solver.local_base_point_projection = true;
+    let text = toml::to_string(&p).unwrap();
+    assert!(!text.contains("local_base_point_projection"));
+    assert!(
+        Problem::from_toml(&text)
+            .unwrap()
+            .solver
+            .local_base_point_projection
+    );
+    let fast = symgcad::solver::solve(&p).unwrap();
+    let LocalEvidence::Local { options, .. } = fast.local.as_deref().unwrap() else {
+        panic!()
+    };
+    assert!(options.base_point_projection);
+    assert!(symgcad::verify::verify(&fast).unwrap().verified);
+}

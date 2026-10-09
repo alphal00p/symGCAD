@@ -73,6 +73,8 @@ Completed small local subtrees can be reused at the identical rational prefix wi
 
 Unfinished local stacks can retain learned cuts at the identical rational prefix. These are hints: every seeded cut is projected again and every sector rebuilt. The cache bounds entries, polynomial IDs, prefix bit sizes, and retained bytes; it never treats an unfinished stack as a proof. Set `solver.local_reuse_learned_cuts = false` for the same-engine ablation.
 
+At the first local lifting axis, exact univariate cuts need no lower-dimensional projection. The engine isolates their complete real-root union directly; the verifier checks this zero-dimensional-base condition and every resulting sector. Set `solver.local_base_point_projection = false` for the ablation. Root unions use an ordered queue with exact equality and bisection checks, including coincident or arbitrarily close roots.
+
 ## Results and verification
 
 JSON results retain the normalized input, variable order, canonical polynomial table, projection levels, rational sample points, and algebraic boundaries. A boundary references a polynomial and its zero-based index among distinct roots in its `index_domain` (`real` by default), with a rational isolating interval at the sample point. Missing lower/upper boundaries mean negative/positive infinity.
@@ -81,7 +83,7 @@ JSON results retain the normalized input, variable order, canonical polynomial t
 
 The verifier reconstructs projection obligations and checks an exhaustive lifting trace. It checks all real-root gaps, exact rejection witnesses, accepted cells, and coverage accounting. An incomplete result cannot pass verification. `merge = "aggressive"` additionally produces compatibility-only merged cells; certified raw cells and their seams remain available. A same-sign zero of an integrand must not disappear merely because adjacent signs agree.
 
-Production resultants explicitly use Symbolica's deterministic integer-Ducos routine, with exact low-degree identities. Automatic CRT dispatch is confined to the profiling example because the current Symbolica checkout permits probabilistic early termination there. The separately replayable upstream sign correction in `patches/` is documented but is not applied to the reference checkout. `comparison::compare_generic` validates small decompositions through a certified common refinement, including differing variable orders and reconstructed scale/monotone cells.
+Production resultants use Symbolica's deterministic integer-Ducos routine, exact low-degree identities, and bounded bivariate interpolation with enough exact images to prove the full polynomial identity. Automatic CRT dispatch is confined to the profiling example because the current Symbolica checkout permits probabilistic early termination there. The separately replayable upstream sign correction in `patches/` is documented but is not applied to the reference checkout. `comparison::compare_generic` validates small decompositions through a certified common refinement, including differing variable orders and reconstructed scale/monotone cells.
 
 ## Reference corpus and benchmarks
 

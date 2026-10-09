@@ -169,3 +169,41 @@ policies solve the six-case cold ablation, while search overhead makes MCTS
 slower than the inexpensive portfolio. Detailed limits, medians and hashes are
 in `BENCHMARKS.md`. A search heuristic's usefulness on the hard symbolic cases
 remains an open empirical question.
+
+## Exact interpolation of bivariate resultants
+
+For inputs of eliminated-axis degrees `m,n` and total degrees `P,Q`, the
+Sylvester determinant has parameter degree at most `n*P+m*Q-m*n`. Every
+determinant monomial chooses `n` coefficients from the first input and `m`
+from the second, and their eliminated-axis exponents sum to `m*n`.
+Cancellation can only lower the degree. The rectangular degree bound provides
+another upper bound; the smaller of the two suffices.
+
+For one surviving parameter, the bounded implementation evaluates at distinct
+exact integers, skips points where a leading coefficient vanishes, computes
+each numeric resultant with deterministic Symbolica Ducos, and reconstructs
+the polynomial with Symbolica Newton interpolation. It uses the complete
+degree bound plus one valid image, preserving rational scale and sign. This
+is a polynomial identity proof, not an early-termination heuristic. Numeric
+zero images retain the original variable map. Support, degree, image sizes,
+and cancellation are checked; a stopped interpolation cannot trigger a costly
+fallback or become a complete result. Existing deterministic operation caches
+remain compatible; older automatic-resultant caches remain invalid.
+
+The captured symbolic A446 outer-`t` pair has degrees 23 and 17, giving the
+bound 871. Its 872-image computation completes in about six seconds and yields
+a degree-461 polynomial with 318 terms. An independent fresh 872-image replay
+proves the same identity. This removes one measured algebra obstacle; it does
+not establish a complete symbolic A446 decomposition.
+
+## Separating large exact root unions
+
+The global A381 chart produces 12,054 candidate roots at its first lifting
+stack. Re-sorting and scanning that complete list after every collision adds
+substantial work. An ordered queue instead exposes the lowest interval. If it
+ends strictly before the next lower endpoint, it lies before every pending
+root and can be finalized. Otherwise exact shared-root checks or bisection
+resolve the collision and the affected intervals return to the queue.
+Refinement only shrinks intervals, so finalized roots cannot be crossed later.
+Shared roots retain the smallest source-polynomial identifier. No tolerance or
+floating-point comparison participates in root equality or ordering.

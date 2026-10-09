@@ -537,6 +537,27 @@ fn prepare_optimized(
 }
 
 pub fn solve(problem: &Problem) -> Result<SolveResult> {
+    classify_solve_result(problem, solve_impl(problem))
+}
+
+fn classify_solve_result(problem: &Problem, result: Result<SolveResult>) -> Result<SolveResult> {
+    match result {
+        Err(error)
+            if error
+                .downcast_ref::<crate::resultant_interpolation::Stopped>()
+                .is_some() =>
+        {
+            Ok(SolveResult::failure(
+                problem.clone(),
+                Status::Incomplete,
+                error.to_string(),
+            ))
+        }
+        other => other,
+    }
+}
+
+fn solve_impl(problem: &Problem) -> Result<SolveResult> {
     problem.validate()?;
     if problem.solver.engine == "monotone" && problem.split.is_empty() {
         return crate::sign_filter::solve(problem);
@@ -557,6 +578,7 @@ pub fn solve(problem: &Problem) -> Result<SolveResult> {
                 reuse_learned_cuts: problem.solver.local_reuse_learned_cuts,
                 positive_pair_cancellations: problem.solver.local_pair_cancellations,
                 descartes_one: problem.solver.local_descartes_one,
+                base_point_projection: problem.solver.local_base_point_projection,
                 max_refinements: problem
                     .solver
                     .local_max_refinements
@@ -678,6 +700,25 @@ pub fn solve(problem: &Problem) -> Result<SolveResult> {
         local: None,
         sign_filter: None,
     })
+}
+
+#[cfg(test)]
+mod algebra_stop_tests {
+    use super::*;
+
+    #[test]
+    fn only_typed_algebra_resource_stops_become_incomplete_results() {
+        let problem = Problem::default();
+        let stopped =
+            anyhow::Error::new(crate::resultant_interpolation::Stopped("image cap".into()))
+                .context("during global projection");
+        let result = classify_solve_result(&problem, Err(stopped)).unwrap();
+        assert_eq!(result.status, Status::Incomplete);
+        assert!(result.cells.is_empty());
+        assert!(crate::verify::verify(&result).is_err());
+        let ordinary = anyhow::anyhow!("resultant interpolation stopped: image cap");
+        assert!(classify_solve_result(&problem, Err(ordinary)).is_err());
+    }
 }
 
 fn same_boundary(a: &Option<RootBound>, b: &Option<RootBound>) -> bool {

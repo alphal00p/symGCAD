@@ -180,6 +180,7 @@ mod tests {
             node: LocalNode::Stack {
                 cuts: vec![3],
                 projection: LocalProjectionCertificate {
+                    base_point: false,
                     root_bearing: vec![3],
                     guards: vec![7],
                     removals: vec![4],

@@ -53,6 +53,9 @@ pub struct SolverOptions {
     /// Use a positive-root ordinal for Descartes-one local cuts.
     #[serde(skip_serializing_if = "is_true")]
     pub local_descartes_one: bool,
+    /// Isolate the first-axis root union without constant projection algebra.
+    #[serde(skip_serializing_if = "is_true")]
+    pub local_base_point_projection: bool,
     /// Per-problem local search limits; omitted values keep LocalOptions defaults.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub local_max_refinements: Option<usize>,
@@ -83,6 +86,7 @@ impl Default for SolverOptions {
             local_reuse_learned_cuts: true,
             local_pair_cancellations: 2,
             local_descartes_one: true,
+            local_base_point_projection: true,
             local_max_refinements: None,
             local_max_nodes: None,
             homogeneous_block: vec![],

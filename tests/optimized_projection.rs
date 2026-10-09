@@ -17,6 +17,82 @@ use symgcad::{
 };
 
 static NEXT_DIRECTORY: AtomicU64 = AtomicU64::new(0);
+
+#[test]
+fn historical_optimized_results_without_interpolation_metadata_still_verify() {
+    let mut problem = symgcad::Problem {
+        variables: vec!["s".into(), "x".into()],
+        constraints: vec!["s>0".into(), "x>0".into()],
+        split: vec!["x^2-s".into()],
+        ..Default::default()
+    };
+    problem.solver.engine = "optimized".into();
+    let result = symgcad::solver::solve(&problem).unwrap();
+    let mut json = serde_json::to_value(result).unwrap();
+    let report = json["statistics"]["optimized_projection"]
+        .as_object_mut()
+        .unwrap();
+    assert!(report.remove("resultant_kernel").is_some());
+    let metrics = report["cache"].as_object_mut().unwrap();
+    metrics.remove("interpolated_resultants");
+    metrics.remove("interpolation_images");
+    let restored: symgcad::output::SolveResult = serde_json::from_value(json).unwrap();
+    assert!(
+        restored
+            .statistics
+            .optimized_projection
+            .as_ref()
+            .unwrap()
+            .resultant_kernel
+            .is_empty()
+    );
+    assert!(symgcad::verify::verify(&restored).unwrap().verified);
+}
+
+#[test]
+fn interpolation_metrics_and_exact_v2_operation_caches_survive_restart() {
+    let directory = Directory::new();
+    let a = Algebra::new(&["s".into(), "t".into()]).unwrap();
+    let p = a.parse("(t+s+1)^8+s*t+1").unwrap();
+    let q = a.parse("(t+2*s+3)^8+t^2+s").unwrap();
+    let options = OptimizedProjectionOptions {
+        checkpoint_dir: Some(directory.0.clone()),
+        ..Default::default()
+    };
+    let mut cache = ProjectionCache::new(&a, &options);
+    let result = cache.resultant(&p, &q, 1).unwrap();
+    assert_eq!(cache.report.cache.interpolated_resultants, 1);
+    assert!(cache.report.cache.interpolation_images > 1);
+    assert_eq!(
+        cache.report.resultant_kernel,
+        "deterministic-ducos-bivariate-newton-v1"
+    );
+    assert_eq!(
+        result,
+        canonical(&symgcad::projection::exact_resultant_ducos(&p, &q, 1).unwrap())
+    );
+    let mut fresh = ProjectionCache::new(&a, &options);
+    assert_eq!(fresh.resultant(&p, &q, 1).unwrap(), result);
+    assert_eq!(fresh.report.cache.resultant_disk_hits, 1);
+    assert_eq!(fresh.report.cache.interpolated_resultants, 0);
+    let path = fs::read_dir(directory.0.join("operations"))
+        .unwrap()
+        .next()
+        .unwrap()
+        .unwrap()
+        .path();
+    let mut saved: serde_json::Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+    assert_eq!(
+        saved["algorithm"],
+        "symgcad-deterministic-integer-ducos-gproj-v2"
+    );
+    saved["algorithm"] = "former-automatic-monte-carlo-backend".into();
+    fs::write(&path, serde_json::to_vec(&saved).unwrap()).unwrap();
+    let mut rejected = ProjectionCache::new(&a, &options);
+    assert_eq!(rejected.resultant(&p, &q, 1).unwrap(), result);
+    assert_eq!(rejected.report.cache.resultant_disk_hits, 0);
+    assert_eq!(rejected.report.cache.invalid_operation_checkpoints, 1);
+}
 struct Directory(PathBuf);
 impl Directory {
     fn new() -> Self {

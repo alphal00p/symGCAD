@@ -52,6 +52,74 @@ fn observed_root_union_preserves_shared_roots_and_propagates_cancellation() {
 }
 
 #[test]
+fn root_queue_merges_overlapping_chains_and_keeps_the_lowest_source_id() {
+    let input = (1..=24)
+        .rev()
+        .map(|i| {
+            (
+                i as usize,
+                polynomial(&format!("(x^2-{i})*(x^2-{})", i + 1)),
+            )
+        })
+        .collect::<Vec<_>>();
+    let roots = isolate_union(input).unwrap();
+    assert_eq!(roots.len(), 50);
+    assert!(
+        roots
+            .windows(2)
+            .all(|pair| pair[0].interval.1 < pair[1].interval.0)
+    );
+    for root in &roots {
+        assert_eq!(
+            roots_in_open_interval(&root.fiber, &q("-100"), &root.interval.0)
+                + usize::from(
+                    root.fiber.evaluate(&root.interval.0).is_zero()
+                        && root.interval.0 != root.interval.1
+                ),
+            root.index
+        );
+        if root.interval.0 == root.interval.1 {
+            assert!(root.fiber.evaluate(&root.interval.0).is_zero());
+        } else {
+            assert_eq!(
+                roots_in_open_interval(&root.fiber, &root.interval.0, &root.interval.1),
+                1
+            );
+        }
+    }
+    let exact_one = roots
+        .iter()
+        .find(|root| root.interval.0 <= q("1") && q("1") <= root.interval.1)
+        .unwrap();
+    assert_eq!(exact_one.polynomial, 1);
+    let exact_four = roots
+        .iter()
+        .find(|root| root.interval.0 <= q("4") && q("4") <= root.interval.1)
+        .unwrap();
+    assert_eq!(exact_four.polynomial, 15);
+}
+
+#[test]
+fn root_queue_separates_very_close_irrational_roots_without_merging() {
+    let input = vec![
+        (9, polynomial("x^2-2")),
+        (3, polynomial("x^2-2-1/1000000000000000000000000000000")),
+        (1, polynomial("(x^2-2)^3")),
+    ];
+    let roots = isolate_union(input).unwrap();
+    assert_eq!(roots.len(), 4);
+    assert_eq!(
+        roots.iter().map(|r| r.polynomial).collect::<Vec<_>>(),
+        vec![3, 1, 1, 3]
+    );
+    assert!(
+        roots
+            .windows(2)
+            .all(|pair| pair[0].interval.1 < pair[1].interval.0)
+    );
+}
+
+#[test]
 fn sturm_excludes_endpoint_roots_and_counts_repeated_roots_once() {
     let p = polynomial("x^2*(x-1)^2*(x+1)^3");
     for (lo, hi, count) in [

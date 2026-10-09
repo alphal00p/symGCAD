@@ -25,12 +25,15 @@ use crate::{
     domain::{
         CertificateOptions, DomainCertificate, certify_nonzero, derive_domain, verify_certificate,
     },
-    projection::{Projection, ProjectionStep, discriminant, exact_resultant},
+    projection::{
+        Projection, ProjectionStep, discriminant, exact_resultant, exact_resultant_with_statistics,
+    },
 };
 
 const CACHE_SCHEMA: u32 = 1;
-// Invalidate every prefix and operation produced by the former automatic
-// resultant dispatch, which could use Monte Carlo CRT early termination.
+// Exact semantic identity remains compatible with deterministic Ducos v2.
+// Earlier automatic/Monte Carlo keys stay invalid. Kernel performance metadata
+// is separate so an exact algorithm change does not discard completed algebra.
 const ALGORITHM: &str = "symgcad-deterministic-integer-ducos-gproj-v2";
 static TEMP_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
@@ -76,6 +79,8 @@ pub struct CacheMetrics {
     pub factor_misses: usize,
     pub resultant_hits: usize,
     pub resultant_misses: usize,
+    pub interpolated_resultants: usize,
+    pub interpolation_images: usize,
     pub discriminant_hits: usize,
     pub discriminant_misses: usize,
     pub factor_disk_hits: usize,
@@ -112,6 +117,10 @@ pub struct ProjectionCheckpoint {
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct OptimizedProjectionReport {
+    /// Historical reports omit this performance metadata; cache semantics are
+    /// still the deterministic-v2 identity above.
+    #[serde(default)]
+    pub resultant_kernel: String,
     pub cache: CacheMetrics,
     pub checkpoints: Vec<ProjectionCheckpoint>,
     #[serde(default)]
@@ -360,7 +369,10 @@ impl<'a> ProjectionCache<'a> {
             resultant_cache: HashMap::new(),
             discriminant_cache: HashMap::new(),
             prefix_cache: HashMap::new(),
-            report: OptimizedProjectionReport::default(),
+            report: OptimizedProjectionReport {
+                resultant_kernel: "deterministic-ducos-bivariate-newton-v1".into(),
+                ..Default::default()
+            },
         }
     }
 
@@ -775,7 +787,12 @@ impl<'a> ProjectionCache<'a> {
             self.report.cache.resultant_misses += 1;
             self.capture_operation(&request, None)?;
             let started = Instant::now();
-            let value = canonical(&exact_resultant(a, b, variable)?);
+            let (exact, interpolation) = exact_resultant_with_statistics(a, b, variable)?;
+            if let Some(stats) = interpolation {
+                self.report.cache.interpolated_resultants += 1;
+                self.report.cache.interpolation_images += stats.images;
+            }
+            let value = canonical(&exact);
             let elapsed = started.elapsed().as_secs_f64();
             self.capture_operation(&request, Some((std::slice::from_ref(&value), elapsed)))?;
             self.save_operation(&request, std::slice::from_ref(&value), None, elapsed)?;
