@@ -1527,9 +1527,14 @@ fn completed_subtree_reuse_preserves_conditional_proofs_and_reduces_restarts() {
         &[],
         &["x", "y", "z-x", "w^2-z", "w-y", "w-2"],
     );
-    let cached = solve_local(&p, &LocalOptions::default()).unwrap();
+    let cached_options = LocalOptions {
+        reuse_learned_cuts: false,
+        ..Default::default()
+    };
+    let cached = solve_local(&p, &cached_options).unwrap();
     let plain_options = LocalOptions {
         reuse_completed_subtrees: false,
+        reuse_learned_cuts: false,
         ..Default::default()
     };
     let plain = solve_local(&p, &plain_options).unwrap();
@@ -1550,7 +1555,7 @@ fn completed_subtree_reuse_preserves_conditional_proofs_and_reduces_restarts() {
         &p,
         &LocalOptions {
             max_refinements: budget,
-            ..Default::default()
+            ..cached_options.clone()
         },
     )
     .unwrap();
@@ -1566,11 +1571,12 @@ fn completed_subtree_reuse_preserves_conditional_proofs_and_reduces_restarts() {
     .unwrap();
     assert_eq!(plain_limited.solution.status, Status::Incomplete);
     assert!(verify_local(&plain_limited).is_err());
-    let cached_solution = local_solution(&p, &LocalOptions::default());
+    let cached_solution = local_solution(&p, &cached_options);
     let plain_solution = local_solution(
         &p,
         &LocalOptions {
             reuse_completed_subtrees: false,
+            reuse_learned_cuts: false,
             ..Default::default()
         },
     );
@@ -1697,4 +1703,187 @@ fn configured_local_caps_survive_homogeneous_reduction_and_toml() {
         assert!(result.cells.is_empty());
         assert!(symgcad::verify::verify(&result).is_err());
     }
+}
+
+#[test]
+fn descartes_one_tracks_the_positive_root_across_negative_root_collisions() {
+    use symgcad::output::RootIndexDomain;
+    for polynomial in ["z^3+a*z^2-z-1", "z^5+a*z^4-z-1"] {
+        let p = problem(&["a", "z"], &["a>0", "z>0"], &[polynomial]);
+        let result = local(&p);
+        assert_eq!(result.solution.cells.len(), 2);
+        assert!(local_report(&result).descartes_one_discriminants_omitted > 0);
+        assert!(
+            result
+                .solution
+                .cells
+                .iter()
+                .all(|cell| cell.axes[0].sample == "1")
+        );
+        let root = result.solution.cells[0].axes[1].upper.as_ref().unwrap();
+        assert_eq!(root.index_domain, RootIndexDomain::Positive);
+        assert_eq!(root.index, 0);
+        assert_eq!(root.lower, "1");
+        assert_eq!(root.upper, "1");
+    }
+    let p = problem(&["a", "z"], &["a>0", "z>0"], &["z^3+a*z^2-z-1"]);
+    let positive = local_solution(&p, &LocalOptions::default());
+    let ordinary = local_solution(
+        &p,
+        &LocalOptions {
+            descartes_one: false,
+            ..Default::default()
+        },
+    );
+    assert!(ordinary.cells.len() > positive.cells.len());
+    assert_eq!(
+        symgcad::comparison::compare_generic(&positive, &ordinary, &symgcad::Limits::default())
+            .unwrap()
+            .equivalent,
+        Some(true)
+    );
+}
+
+#[test]
+fn descartes_one_refines_zero_coefficients_and_rejects_wrong_scope_or_index() {
+    use symgcad::output::RootIndexDomain;
+    let p = problem(&["a", "z"], &["z>0"], &["z^3+a*z^2-z-1"]);
+    let result = local(&p);
+    assert!(
+        result
+            .solution
+            .cells
+            .iter()
+            .all(|cell| cell.axes[0].sample != "0")
+    );
+    fn alter(node: &mut LocalNode, change_index: bool) -> bool {
+        if let LocalNode::Stack { roots, sectors, .. } = node {
+            if let Some(root) = roots
+                .iter_mut()
+                .find(|r| r.index_domain == RootIndexDomain::Positive)
+            {
+                if change_index {
+                    root.index = 1;
+                } else {
+                    root.index_domain = RootIndexDomain::Real;
+                }
+                return true;
+            }
+            return sectors
+                .iter_mut()
+                .any(|s| alter(&mut s.child, change_index));
+        }
+        false
+    }
+    for change_index in [false, true] {
+        let mut changed = result.clone();
+        let LocalEvidence::Local { root, .. } = &mut changed.evidence else {
+            panic!()
+        };
+        assert!(alter(root, change_index));
+        assert!(verify_local(&changed).is_err());
+    }
+    let mut changed = result.clone();
+    let LocalEvidence::Local { options, .. } = &mut changed.evidence else {
+        panic!()
+    };
+    options.descartes_one = false;
+    assert!(verify_local(&changed).is_err());
+}
+
+#[test]
+fn positive_root_scope_survives_positive_homogeneous_scaling() {
+    use symgcad::output::RootIndexDomain;
+    let mut p = problem(
+        &["a", "r", "z"],
+        &["a>0", "r>0", "z>0"],
+        &["z^3+a*r*z^2-r^2*z-r^3"],
+    );
+    p.solver.engine = "local".into();
+    p.solver.homogeneous_block = vec!["r".into(), "z".into()];
+    p.solver.homogeneous_anchor = Some("r".into());
+    let result = symgcad::solver::solve(&p).unwrap();
+    assert_eq!(result.status, Status::CompleteGeneric);
+    assert!(symgcad::verify::verify(&result).unwrap().verified);
+    let reduced = &result.homogeneous.as_ref().unwrap().reduced;
+    let root = result.cells[0].axes[2].upper.as_ref().unwrap();
+    let original = reduced.cells[0].axes[1].upper.as_ref().unwrap();
+    assert_eq!(root.index_domain, RootIndexDomain::Positive);
+    assert_eq!(root.index_domain, original.index_domain);
+    assert_eq!(root.index, original.index);
+}
+
+#[test]
+fn old_evidence_defaults_to_full_real_indices_and_original_discriminants() {
+    let p = problem(&["a", "z"], &["a>0", "z>0"], &["z^3+a*z^2-z-1"]);
+    let result = solve_local(
+        &p,
+        &LocalOptions {
+            descartes_one: false,
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    let mut value = serde_json::to_value(&result).unwrap();
+    value["evidence"]["options"]
+        .as_object_mut()
+        .unwrap()
+        .remove("descartes_one");
+    assert!(
+        !serde_json::to_string(&value)
+            .unwrap()
+            .contains("index_domain")
+    );
+    let restored: local_projection::LocalSolveResult = serde_json::from_value(value).unwrap();
+    assert!(verify_local(&restored).unwrap().verified);
+    let LocalEvidence::Local { options, .. } = &restored.evidence else {
+        panic!()
+    };
+    assert!(!options.descartes_one);
+}
+
+#[test]
+fn global_trace_rejects_positive_scope_and_merge_does_not_confuse_ordinals() {
+    use symgcad::output::{Axis, Cell, LiftTrace, RootBound, RootIndexDomain};
+    let mut global = symgcad::solver::solve(&problem(&["x"], &[], &["x-1"])).unwrap();
+    let Some(LiftTrace::Stack { roots, .. }) = &mut global.trace else {
+        panic!()
+    };
+    roots[0].index_domain = RootIndexDomain::Positive;
+    assert!(symgcad::verify::verify(&global).is_err());
+    let left = RootBound {
+        polynomial: 0,
+        index: 0,
+        index_domain: RootIndexDomain::Real,
+        lower: "-1".into(),
+        upper: "-1".into(),
+    };
+    let right = RootBound {
+        polynomial: 0,
+        index: 0,
+        index_domain: RootIndexDomain::Positive,
+        lower: "1".into(),
+        upper: "1".into(),
+    };
+    let cells = vec![
+        Cell {
+            axes: vec![Axis {
+                variable: "x".into(),
+                sample: "-2".into(),
+                lower: None,
+                upper: Some(left),
+            }],
+            signs: vec![1],
+        },
+        Cell {
+            axes: vec![Axis {
+                variable: "x".into(),
+                sample: "2".into(),
+                lower: Some(right),
+                upper: None,
+            }],
+            signs: vec![1],
+        },
+    ];
+    assert_eq!(symgcad::solver::merge(&cells).len(), 2);
 }

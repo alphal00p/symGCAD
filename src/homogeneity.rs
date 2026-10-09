@@ -260,6 +260,7 @@ fn shifted_bound(bound: &Option<RootBound>) -> Option<RootBound> {
     bound.as_ref().map(|b| RootBound {
         polynomial: b.polynomial + 1,
         index: b.index,
+        index_domain: b.index_domain,
         lower: b.lower.clone(),
         upper: b.upper.clone(),
     })
@@ -297,6 +298,7 @@ fn reconstructed_cell(
                 lower: Some(RootBound {
                     polynomial: 0,
                     index: 0,
+                    index_domain: crate::output::RootIndexDomain::Real,
                     lower: "0".into(),
                     upper: "0".into(),
                 }),

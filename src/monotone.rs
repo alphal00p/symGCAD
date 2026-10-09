@@ -216,7 +216,7 @@ fn base_problem(
         .filter(|g| !g.is_empty())
         .collect();
     base.solver.order.retain(|v| !peeled.contains(v.as_str()));
-    base.solver.engine = "optimized".into();
+    base.solver.engine = problem.solver.monotone_base_engine.clone();
     base.solver.positivity = true;
     base.solver.homogeneous_anchor = None;
     base.solver.homogeneous_block.clear();
@@ -390,6 +390,7 @@ fn zero_bound(polynomial: usize) -> RootBound {
     RootBound {
         polynomial,
         index: 0,
+        index_domain: crate::output::RootIndexDomain::Real,
         lower: "0".into(),
         upper: "0".into(),
     }

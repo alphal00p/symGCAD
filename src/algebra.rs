@@ -283,20 +283,87 @@ pub fn factors_checked(polynomials: &[Poly]) -> Result<Vec<Poly>> {
     factor_basis(polynomials, true)
 }
 
+/// A primitive polynomial A*y+B of degree one in y is irreducible over the
+/// remaining rational polynomial ring by Gauss's lemma. If A is a monomial,
+/// gcd(A,B)=1 is decided exactly from the exponent map: each variable dividing
+/// A must be absent from at least one term of B. Rational coefficients are
+/// units, so their magnitude and sign do not affect this argument.
+///
+/// Return a witness variable only for this inexpensive sufficient condition.
+/// The work bound makes this a predictable precheck for large projection sets.
+pub(crate) fn primitive_linear_variable(polynomial: &Poly) -> Option<usize> {
+    const MAX_EXPONENT_VISITS: usize = 1_000_000;
+    if polynomial.is_constant()
+        || polynomial.nterms().checked_mul(polynomial.nvars())? > MAX_EXPONENT_VISITS
+    {
+        return None;
+    }
+    let mut occurrences = vec![0u8; polynomial.nvars()];
+    let mut witness_term = vec![0usize; polynomial.nvars()];
+    let mut minimum = vec![u32::MAX; polynomial.nvars()];
+    for (term, exponents) in polynomial.exponents_iter().enumerate() {
+        for (variable, &exponent) in exponents.iter().enumerate() {
+            minimum[variable] = minimum[variable].min(exponent);
+            if exponent > 0 {
+                // Two means either multiple y terms or a nonlinear y term.
+                occurrences[variable] = if exponent > 1 {
+                    2
+                } else {
+                    (occurrences[variable] + 1).min(2)
+                };
+                witness_term[variable] = term;
+            }
+        }
+    }
+    for (variable, &count) in occurrences.iter().enumerate() {
+        if count != 1 {
+            continue;
+        }
+        let coefficient = polynomial
+            .exponents_iter()
+            .nth(witness_term[variable])
+            .expect("recorded monomial exists");
+        if coefficient
+            .iter()
+            .enumerate()
+            .all(|(other, &power)| other == variable || power == 0 || minimum[other] == 0)
+        {
+            return Some(variable);
+        }
+    }
+    None
+}
+
+/// Common factorization path for baseline, cached projection and verification.
+/// The sufficient linear certificate avoids a generic multivariate factor call;
+/// all unsupported cases retain Symbolica's complete factorization algorithm.
+pub(crate) fn factor_polynomial(polynomial: &Poly, check: bool) -> Result<Vec<(Poly, usize)>> {
+    ensure!(
+        !polynomial.is_zero(),
+        "zero has no finite irreducible factorization"
+    );
+    let factorization = if primitive_linear_variable(polynomial).is_some() {
+        vec![(polynomial.clone(), 1)]
+    } else {
+        polynomial.factor()
+    };
+    if check {
+        let mut reconstructed = polynomial.one();
+        for (factor, multiplicity) in &factorization {
+            reconstructed = &reconstructed * &factor.pow(*multiplicity);
+        }
+        ensure!(&reconstructed == polynomial, "factor reconstruction failed");
+    }
+    Ok(factorization)
+}
+
 fn factor_basis(polynomials: &[Poly], check: bool) -> Result<Vec<Poly>> {
     let mut unique = HashSet::new();
     for polynomial in polynomials {
         if polynomial.is_constant() {
             continue;
         }
-        let factorization = polynomial.factor();
-        if check {
-            let mut reconstructed = polynomial.one();
-            for (factor, multiplicity) in &factorization {
-                reconstructed = &reconstructed * &factor.pow(*multiplicity);
-            }
-            ensure!(&reconstructed == polynomial, "factor reconstruction failed");
-        }
+        let factorization = factor_polynomial(polynomial, check)?;
         for (factor, _) in factorization {
             if !factor.is_constant() {
                 unique.insert(canonical(&factor));
@@ -358,6 +425,60 @@ mod tests {
         assert_eq!(
             canonical(&a.parse("-3*x/7-6*y/7").unwrap()),
             a.parse("x+2*y").unwrap()
+        );
+    }
+
+    #[test]
+    fn primitive_parameter_linear_factorization_is_exact() {
+        let a = Algebra::new(&["x".into(), "y".into(), "z".into()]).unwrap();
+        for expression in [
+            "x",
+            "-7*x/3",
+            "x+y",
+            "x^2*y+x+1",
+            "x^2*y+x*z+z^2",
+            "-3*(x^2*y+x+1)/7",
+            "x*y^2+1",
+        ] {
+            let p = a.parse(expression).unwrap();
+            assert!(primitive_linear_variable(&p).is_some(), "{expression}");
+            let fs = factor_polynomial(&p, true).unwrap();
+            assert_eq!(fs, vec![(p.clone(), 1)]);
+            assert_eq!(factors_checked(&[p.clone()]).unwrap(), vec![canonical(&p)]);
+        }
+    }
+
+    #[test]
+    fn nonprimitive_linear_and_nonlinear_inputs_use_complete_factorization() {
+        let a = Algebra::new(&["x".into(), "y".into(), "z".into()]).unwrap();
+        for expression in [
+            "0",
+            "7/3",
+            "x*y",
+            "x*y+x",
+            "x^2*y+x*z",
+            "x*y+y^2",
+            "(x+1)*(y+1)",
+            "(x-y)^2",
+            "x^2+y^2+1",
+        ] {
+            let p = a.parse(expression).unwrap();
+            assert!(primitive_linear_variable(&p).is_none(), "{expression}");
+            if p.is_zero() {
+                assert!(factor_polynomial(&p, true).is_err());
+            } else {
+                factor_polynomial(&p, true).unwrap();
+            }
+        }
+        let p = a.parse("-5*x^2*(y+1)^3/7").unwrap();
+        let fs = factor_polynomial(&p, true).unwrap();
+        assert!(
+            fs.iter()
+                .any(|(p, m)| *m == 3 && canonical(p) == a.parse("y+1").unwrap())
+        );
+        assert!(
+            fs.iter()
+                .any(|(p, m)| *m == 2 && canonical(p) == a.parse("x").unwrap())
         );
     }
 

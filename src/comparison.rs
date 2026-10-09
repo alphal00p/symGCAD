@@ -67,8 +67,15 @@ fn contains(
                 .max()
                 .unwrap_or_else(Rational::zero)
                 + Rational::from(2);
-            let count =
-                roots_in_open_interval(&fiber, &(-cauchy).min(x.clone() - Rational::one()), x);
+            let count = match bound.index_domain {
+                crate::output::RootIndexDomain::Real => {
+                    roots_in_open_interval(&fiber, &(-cauchy).min(x.clone() - Rational::one()), x)
+                }
+                crate::output::RootIndexDomain::Positive if x > &Rational::zero() => {
+                    roots_in_open_interval(&fiber, &Rational::zero(), x)
+                }
+                crate::output::RootIndexDomain::Positive => 0,
+            };
             // count roots strictly below x: x is above root i iff count > i.
             if (count > bound.index) != lower {
                 return Ok(false);

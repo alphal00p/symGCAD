@@ -11,11 +11,27 @@ pub enum Status {
     ComputationFailure,
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RootIndexDomain {
+    #[default]
+    Real,
+    Positive,
+}
+impl RootIndexDomain {
+    fn is_real(&self) -> bool {
+        *self == Self::Real
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RootBound {
     pub polynomial: usize,
-    /// Zero-based index among distinct real roots on the current fiber.
+    /// Zero-based index among distinct roots in index_domain on the fiber.
     pub index: usize,
+    /// Positive indices count strictly positive roots; zero is never included.
+    #[serde(default, skip_serializing_if = "RootIndexDomain::is_real")]
+    pub index_domain: RootIndexDomain,
     pub lower: String,
     pub upper: String,
 }

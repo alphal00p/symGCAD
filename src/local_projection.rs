@@ -51,6 +51,7 @@ use std::{
 };
 use symbolica::prelude::*;
 
+mod learned_cuts;
 mod subtree_cache;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -86,6 +87,14 @@ pub struct LocalOptions {
     /// Reuse exact completed local subtrees at the same rational prefix.
     #[serde(default)]
     pub reuse_completed_subtrees: bool,
+    /// Reproject previously discovered cuts when an unfinished stack is revisited.
+    /// The hints contain no accepted cells or unverified proof obligations.
+    #[serde(default)]
+    pub reuse_learned_cuts: bool,
+    /// Use one Descartes sign variation to certify a simple positive root.
+    /// Historical evidence retains its full discriminant obligations.
+    #[serde(default)]
+    pub descartes_one: bool,
 }
 fn one_cancellation() -> usize {
     1
@@ -103,6 +112,8 @@ impl Default for LocalOptions {
             positive_pair_cancellations: 2,
             batch_sibling_discovery: true,
             reuse_completed_subtrees: true,
+            reuse_learned_cuts: true,
+            descartes_one: true,
         }
     }
 }
@@ -148,6 +159,7 @@ pub struct LocalReport {
     pub positive_ray_stacks: usize,
     pub quadratic_discriminants_omitted: usize,
     pub descartes_discriminants_omitted: usize,
+    pub descartes_one_discriminants_omitted: usize,
     pub pair_separation_candidates: usize,
     pub pair_resultants_omitted: usize,
     pub second_cancellation_pairs_omitted: usize,
@@ -158,6 +170,14 @@ pub struct LocalReport {
     pub subtree_cache_peak_bytes: usize,
     pub subtree_cache_retained_nodes: usize,
     pub subtree_cache_peak_nodes: usize,
+    pub learned_cut_cache_hits: usize,
+    pub learned_cut_cache_misses: usize,
+    pub learned_cut_seeded_cuts: usize,
+    pub learned_cut_cache_evictions: usize,
+    pub learned_cut_cache_retained_bytes: usize,
+    pub learned_cut_cache_peak_bytes: usize,
+    pub learned_cut_cache_retained_ids: usize,
+    pub learned_cut_cache_retained_entries: usize,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -235,6 +255,12 @@ pub enum PositiveRayCase {
     /// positive roots without any claim about the number of negative roots.
     DescartesZero {
         coefficient_sign: i8,
+    },
+    /// Exactly one sign variation counts one positive root with multiplicity,
+    /// hence a simple root. Negative collisions do not affect this graph.
+    /// Its exported index counts positive roots, not all real roots.
+    DescartesOne {
+        coefficient_signs: Vec<i8>,
     },
     /// Higher degrees retain ordinary lc/discriminant guards plus p(0).
     FullReal,
@@ -544,8 +570,8 @@ fn positive_coordinate(normalized: &NormalizedProblem, variable: usize) -> Optio
     })
 }
 
-/// Isolate exactly the boundary 0 and the positive roots. Full-real root
-/// ordinals are retained by isolating before discarding negative roots.
+/// Isolate exactly the boundary 0 and the positive roots. Internal full-real
+/// ordinals are retained; `local_bounds` exports positive ordinals when needed.
 fn stack_roots(
     algebra: &Algebra,
     polynomials: &[Poly],
@@ -588,10 +614,45 @@ fn stack_roots(
     Ok(roots)
 }
 
+fn local_bounds(
+    roots: &[FiberRoot],
+    ray: Option<&PositiveRayProjection>,
+) -> Result<Vec<RootBound>> {
+    let positive_ids: BTreeSet<_> = ray
+        .into_iter()
+        .flat_map(|r| &r.rules)
+        .filter_map(|r| {
+            matches!(r.case, PositiveRayCase::DescartesOne { .. }).then_some(r.polynomial)
+        })
+        .collect();
+    for id in &positive_ids {
+        ensure!(
+            roots.iter().filter(|r| r.polynomial == *id).count() == 1,
+            "Descartes-one cut does not have exactly one positive root"
+        );
+    }
+    roots
+        .iter()
+        .map(|root| {
+            let mut output = bound(root);
+            if positive_ids.contains(&root.polynomial) {
+                ensure!(
+                    root.interval.0 > Rational::zero(),
+                    "positive root index requires a strictly positive root"
+                );
+                output.index_domain = crate::output::RootIndexDomain::Positive;
+                output.index = 0;
+            }
+            Ok(output)
+        })
+        .collect()
+}
+
 /// Generic positive-ray delineability. All coefficient signs used here are
 /// returned as ancestor obligations; a sample alone is never a certificate.
 /// Quadratic negative-root collisions are harmless only in the explicitly
-/// rootless case. Full-real boundary indices are invariant in every other case.
+/// rootless case. The one-variation case exports a positive-root ordinal;
+/// full-real boundary indices remain invariant in the remaining cases.
 fn positive_projection_raw(
     algebra: &Algebra,
     polynomials: &[Poly],
@@ -602,6 +663,7 @@ fn positive_projection_raw(
     coordinate: usize,
     pair_separation: bool,
     pair_cancellations: usize,
+    descartes_one: bool,
     pair_seconds: &mut f64,
     operations: &mut impl ProjectionOperations,
 ) -> Result<(
@@ -713,6 +775,18 @@ fn positive_projection_raw(
                         polynomial: id,
                         case: PositiveRayCase::DescartesZero {
                             coefficient_sign: leading_sign,
+                        },
+                    });
+                    continue;
+                }
+                let signs: Vec<_> = values.iter().map(sign).collect();
+                if descartes_one && signs.windows(2).filter(|w| w[0] != w[1]).count() == 1 {
+                    raw.extend(coefficients.into_iter().map(|(coefficient, _)| coefficient));
+                    bearing.push(id);
+                    rules.push(PositiveRayRule {
+                        polynomial: id,
+                        case: PositiveRayCase::DescartesOne {
+                            coefficient_signs: signs,
                         },
                     });
                     continue;
@@ -995,6 +1069,8 @@ struct Builder<'a> {
     guard_certificate_index: HashMap<(usize, usize), Option<usize>>,
     /// Successful conditional proofs, scoped to this immutable problem/map.
     completed_subtrees: subtree_cache::CompletedSubtrees,
+    /// Incomplete discoveries are only hints; every seeded stack is rebuilt.
+    learned_cuts: learned_cuts::LearnedCuts,
 }
 #[derive(Serialize, Deserialize)]
 struct Built {
@@ -1020,6 +1096,7 @@ impl Builder<'_> {
         report.phases = self.operations.phases.clone();
         report.elapsed_seconds = self.started.elapsed().as_secs_f64();
         self.completed_subtrees.report(&mut report);
+        self.learned_cuts.report(&mut report);
         report
     }
     fn publish(&mut self, force: bool) -> Result<()> {
@@ -1213,6 +1290,7 @@ impl Builder<'_> {
                     coordinate,
                     self.options.positive_pair_separation,
                     self.options.positive_pair_cancellations,
+                    self.options.descartes_one,
                     &mut pair_seconds,
                     &mut self.operations,
                 )?;
@@ -1244,6 +1322,11 @@ impl Builder<'_> {
                     .rules
                     .iter()
                     .filter(|r| matches!(r.case, PositiveRayCase::DescartesZero { .. }))
+                    .count();
+                self.report.descartes_one_discriminants_omitted += ray
+                    .rules
+                    .iter()
+                    .filter(|r| matches!(r.case, PositiveRayCase::DescartesOne { .. }))
                     .count();
                 (bearing, raw, pairs, omitted, seconds, Some(ray))
             } else {
@@ -1301,6 +1384,9 @@ impl Builder<'_> {
         }
         let level = prefix.len();
         let mut cuts = self.input_levels[level].clone();
+        if self.options.reuse_learned_cuts {
+            self.learned_cuts.seed(prefix, &mut cuts);
+        }
         loop {
             self.check_budget()?;
             let cut_list: Vec<_> = cuts.iter().copied().collect();
@@ -1358,7 +1444,13 @@ impl Builder<'_> {
                         }
                         additions.insert(id);
                     }
-                    Err(stop) => return Err(stop),
+                    Err(stop) => {
+                        if self.options.reuse_learned_cuts && !additions.is_empty() {
+                            cuts.extend(additions);
+                            self.learned_cuts.remember(prefix, &cuts);
+                        }
+                        return Err(stop);
+                    }
                     Ok(child) => {
                         for id in child.required {
                             match highest(&self.polynomials[id]) {
@@ -1417,15 +1509,19 @@ impl Builder<'_> {
                         "nongeneric sample remained on an existing stack cut".into(),
                     ));
                 }
+                if self.options.reuse_learned_cuts {
+                    self.learned_cuts.remember(prefix, &cuts);
+                }
                 self.report.refinements += 1;
                 continue;
             }
             self.guard_nonzero(&required, prefix)?;
+            let root_bounds = local_bounds(&roots, projection.positive_ray.as_ref())?;
             let built = Built {
                 node: LocalNode::Stack {
                     cuts: cut_list,
                     projection,
-                    roots: roots.iter().map(bound).collect(),
+                    roots: root_bounds,
                     sectors,
                     required_below: required.iter().copied().collect(),
                 },
@@ -1642,6 +1738,10 @@ pub fn solve_local(problem: &Problem, options: &LocalOptions) -> Result<LocalSol
             ((problem.limits.memory_mib as usize).saturating_mul(1024 * 1024) / 16)
                 .min(32 * 1024 * 1024),
         ),
+        learned_cuts: learned_cuts::LearnedCuts::new(
+            ((problem.limits.memory_mib as usize).saturating_mul(1024 * 1024) / 128)
+                .min(8 * 1024 * 1024),
+        ),
     };
     builder.report.active_phase = "input_factorization".into();
     builder.publish(true)?;
@@ -1779,6 +1879,7 @@ struct Checker<'a> {
     positive_ray: bool,
     positive_pair_separation: bool,
     positive_pair_cancellations: usize,
+    descartes_one: bool,
 }
 impl Checker<'_> {
     fn check_registry(&self) -> Result<()> {
@@ -1927,6 +2028,7 @@ impl Checker<'_> {
                         ray.coordinate,
                         self.positive_pair_separation,
                         self.positive_pair_cancellations,
+                        self.descartes_one,
                         &mut 0.0,
                         &mut IndependentOperations,
                     )?;
@@ -2011,7 +2113,7 @@ impl Checker<'_> {
                     projection.positive_ray.as_ref(),
                     &projection.root_bearing,
                 )?;
-                let expected_roots: Vec<_> = actual_roots.iter().map(bound).collect();
+                let expected_roots = local_bounds(&actual_roots, projection.positive_ray.as_ref())?;
                 ensure!(
                     roots == &expected_roots,
                     "incomplete or changed local root union"
@@ -2181,6 +2283,7 @@ pub fn verify_local_parts(
         positive_ray: options.positive_ray,
         positive_pair_separation: options.positive_pair_separation,
         positive_pair_cancellations: options.positive_pair_cancellations,
+        descartes_one: options.descartes_one,
     };
     checker.check_registry()?;
     ensure!(

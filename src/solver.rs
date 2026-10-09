@@ -186,6 +186,7 @@ pub fn bound(root: &FiberRoot) -> RootBound {
     RootBound {
         polynomial: root.polynomial,
         index: root.index,
+        index_domain: crate::output::RootIndexDomain::Real,
         lower: root.interval.0.to_string(),
         upper: root.interval.1.to_string(),
     }
@@ -460,7 +461,9 @@ pub fn solve(problem: &Problem) -> Result<SolveResult> {
             &crate::local_projection::LocalOptions {
                 batch_sibling_discovery: problem.solver.local_batch_siblings,
                 reuse_completed_subtrees: problem.solver.local_reuse_subtrees,
+                reuse_learned_cuts: problem.solver.local_reuse_learned_cuts,
                 positive_pair_cancellations: problem.solver.local_pair_cancellations,
+                descartes_one: problem.solver.local_descartes_one,
                 max_refinements: problem
                     .solver
                     .local_max_refinements
@@ -570,7 +573,9 @@ pub fn solve(problem: &Problem) -> Result<SolveResult> {
 fn same_boundary(a: &Option<RootBound>, b: &Option<RootBound>) -> bool {
     match (a, b) {
         (None, None) => true,
-        (Some(a), Some(b)) => a.polynomial == b.polynomial && a.index == b.index,
+        (Some(a), Some(b)) => {
+            a.polynomial == b.polynomial && a.index == b.index && a.index_domain == b.index_domain
+        }
         _ => false,
     }
 }

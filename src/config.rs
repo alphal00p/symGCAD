@@ -34,6 +34,9 @@ pub struct SolverOptions {
     pub positivity: bool,
     pub input_positivity: bool,
     pub prune_operations: bool,
+    /// Engine for the exact endpoint problem after monotone peeling.
+    #[serde(skip_serializing_if = "is_optimized")]
+    pub monotone_base_engine: String,
     /// Batch tentative sibling discoveries in the experimental local engine.
     /// Omit the default to keep ordinary inputs readable by older workers.
     #[serde(skip_serializing_if = "is_true")]
@@ -41,9 +44,15 @@ pub struct SolverOptions {
     /// Reuse small completed conditional subtrees within a local solve.
     #[serde(skip_serializing_if = "is_true")]
     pub local_reuse_subtrees: bool,
+    /// Retain bounded learned cuts as hints; every stack is re-certified.
+    #[serde(skip_serializing_if = "is_true")]
+    pub local_reuse_learned_cuts: bool,
     /// Bounded leading-term cancellations used to separate positive roots.
     #[serde(skip_serializing_if = "is_two")]
     pub local_pair_cancellations: usize,
+    /// Use a positive-root ordinal for Descartes-one local cuts.
+    #[serde(skip_serializing_if = "is_true")]
+    pub local_descartes_one: bool,
     /// Per-problem local search limits; omitted values keep LocalOptions defaults.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub local_max_refinements: Option<usize>,
@@ -68,9 +77,12 @@ impl Default for SolverOptions {
             positivity: false,
             input_positivity: false,
             prune_operations: false,
+            monotone_base_engine: "optimized".into(),
             local_batch_siblings: true,
             local_reuse_subtrees: true,
+            local_reuse_learned_cuts: true,
             local_pair_cancellations: 2,
+            local_descartes_one: true,
             local_max_refinements: None,
             local_max_nodes: None,
             homogeneous_block: vec![],
@@ -84,6 +96,9 @@ fn is_true(value: &bool) -> bool {
 }
 fn is_two(value: &usize) -> bool {
     *value == 2
+}
+fn is_optimized(value: &str) -> bool {
+    value == "optimized"
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -180,6 +195,10 @@ impl Problem {
         ensure!(
             ["baseline", "optimized", "monotone", "local"].contains(&self.solver.engine.as_str()),
             "unknown engine"
+        );
+        ensure!(
+            ["optimized", "local"].contains(&self.solver.monotone_base_engine.as_str()),
+            "monotone_base_engine must be optimized or local"
         );
         ensure!(
             ["none", "aggressive"].contains(&self.solver.merge.as_str()),

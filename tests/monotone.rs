@@ -205,3 +205,58 @@ fn verifier_rejects_missing_children_or_tampered_exact_proofs() {
     let decoded = serde_json::from_str(&text).unwrap();
     assert!(verify(&decoded).unwrap().verified);
 }
+
+#[test]
+fn local_endpoint_proofs_compose_with_monotone_and_positive_scale_reconstruction() {
+    let mut p = problem(
+        &["r", "x", "y", "z"],
+        &["r>0", "x>0", "y>0", "z>0"],
+        "z^2+r*z+x^2-3*x*y+y^2-r^2",
+    );
+    p.solver.homogeneous_block = p.variables.clone();
+    p.solver.homogeneous_anchor = Some("r".into());
+    let reference = solve(&p).unwrap();
+    p.solver.monotone_base_engine = "local".into();
+    let restored = Problem::from_toml(&toml::to_string(&p).unwrap()).unwrap();
+    let result = solve(&restored).unwrap();
+    assert_eq!(result.status, Status::CompleteGeneric);
+    let reduced = &result.homogeneous.as_ref().unwrap().reduced;
+    let monotone = reduced.monotone.as_ref().unwrap();
+    assert_eq!(monotone.steps.len(), 1);
+    assert_eq!(monotone.steps[0].variable, "z");
+    assert!(monotone.base.local.is_some());
+    assert!(verify(&result).unwrap().verified);
+    let compared = symgcad::comparison::compare_generic(&result, &reference, &p.limits).unwrap();
+    assert_eq!(compared.equivalent, Some(true));
+    let mut bad = result.clone();
+    bad.homogeneous
+        .as_mut()
+        .unwrap()
+        .reduced
+        .monotone
+        .as_mut()
+        .unwrap()
+        .base
+        .cells
+        .pop();
+    assert!(verify(&bad).is_err());
+    p.solver.local_max_refinements = Some(0);
+    p.solver.local_max_nodes = Some(1);
+    let incomplete = solve(&p).unwrap();
+    assert_eq!(incomplete.status, Status::Incomplete);
+    assert!(verify(&incomplete).is_err());
+}
+
+#[test]
+fn monotone_base_engine_is_explicit_and_cannot_recurse() {
+    let mut p = problem(&["z"], &["z>0"], "z^2+z-1");
+    assert!(
+        serde_json::to_value(&p).unwrap()["solver"]
+            .get("monotone_base_engine")
+            .is_none()
+    );
+    for engine in ["monotone", "baseline", "unknown"] {
+        p.solver.monotone_base_engine = engine.into();
+        assert!(p.validate().is_err());
+    }
+}

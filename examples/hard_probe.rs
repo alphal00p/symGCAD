@@ -60,6 +60,12 @@ struct Args {
     /// Same-build ablation of completed conditional-subtree reuse.
     #[arg(long)]
     no_reuse_subtrees: bool,
+    /// Rebuild unfinished stack cut inventories for the learned-hint ablation.
+    #[arg(long)]
+    no_learned_cuts: bool,
+    /// Retain high-degree discriminants instead of using Descartes one variation.
+    #[arg(long)]
+    no_descartes_one: bool,
     /// Same-build ablation of a second exact pair cancellation.
     #[arg(long, default_value_t = 2, value_parser = clap::value_parser!(u8).range(1..=2))]
     pair_cancellations: u8,
@@ -107,6 +113,8 @@ struct Campaign {
     engine: String,
     batch_siblings: bool,
     reuse_subtrees: bool,
+    reuse_learned_cuts: bool,
+    descartes_one: bool,
     pair_cancellations: usize,
     local_max_refinements: Option<usize>,
     local_max_nodes: Option<usize>,
@@ -165,6 +173,8 @@ fn run_trial(campaign: &Campaign, trial: Trial) -> Result<Record> {
     problem.solver.engine = campaign.engine.clone();
     problem.solver.local_batch_siblings = campaign.batch_siblings;
     problem.solver.local_reuse_subtrees = campaign.reuse_subtrees;
+    problem.solver.local_reuse_learned_cuts = campaign.reuse_learned_cuts;
+    problem.solver.local_descartes_one = campaign.descartes_one;
     problem.solver.local_pair_cancellations = campaign.pair_cancellations;
     problem.solver.local_max_refinements = campaign
         .local_max_refinements
@@ -366,6 +376,8 @@ fn main() -> Result<()> {
         engine: args.engine.clone(),
         batch_siblings: !args.no_batch_siblings,
         reuse_subtrees: !args.no_reuse_subtrees,
+        reuse_learned_cuts: !args.no_learned_cuts,
+        descartes_one: !args.no_descartes_one,
         pair_cancellations: args.pair_cancellations as usize,
         local_max_refinements: args.local_max_refinements,
         local_max_nodes: args.local_max_nodes,

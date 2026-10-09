@@ -18,10 +18,10 @@ use std::{
 use anyhow::{Context, Result, ensure};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use symbolica::{domains::InternalOrdering, poly::factor::Factorize, prelude::*};
+use symbolica::{domains::InternalOrdering, prelude::*};
 
 use crate::{
-    algebra::{Algebra, MAX_DEGREE, Poly, canonical, factors_checked},
+    algebra::{Algebra, MAX_DEGREE, Poly, canonical, factor_polynomial, factors_checked},
     domain::{
         CertificateOptions, DomainCertificate, certify_nonzero, derive_domain, verify_certificate,
     },
@@ -708,7 +708,7 @@ impl<'a> ProjectionCache<'a> {
                     self.capture_operation(&request, None)?;
                     let started = Instant::now();
                     let mut factorization = HashMap::<Poly, usize>::new();
-                    for (factor, multiplicity) in polynomial.factor() {
+                    for (factor, multiplicity) in factor_polynomial(&polynomial, false)? {
                         if !factor.is_constant() {
                             *factorization.entry(canonical(&factor)).or_default() += multiplicity;
                         }

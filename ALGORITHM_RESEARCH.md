@@ -110,10 +110,16 @@ This argument has a real applicability boundary for unrestricted symbolic kinema
 ## Local positive-ray projection and conditional proof reuse
 
 On an originally constrained positive axis, quadratic coefficient signs and
-Descartes' zero-variation case can certify root counts without a discriminant.
-Every coefficient-sign premise is propagated to the ancestor; root indices
-remain indices among all distinct real roots. Mixed-sign higher-degree cases
-retain their ordinary projection obligations.
+Descartes' zero- and one-variation cases can certify root counts without a
+discriminant. One variation counts exactly one positive root with multiplicity,
+so that root is simple. Every nonzero coefficient-sign premise is propagated
+to the ancestor; its nonzero leading and constant coefficients prevent escape
+through infinity or zero. Negative-root collisions do not affect this positive
+root function. Its exported ordinal therefore counts positive roots explicitly;
+an ordinal among all real roots would be unsound here. Other cases retain full
+real-root ordinals and their required projection obligations. Tests cross a
+negative-root collision, compare exact common refinements, and reject altered
+ordinal domains or coefficient-sign evidence.
 
 For two cuts `p,q`, an exact polynomial combination `R=A*p+B*q` that is nonzero
 for every positive axis value rules out a shared positive root. The implemented
@@ -134,6 +140,20 @@ guards are propagated again; reusing its samples at a different prefix would
 not. The in-process cache therefore stores only completed, bounded-size proof
 trees and preserves every obligation. Independent replay still checks the
 resulting full decomposition without relying on the cache.
+
+Unfinished stacks may separately retain bounded learned-cut hints at the same
+exact prefix. Ancestor refinement previously discarded these hints and repeated
+their discovery. Reusing a cut set entails no sign or coverage assertion: the
+entire seeded set is projected again and every sector regenerated. FIFO bounds
+apply to entry count, polynomial IDs, prefix bit size, and retained bytes.
+
+Some large symbolic inputs are linear in a kinematic parameter with a monomial
+leading coefficient. For `A*y+B`, degree one over the fraction field and
+`gcd(A,B)=1` prove irreducibility over the rational polynomial ring by Gauss's
+lemma. When A is a monomial, the gcd condition is an exact exponent-map check.
+The shared factoring path uses this bounded sufficient test and otherwise
+retains Symbolica factorization. This targets measured input-factorization
+stalls; it is not a probabilistic irreducibility assumption.
 
 The kinematic shear `u=s+t+13/9` has positive unit slope and is triangular when
 s precedes t. Exact substitutions reduce the symbolic A446 polynomial from 78

@@ -12,7 +12,7 @@ use std::{
 };
 use symbolica::{poly::factor::Factorize, prelude::*};
 use symgcad::{
-    algebra::{Algebra, Poly, canonical},
+    algebra::{Algebra, Poly, canonical, rational},
     optimized_projection::{AlgebraOperation, OperationCapture},
 };
 
@@ -35,6 +35,17 @@ struct Args {
     strategy: Strategy,
     #[arg(long)]
     output: Option<PathBuf>,
+    /// Parse and report exact operand sizes without executing the operation.
+    #[arg(long)]
+    inspect_only: bool,
+    /// Exact earlier-coordinate values for inexpensive coefficient-sign inspection.
+    #[arg(
+        long,
+        value_delimiter = ',',
+        allow_hyphen_values = true,
+        requires = "inspect_only"
+    )]
+    prefix: Vec<String>,
 }
 
 fn resultant(left: &Poly, right: &Poly, variable: usize, strategy: Strategy) -> Poly {
@@ -68,6 +79,47 @@ fn main() -> Result<()> {
         .iter()
         .map(|p| algebra.parse(p))
         .collect::<Result<Vec<_>>>()?;
+    if args.inspect_only {
+        let mut coefficient_signs = Vec::new();
+        if !args.prefix.is_empty() {
+            let variable = capture
+                .variable
+                .ok_or_else(|| anyhow::anyhow!("prefix inspection requires a variable"))?;
+            let prefix = args
+                .prefix
+                .iter()
+                .map(|s| rational(s))
+                .collect::<Result<Vec<_>>>()?;
+            for polynomial in &polynomials {
+                let fiber = algebra.specialize_univariate(polynomial, variable, &prefix)?;
+                let signs: Vec<_> = fiber
+                    .coefficients()
+                    .iter()
+                    .map(symgcad::solver::sign)
+                    .collect();
+                let nonzero: Vec<_> = signs.iter().copied().filter(|&s| s != 0).collect();
+                let vanished_coefficient = polynomial
+                    .to_univariate_polynomial_list(variable)
+                    .iter()
+                    .any(|(coefficient, _)| coefficient.replace_all(&prefix).is_zero());
+                coefficient_signs.push(json!({"signs_low_to_high":signs,"positive_sign_variations":nonzero.windows(2).filter(|w|w[0]!=w[1]).count(),"nonzero_symbolic_coefficient_vanishes":vanished_coefficient}));
+            }
+        }
+        let report = json!({
+            "capture":args.capture,"capture_sha256":format!("{:x}",Sha256::digest(&bytes)),
+            "operation":capture.operation,"variable":capture.variable,"variables":algebra.names,
+            "input_hash":capture.input_hash,"input_terms":polynomials.iter().map(Poly::nterms).collect::<Vec<_>>(),
+            "input_degrees":polynomials.iter().map(|p|(0..p.nvars()).map(|v|p.degree(v)).collect::<Vec<_>>()).collect::<Vec<_>>(),
+            "coefficient_bits":polynomials.iter().map(|p|p.coefficients.iter().map(|c|c.numerator_ref().significant_bits().max(c.denominator_ref().significant_bits())).max().unwrap_or(0)).collect::<Vec<_>>(),
+            "prefix":args.prefix,"coefficient_signs":coefficient_signs,
+        });
+        let report = serde_json::to_string_pretty(&report)? + "\n";
+        if let Some(path) = args.output {
+            std::fs::write(path, &report)?;
+        }
+        print!("{report}");
+        return Ok(());
+    }
     ensure!(
         !matches!(args.strategy, Strategy::Formula)
             || capture.operation == AlgebraOperation::Discriminant,

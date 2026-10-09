@@ -27,6 +27,10 @@ fn check_root(
     level: usize,
     prefix: &[Rational],
 ) -> Result<(Rational, Rational)> {
+    ensure!(
+        root.index_domain == crate::output::RootIndexDomain::Real,
+        "ordinary global projection requires full-real root indices"
+    );
     let polynomial = polynomials
         .get(root.polynomial)
         .ok_or_else(|| anyhow!("invalid polynomial id"))?;
