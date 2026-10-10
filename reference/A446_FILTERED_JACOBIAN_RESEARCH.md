@@ -88,3 +88,19 @@ with strictly positive `D`, coefficient-nonnegative `C_V,C_G`, and a nonzero coe
 All 12 tested choices `D=(1+h)^j*b^k`, `j+k<=2`, with the two premise orders, remained inconclusive. The simplest attempt performs 22 exact cancellations and leaves 44 negative residual coefficients. Every attempted identity is reconstructed exactly and stored. Positive-leading-coefficient pseudo-division in `v` also failed the sufficient coefficient test: the quotient has 2729 terms with 36 negative coefficients, and the degree-at-most-two remainder has 2964 terms with 227 negative coefficients. These failures do not prove that the Jacobian vanishes; they establish only the limits of this bounded certificate portfolio.
 
 Final diagnostic: `artifacts/research/a446-filtered-jacobian-01/chart-v6.json`, SHA-256 `a3593c0277b458d946892e36f7a5541186a28cf7c921e18dfb6f243bab2e6d82`; process record `3ffb3ad01d3aee29e936ad27adbab91d989d05596a4f4811ee36fddee0f8b77a`; frozen executable `6a99104877374755d9e8c2b1b96140a2653936df943d8dae2dae20bb4fda192a`. All algebra and coefficient arithmetic are Symbolica; the Rust supervisor enforces a 120-second/2-GiB bound. The final diagnostic took about 10 seconds, with all attempts terminating normally. The helper's tests include exact exchange and chart identities, successful and failed coefficient-certificate examples, pseudo-division reconstruction, and the strict-complement counterexample above.
+
+## Exact squares and a limitation of the saved residuals
+
+`examples/a446_jacobian_sos.rs` replays those saved identities before attempting rational binomial-square extraction. For a negative monomial with exponent `e`, it searches positive terms at exponents `u,v` with `u+v=2e`. Each accepted cancellation is an explicit positive rational weight times a squared binomial times a positive monomial. Every resulting square decomposition and the full conditional identity are reconstructed with Symbolica. Several pairs may supply one cross coefficient; exact integer square-root bounds avoid treating a numerical square root as proof. Strictness requires a nonzero positive-coefficient residual, not merely a sum of squares.
+
+The first bounded portfolio completed 336 attempts in 44.9 seconds. Its best attempt removes four squares from the previously best residual, reducing 44 negative coefficients to 40. This remains inconclusive. The report is `artifacts/research/a446-jacobian-sos-01/report-v1.json`, SHA-256 `9fae108d69b2a9eb6696de5a1ad80c67c0b61ad72e7dc8b967c962b6ad9046a3`.
+
+The next diagnostic found an exact obstruction to this particular portfolio: **all 14 fixed saved residuals are negative** at the positive chart point
+
+```text
+(h,r,w,t,v,z)=(1/10,10,1/100,1/100,1/10,100).
+```
+
+Here `V<0` and `Q*V-4*x*y*T<0`. Therefore this point does **not** refute the desired conditional Jacobian inequality on `s>4`. It does prove that none of these fixed residuals can have a globally nonnegative square/coefficient decomposition, even after multiplication by a strictly positive polynomial. A useful next certificate must change the conditional multipliers or use the kinematic inequality more directly.
+
+The second report retains all exact rational values and input-identity checks: `artifacts/research/a446-jacobian-sos-01/report-v2.json`, SHA-256 `93c84c409018654b12b132f24dfded766e38a0d1bf98b7411ceb53fbbc3480af`; process record SHA-256 `35fb14836a9b5d2373eb799517cc47fab1c0027c310bb43d9dc2f3b410d715a2`. Its Rust-supervised run completed in 10.63 seconds with about 24 MiB RSS. The frozen helper SHA-256 is `4461862b7dbbb4042619469a6d25f1d6e6dd8f3037beab6a1e3274fd3d4d1293`; four exact tests pass. No production rule or original-problem completion follows from these experiments.
