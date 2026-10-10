@@ -28,6 +28,128 @@ struct Args {
     /// Check the source paper's one-mass self-energy determinant identities.
     #[arg(long)]
     graph_minors: bool,
+    /// Check the two massless-axis identities in the eight-variable Gluza33 graph.
+    #[arg(long)]
+    graph33_minors: bool,
+}
+
+fn graph33_minors(a: &Algebra, p: &Poly) -> Result<Value> {
+    ensure!(
+        a.names == ["x0", "x1", "x2", "x3", "x4", "x5", "x6", "x7"],
+        "source graph33 requires its original eight coordinates"
+    );
+    let ma = a.parse("x0+x2+x5+x6")?;
+    let mb = a.parse("-x0-x6")?;
+    let mc = a.parse("-x2")?;
+    let md = a.parse("x0+x1+x3+x6")?;
+    let me = a.parse("-x3")?;
+    let mf = a.parse("x2+x3+x4+x7")?;
+    let adj = [
+        [
+            &md * &mf - &me * &me,
+            &mc * &me - &mb * &mf,
+            &mb * &me - &mc * &md,
+        ],
+        [
+            &mc * &me - &mb * &mf,
+            &ma * &mf - &mc * &mc,
+            &mb * &mc - &ma * &me,
+        ],
+        [
+            &mb * &me - &mc * &md,
+            &mb * &mc - &ma * &me,
+            &ma * &md - &mb * &mb,
+        ],
+    ];
+    let u = &(&ma * &adj[0][0]) + &(&mb * &adj[0][1]) + (&mc * &adj[0][2]);
+    let j = [a.parse("x5+x6")?, a.parse("-x6")?, a.parse("x7")?];
+    let adj_j = adj
+        .iter()
+        .map(|row| {
+            row.iter()
+                .zip(&j)
+                .fold(p.zero(), |acc, (coefficient, component)| {
+                    &acc + &(coefficient * component)
+                })
+        })
+        .collect::<Vec<_>>();
+    let jt_adj_j = j
+        .iter()
+        .zip(&adj_j)
+        .fold(p.zero(), |acc, (component, value)| {
+            &acc + &(component * value)
+        });
+    let v = &a.parse("x5+x6+x7")? * &u - jt_adj_j;
+    let mass = a.parse("x0+x1+x2+x4+x6+x7")?;
+    ensure!(
+        &mass * &u - v.clone().mul_coeff(Rational::from(10)) == *p,
+        "graph33 momentum identity does not match exact fixture"
+    );
+    ensure!(
+        sign(&u) == 1,
+        "graph33 U is not strictly coefficient-positive"
+    );
+    let mut direct = Vec::new();
+    for (axis, loop_vector, external) in [(3, [0, 1, -1], 0), (5, [1, 0, 0], 1)] {
+        let mut h = u.clone().mul_coeff(Rational::from(external));
+        for (component, weight) in adj_j.iter().zip(loop_vector) {
+            h = &h - &component.clone().mul_coeff(Rational::from(weight));
+        }
+        let delta = &p.derivative(axis) * &u - p * &u.derivative(axis);
+        ensure!(
+            &delta + &(&h * &h).mul_coeff(Rational::from(10)) == p.zero(),
+            "graph33 massless Rayleigh identity failed"
+        );
+        direct.push(json!({"axis":a.names[axis],"H":a.format(&h),"H_terms":h.nterms(),"identity":"F_i*U-F*U_i = -10*H_i^2","identity_verified":true}));
+    }
+    let mut current = p.clone();
+    let mut guide = u.clone();
+    let mut chain = Vec::new();
+    for axis in [3, 5] {
+        ensure!(
+            current.degree(axis) == 1 && guide.degree(axis) == 1,
+            "graph33 chain is not linear"
+        );
+        let leading = current.derivative(axis);
+        let endpoint = current.replace(axis, &Rational::zero());
+        let c = guide.derivative(axis);
+        let d = guide.replace(axis, &Rational::zero());
+        ensure!(
+            sign(&c) == 1 && sign(&d) == 1,
+            "graph33 C/D positivity failed"
+        );
+        let comparison = &endpoint * &c - &leading * &d;
+        let factors = comparison.factor();
+        let rebuilt = factors
+            .iter()
+            .fold(comparison.one(), |acc, (factor, multiplicity)| {
+                &acc * &factor.pow(*multiplicity)
+            });
+        ensure!(
+            rebuilt == comparison,
+            "graph33 comparison reconstruction failed"
+        );
+        let known_sign = factors
+            .iter()
+            .filter(|(_, multiplicity)| multiplicity % 2 == 1)
+            .fold(1_i8, |acc, (factor, _)| acc * sign(factor));
+        ensure!(
+            comparison.is_zero() || known_sign == 1,
+            "graph33 comparison nonnegativity failed"
+        );
+        chain.push(json!({"axis":a.names[axis],"polynomial":a.format(&current),"guide":a.format(&guide),"leading":a.format(&leading),"endpoint":a.format(&endpoint),"C":a.format(&c),"D":a.format(&d),"comparison_BC_minus_AD":a.format(&comparison),"comparison_factors":factors.iter().map(|(q,m)|json!({"polynomial":a.format(q),"multiplicity":m,"coefficient_sign":sign(q)})).collect::<Vec<_>>(),"comparison_nonnegative":true,"C_D_strictly_positive":true,"identity_verified":true}));
+        current = leading;
+        guide = c;
+    }
+    let group_a = a.parse("x0+x2+x7")?;
+    let group_b = a.parse("x1+x4+x6")?;
+    let cone = &(&group_a * &group_a) + &(&group_b * &group_b)
+        - (&group_a * &group_b).mul_coeff(Rational::from(8));
+    ensure!(current == cone, "graph33 cone residual identity failed");
+    ensure!(guide == mass, "graph33 residual guide identity failed");
+    Ok(
+        json!({"source":"https://arxiv.org/html/2201.02576v2#A1.SS3","paper_propagator_to_fixture":["x5","x0","x6","x1","x2","x3","x4","x7"],"U":a.format(&u),"V":a.format(&v),"mass_sum":a.format(&mass),"F_equals_mass_U_minus_10V_verified":true,"direct_minors":direct,"negative_chain":chain,"residual":a.format(&current),"residual_guide":a.format(&guide),"residual_terms":current.nterms(),"residual_identity":"F_x3x5 = A^2-8*A*B+B^2; A=x0+x2+x7, B=x1+x4+x6","residual_identity_verified":true,"candidate_original_order":["x6","x1","x4","x0","x2","x7","x5","x3"],"scope":"Exact original graph and two-step comparison identities only; no reduced base decomposition or original coverage certificate."}),
+    )
 }
 
 fn graph_minors(a: &Algebra, p: &Poly) -> Result<Value> {
@@ -398,6 +520,9 @@ fn main() -> Result<()> {
         if args.graph_minors {
             command.arg("--graph-minors");
         }
+        if args.graph33_minors {
+            command.arg("--graph33-minors");
+        }
         let process = symgcad::benchmark::run_bounded(
             &mut command,
             &symgcad::Limits {
@@ -442,6 +567,18 @@ fn main() -> Result<()> {
     ensure!(targets.len() == 1, "exactly one target constraint required");
     // Original Gluza30 negative fixture normalizes to -F>0.
     let p = targets[0].clone().mul_coeff(Rational::from(-1));
+    if args.graph33_minors {
+        ensure!(
+            p.nterms() <= 256 && (0..p.nvars()).all(|v| p.degree(v) <= 2),
+            "bounded graph33 input required"
+        );
+        let report = json!({"source":args.input,"source_sha256":format!("{:x}",Sha256::digest(&bytes)),"polynomial":n.algebra.format(&p),"orientation_relative_normalized_target":-1,"graph":graph33_minors(&n.algebra,&p)?,"elapsed_seconds":started.elapsed().as_secs_f64(),"original_completion":false});
+        if let Some(parent) = args.output.parent() {
+            fs::create_dir_all(parent)?;
+        }
+        fs::write(&args.output, serde_json::to_vec_pretty(&report)?)?;
+        return Ok(());
+    }
     ensure!(
         p.nterms() <= 256 && (0..p.nvars()).all(|v| p.degree(v) == 1),
         "bounded multiaffine target required"
