@@ -14,7 +14,7 @@ fn unit_shift_fused_reference<F: Ring>(
             p.coefficient_ring().add_mul_assign(&mut left[j], &right[0], shift);
         }
     }
-    UnivariatePolynomial::from_coefficients(p.coefficient_ring(), coefficients, p.get_vars_ref().clone())
+    UnivariatePolynomial::from_coefficients(p.coefficient_ring(), coefficients, p.get_vars_ref().clone().into())
 }
 
 #[test]
