@@ -136,3 +136,27 @@ that command subsequently encountered one test assertion requiring the new
 and helper targets passed in
 `artifacts/base-univariate-resource-focused-03.log` (SHA-256
 `6c54464c6b61e6e669665c271556141cffdfe8bd65beac8165bcdda89a8ef31f`).
+
+The release from `9773999` built in 494 seconds with unchanged source hashes.
+Its executable SHA-256 is
+`acd80197327fb6c8dfe9454c47be6b9ecf26491d3b1755d01bf33deebd1f20b1`.
+Three fresh public-CLI solves and independent verifier processes accepted
+7, 4 and 3 cells respectively. The first two preserve all mathematical/export
+fields of the previous release's support-basis and two-parameter discriminant
+smokes. The third uses
+`(y^2-(2^12000*x+1)^2*(x-1)^3)^2` on `1<x<2`: its generated discriminant
+source has 24,002-bit coefficients, above the old 20,000-bit source ceiling.
+Evidence records the actual admitted source and exact block multiplicities
+two and three. All three exported cells have positive split sign, with both
+interior zero sheets retained as boundaries. These are correctness smokes,
+not benchmark repetitions or newly solved corpus problems.
+
+The complete smoke audit is
+`artifacts/shared-fibers-resource-release-smoke-01/audit.json`, SHA-256
+`95e0839d47215b91415a6f0cfdec6b1147734ba70a190fe5b29f2a0eee0b82e9`.
+Its separate metadata/provenance audit checked all 19 bound files and the
+exported root boundaries; SHA-256
+`5371fb6153cff6d14a5fa029b3bcc3fb9e19717e2577cb8da5e5673eca8ab4c4`.
+The immutable build manifest is
+`artifacts/shared-fibers-resource-release-build-01.json`, SHA-256
+`0374083b427c00c03693b7ce5205245f027472a59566e5219fa68832f8ca09a3`.
