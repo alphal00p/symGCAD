@@ -8,7 +8,7 @@
     in {
       devShells = forAllSystems (pkgs: {
         default = pkgs.mkShell {
-          packages = with pkgs; [ git rustc cargo rustfmt clippy gcc gnumake m4 pkg-config gmp mpfr time hyperfine perf valgrind typst noto-fonts libertinus ];
+          packages = with pkgs; [ git rustc cargo rustfmt clippy gcc gnumake m4 pkg-config gmp mpfr time util-linux hyperfine perf valgrind typst noto-fonts libertinus ];
           CARGO_BUILD_JOBS = "16";
           RUST_BACKTRACE = "1";
           TYPST_FONT_PATHS = "${pkgs.libertinus}/share/fonts:${pkgs.noto-fonts}/share/fonts";
@@ -17,7 +17,7 @@
           '';
         };
         reference = pkgs.mkShell {
-          packages = with pkgs; [ git gcc gnumake pkg-config flint gmp mpfr time (python3.withPackages (ps: with ps; [ sympy cython setuptools setuptools-scm pytest pip numpy scipy networkx pyyaml ])) ];
+          packages = with pkgs; [ git gcc gnumake pkg-config flint gmp mpfr time util-linux (python3.withPackages (ps: with ps; [ sympy cython setuptools setuptools-scm pytest pip numpy scipy networkx pyyaml ])) ];
         };
       });
     };
