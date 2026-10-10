@@ -19,6 +19,69 @@ use symgcad::{
 static NEXT_DIRECTORY: AtomicU64 = AtomicU64::new(0);
 
 #[test]
+fn binary_segmentation_is_opt_in_exact_and_reuses_operation_checkpoints() {
+    let directory = Directory::new();
+    let algebra = Algebra::new(&["s".into(), "x".into(), "t".into()]).unwrap();
+    // A repeated operand has exact zero resultant. Its dense support exercises
+    // the measured two-parameter dispatch without making the regression slow.
+    let p = algebra.parse("(x+s+t+1)^8+s*x+1").unwrap();
+    let options = OptimizedProjectionOptions {
+        checkpoint_dir: Some(directory.0.clone()),
+        binary_resultants: true,
+        ..Default::default()
+    };
+    let mut cache = ProjectionCache::new(&algebra, &options);
+    let result = cache.resultant(&p, &p, 1).unwrap();
+    assert!(result.is_zero());
+    assert_eq!(cache.report.cache.segmented_resultants, 1);
+    assert!(cache.report.cache.maximum_segmented_output_bits > 0);
+    assert!(
+        cache
+            .report
+            .resultant_kernel
+            .ends_with("binary-segmentation-v1")
+    );
+    assert_eq!(cache.resultant(&p, &p, 1).unwrap(), result);
+    assert_eq!(cache.report.cache.resultant_hits, 1);
+    assert_eq!(cache.report.cache.segmented_resultants, 1);
+
+    // Exact semantic cache identity is shared across backend choices. A fresh
+    // default worker can reuse the operation; proof replay remains separate.
+    let default_options = OptimizedProjectionOptions {
+        binary_resultants: false,
+        ..options
+    };
+    let mut fresh = ProjectionCache::new(&algebra, &default_options);
+    assert_eq!(fresh.resultant(&p, &p, 1).unwrap(), result);
+    assert_eq!(fresh.report.cache.resultant_disk_hits, 1);
+    assert_eq!(fresh.report.cache.segmented_resultants, 0);
+    assert!(
+        !fresh
+            .report
+            .resultant_kernel
+            .contains("binary-segmentation")
+    );
+}
+
+#[test]
+fn binary_segmentation_static_decline_retains_the_exact_backend() {
+    let algebra = Algebra::new(&["x".into(), "s".into()]).unwrap();
+    let p = algebra.parse("x^3+s*x-2").unwrap();
+    let q = algebra.parse("(s+1)*x-1").unwrap();
+    let mut cache = ProjectionCache::new(
+        &algebra,
+        &OptimizedProjectionOptions {
+            binary_resultants: true,
+            ..Default::default()
+        },
+    );
+    let expected = symgcad::projection::exact_resultant_ducos(&p, &q, 0).unwrap();
+    assert_eq!(cache.resultant(&p, &q, 0).unwrap(), canonical(&expected));
+    assert_eq!(cache.report.cache.segmented_resultants, 0);
+    assert_eq!(cache.report.cache.resultant_misses, 1);
+}
+
+#[test]
 fn historical_optimized_results_without_interpolation_metadata_still_verify() {
     let mut problem = symgcad::Problem {
         variables: vec!["s".into(), "x".into()],
@@ -36,6 +99,8 @@ fn historical_optimized_results_without_interpolation_metadata_still_verify() {
     let metrics = report["cache"].as_object_mut().unwrap();
     metrics.remove("interpolated_resultants");
     metrics.remove("interpolation_images");
+    metrics.remove("segmented_resultants");
+    metrics.remove("maximum_segmented_output_bits");
     let restored: symgcad::output::SolveResult = serde_json::from_value(json).unwrap();
     assert!(
         restored

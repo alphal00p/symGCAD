@@ -98,6 +98,7 @@ fn projection_options(problem: &Problem) -> Result<OptimizedProjectionOptions> {
     Ok(OptimizedProjectionOptions {
         checkpoint_dir: problem.solver.checkpoint_dir.clone(),
         memory_cache_bytes: problem.solver.cache_memory_mib * 1024 * 1024,
+        binary_resultants: problem.solver.binary_resultants,
         progress_path: std::env::var_os("SYMGCAD_PROGRESS_PATH").map(std::path::PathBuf::from),
         capture_dir: std::env::var_os("SYMGCAD_CAPTURE_DIR").map(std::path::PathBuf::from),
         domain_fingerprint: serde_json::to_string(&(

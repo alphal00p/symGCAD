@@ -53,6 +53,8 @@ pub struct OptimizedProjectionOptions {
     /// hard bound, including transient Symbolica allocations and the result.
     pub memory_cache_bytes: usize,
     pub max_checkpoint_bytes: usize,
+    /// Opt-in exact binary segmentation for statically bounded pair resultants.
+    pub binary_resultants: bool,
     /// Include the complete normalized domain when domain certificates are
     /// enabled by the caller. The default algorithm does not use a domain.
     pub domain_fingerprint: String,
@@ -67,6 +69,7 @@ impl Default for OptimizedProjectionOptions {
             max_capture_bytes: 16 * 1024 * 1024,
             memory_cache_bytes: 128 * 1024 * 1024,
             max_checkpoint_bytes: 512 * 1024 * 1024,
+            binary_resultants: false,
             domain_fingerprint: "unrestricted".into(),
         }
     }
@@ -81,6 +84,8 @@ pub struct CacheMetrics {
     pub resultant_misses: usize,
     pub interpolated_resultants: usize,
     pub interpolation_images: usize,
+    pub segmented_resultants: usize,
+    pub maximum_segmented_output_bits: usize,
     pub discriminant_hits: usize,
     pub discriminant_misses: usize,
     pub factor_disk_hits: usize,
@@ -370,7 +375,11 @@ impl<'a> ProjectionCache<'a> {
             discriminant_cache: HashMap::new(),
             prefix_cache: HashMap::new(),
             report: OptimizedProjectionReport {
-                resultant_kernel: "deterministic-ducos-bivariate-newton-v1".into(),
+                resultant_kernel: if options.binary_resultants {
+                    "deterministic-ducos-bivariate-newton-v1-binary-segmentation-v1".into()
+                } else {
+                    "deterministic-ducos-bivariate-newton-v1".into()
+                },
                 ..Default::default()
             },
         }
@@ -787,11 +796,36 @@ impl<'a> ProjectionCache<'a> {
             self.report.cache.resultant_misses += 1;
             self.capture_operation(&request, None)?;
             let started = Instant::now();
-            let (exact, interpolation) = exact_resultant_with_statistics(a, b, variable)?;
-            if let Some(stats) = interpolation {
-                self.report.cache.interpolated_resultants += 1;
-                self.report.cache.interpolation_images += stats.images;
-            }
+            // A static applicability decline permits the ordinary backend.
+            // Once segmentation starts, errors/cancellation propagate: do not
+            // spend the remaining worker budget on an unbounded second attempt.
+            let segmented = if self.options.binary_resultants {
+                crate::resultant_segmentation::try_resultant(
+                    a,
+                    b,
+                    variable,
+                    &crate::resultant_segmentation::Options::default(),
+                    || Ok(()),
+                )?
+            } else {
+                None
+            };
+            let exact = if let Some((exact, statistics)) = segmented {
+                self.report.cache.segmented_resultants += 1;
+                self.report.cache.maximum_segmented_output_bits = self
+                    .report
+                    .cache
+                    .maximum_segmented_output_bits
+                    .max(statistics.plan.output_bit_bound);
+                exact
+            } else {
+                let (exact, interpolation) = exact_resultant_with_statistics(a, b, variable)?;
+                if let Some(stats) = interpolation {
+                    self.report.cache.interpolated_resultants += 1;
+                    self.report.cache.interpolation_images += stats.images;
+                }
+                exact
+            };
             let value = canonical(&exact);
             let elapsed = started.elapsed().as_secs_f64();
             self.capture_operation(&request, Some((std::slice::from_ref(&value), elapsed)))?;

@@ -6,8 +6,8 @@ use serde_json::json;
 use sha2::{Digest, Sha256};
 use std::{
     fs::File,
-    io::{BufWriter, Write},
-    path::PathBuf,
+    io::{BufWriter, Read, Write},
+    path::{Path, PathBuf},
     process::Command,
     time::Instant,
 };
@@ -27,6 +27,8 @@ enum Strategy {
     Crt,
     /// Production exact low-degree discriminant identities.
     Formula,
+    /// Opt-in exact binary segmentation with the production static size limits.
+    BinarySegmentation,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, ValueEnum)]
@@ -98,6 +100,9 @@ struct Args {
     collapse_sum: Vec<String>,
     #[arg(long)]
     output: Option<PathBuf>,
+    /// Compare the exact signed/scaled polynomial to a saved prototype result.
+    #[arg(long, conflicts_with = "inspect_only")]
+    expected_result: Option<PathBuf>,
     /// Parse and report exact operand sizes without executing the operation.
     #[arg(long)]
     inspect_only: bool,
@@ -283,10 +288,23 @@ fn positive_root_diagnostics(
     )
 }
 
-fn resultant(left: &Poly, right: &Poly, variable: usize, strategy: Strategy) -> Poly {
+fn resultant(left: &Poly, right: &Poly, variable: usize, strategy: Strategy) -> Result<Poly> {
+    if matches!(strategy, Strategy::BinarySegmentation) {
+        return symgcad::resultant_segmentation::try_resultant(
+            left,
+            right,
+            variable,
+            &symgcad::resultant_segmentation::Options::default(),
+            || Ok(()),
+        )?
+        .map(|(polynomial, _)| polynomial)
+        .ok_or_else(|| {
+            anyhow::anyhow!("binary segmentation declined the static applicability limits")
+        });
+    }
     let left = left.to_univariate(variable);
     let right = right.to_univariate(variable);
-    match strategy {
+    Ok(match strategy {
         Strategy::Auto => left.resultant_auto(&right),
         Strategy::IntegerDucos => left.resultant_ducos_integer(&right),
         Strategy::RationalDucos => left.resultant(&right),
@@ -294,7 +312,84 @@ fn resultant(left: &Poly, right: &Poly, variable: usize, strategy: Strategy) -> 
         Strategy::Primitive => left.resultant_primitive(&right),
         Strategy::Crt => left.resultant_crt(&right),
         Strategy::Formula => unreachable!("formula strategy is discriminant-only"),
-    }
+        Strategy::BinarySegmentation => unreachable!("handled before conversion"),
+    })
+}
+
+fn expected_polynomial(
+    bytes: &[u8],
+    algebra: &Algebra,
+    input_hash: &str,
+    operation: AlgebraOperation,
+) -> Result<(Poly, serde_json::Value)> {
+    ensure!(
+        operation != AlgebraOperation::Factor,
+        "expected-result comparison requires a resultant or discriminant"
+    );
+    let saved: serde_json::Value = serde_json::from_slice(bytes)?;
+    ensure!(
+        saved["schema_version"] == 1,
+        "unsupported expected-result schema"
+    );
+    ensure!(
+        saved["input_hash"].as_str() == Some(input_hash),
+        "expected-result input hash differs"
+    );
+    ensure!(
+        saved["operation"] == serde_json::to_value(operation)?,
+        "expected-result operation differs"
+    );
+    let expression = saved["result"]
+        .as_str()
+        .ok_or_else(|| anyhow::anyhow!("expected-result polynomial absent"))?;
+    let polynomial_hash = format!("{:x}", Sha256::digest(expression.as_bytes()));
+    ensure!(
+        saved["result_sha256"].as_str() == Some(polynomial_hash.as_str()),
+        "expected-result polynomial checksum differs"
+    );
+    Ok((
+        algebra.parse(expression)?,
+        json!({"file_sha256":format!("{:x}",Sha256::digest(bytes)),
+            "polynomial_sha256":polynomial_hash,"input_hash":input_hash,"operation":operation}),
+    ))
+}
+
+fn load_expected(
+    path: &Path,
+    algebra: &Algebra,
+    input_hash: &str,
+    operation: AlgebraOperation,
+) -> Result<(Poly, serde_json::Value)> {
+    const MAX_BYTES: u64 = 64 * 1024 * 1024;
+    let file = File::open(path)?;
+    let metadata = file.metadata()?;
+    ensure!(
+        metadata.is_file() && metadata.len() <= MAX_BYTES,
+        "expected-result file exceeds bounds"
+    );
+    let mut bytes = Vec::new();
+    file.take(MAX_BYTES + 1).read_to_end(&mut bytes)?;
+    ensure!(
+        bytes.len() as u64 <= MAX_BYTES,
+        "expected-result file grew beyond cap"
+    );
+    let (polynomial, mut provenance) = expected_polynomial(&bytes, algebra, input_hash, operation)?;
+    provenance["path"] = json!(path);
+    Ok((polynomial, provenance))
+}
+
+fn compare_expected(
+    output: &[Poly],
+    expected: &(Poly, serde_json::Value),
+) -> Result<serde_json::Value> {
+    ensure!(
+        output.len() == 1 && output[0] == expected.0,
+        "output differs from expected exact signed/scaled polynomial"
+    );
+    let mut provenance = expected.1.clone();
+    provenance["exactly_equal"] = json!(true);
+    provenance["comparison"] = json!("exact polynomial equality including rational scale and sign");
+    Ok(provenance)
 }
 
 fn reverse_variable(p: &Poly, variable: usize) -> Result<Poly> {
@@ -327,6 +422,43 @@ fn reverse_variable(p: &Poly, variable: usize) -> Result<Poly> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn expected_result_binds_inputs_and_preserves_exact_scale_and_sign() {
+        let a = Algebra::new(&["a".into(), "x".into()]).unwrap();
+        let expression = "-3/7*(a+1)";
+        let saved = json!({"schema_version":1,"input_hash":"original-input",
+            "operation":"resultant","result":expression,
+            "result_sha256":format!("{:x}",Sha256::digest(expression.as_bytes()))});
+        let bytes = serde_json::to_vec(&saved).unwrap();
+        let expected =
+            expected_polynomial(&bytes, &a, "original-input", AlgebraOperation::Resultant).unwrap();
+        assert_eq!(
+            compare_expected(&[a.parse(expression).unwrap()], &expected).unwrap()["exactly_equal"],
+            true
+        );
+        // These have the same canonical zero set but are not the same resultant.
+        assert!(compare_expected(&[a.parse("3/7*(a+1)").unwrap()], &expected).is_err());
+        assert!(compare_expected(&[a.parse("a+1").unwrap()], &expected).is_err());
+        assert!(
+            expected_polynomial(&bytes, &a, "other-input", AlgebraOperation::Resultant).is_err()
+        );
+        assert!(
+            expected_polynomial(&bytes, &a, "original-input", AlgebraOperation::Discriminant)
+                .is_err()
+        );
+        let mut tampered = saved;
+        tampered["result"] = json!("a+1");
+        assert!(
+            expected_polynomial(
+                &serde_json::to_vec(&tampered).unwrap(),
+                &a,
+                "original-input",
+                AlgebraOperation::Resultant
+            )
+            .is_err()
+        );
+    }
 
     #[test]
     fn reciprocal_reversal_preserves_exact_discriminants_and_rejects_degree_loss() {
@@ -508,6 +640,11 @@ fn main() -> Result<()> {
             || capture.operation == AlgebraOperation::Discriminant,
         "formula strategy requires a discriminant capture"
     );
+    let expected = args
+        .expected_result
+        .as_ref()
+        .map(|path| load_expected(path, &algebra, &capture.input_hash, capture.operation))
+        .transpose()?;
     let start = Instant::now();
     ensure!(
         args.factor_start == FactorStart::Auto || capture.operation == AlgebraOperation::Factor,
@@ -566,7 +703,7 @@ fn main() -> Result<()> {
                 &polynomials[1],
                 variable,
                 args.strategy,
-            )]
+            )?]
         }
         AlgebraOperation::Discriminant => {
             ensure!(
@@ -592,7 +729,7 @@ fn main() -> Result<()> {
             } else if degree < 2 {
                 vec![if degree == 0 { p.zero() } else { p.one() }]
             } else {
-                let r = resultant(p, &p.derivative(variable), variable, args.strategy);
+                let r = resultant(p, &p.derivative(variable), variable, args.strategy)?;
                 let (mut disc, remainder) = r.quot_rem(&p.univariate_lcoeff(variable), false);
                 ensure!(remainder.is_zero(), "discriminant division was not exact");
                 if degree % 4 == 2 || degree % 4 == 3 {
@@ -603,6 +740,12 @@ fn main() -> Result<()> {
         }
     };
     let algebra_seconds = start.elapsed().as_secs_f64();
+    let comparison_started = Instant::now();
+    let expected_comparison = expected
+        .as_ref()
+        .map(|saved| compare_expected(&output, saved))
+        .transpose()?;
+    let comparison_seconds = comparison_started.elapsed().as_secs_f64();
     let mut canonical_output = output
         .iter()
         .map(|p| algebra.format(&canonical(p)))
@@ -622,6 +765,7 @@ fn main() -> Result<()> {
         "input_terms":polynomials.iter().map(Poly::nterms).collect::<Vec<_>>(),
         "input_degrees":polynomials.iter().map(|p|(0..p.nvars()).map(|v|p.degree(v)).collect::<Vec<_>>()).collect::<Vec<_>>(),
         "algebra_seconds":algebra_seconds,"output_terms":output.iter().map(Poly::nterms).sum::<usize>(),
+        "expected_comparison":expected_comparison,"comparison_seconds":comparison_seconds,
         "canonical_output_hash":format!("{:x}",Sha256::digest(serde_json::to_vec(&canonical_output)?)),
         "maximum_coefficient_bits":output.iter().flat_map(|p|&p.coefficients).map(|c|c.numerator_ref().significant_bits().max(c.denominator_ref().significant_bits())).max().unwrap_or(0)
     });

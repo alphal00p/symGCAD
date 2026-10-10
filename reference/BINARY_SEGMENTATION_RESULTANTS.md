@@ -1,7 +1,7 @@
 # Exact binary segmentation of captured resultants
 
-`examples/profile_kronecker_resultant.rs` is a research helper, not a production
-dispatch rule. It completed two captured symbolic A317/A318 pair resultants
+`examples/profile_kronecker_resultant.rs` is the original research helper. It
+completed two captured symbolic A317/A318 pair resultants
 that the direct exact backend did not finish in matched 60-second trials.
 The original decompositions remain unresolved.
 
@@ -23,6 +23,35 @@ discriminants: 60.08/60.12 seconds and 730.4/845.7 MiB peak RSS. Their output
 bit bounds were 533,306,592 and 704,431,992, compared with 45,113,995 and
 49,020,885 for the successful pair resultants. Applicability and cost caps
 would therefore be essential before considering a production path.
+
+## Opt-in solver path
+
+`src/resultant_segmentation.rs` implements this exact method with bounded
+preflight before denominator clearing and integer encoding. Set
+`solver.binary_resultants = true` to try it for pair resultants in optimized
+or local projection. The default is false. Initial limits admit exactly two
+surviving active parameters, elimination degrees at most 64, at most 4,096
+combined input terms, 65,536 output digits, and 64 million encoded output bits.
+Separate coefficient, common-denominator and total encoded-input limits apply.
+The two captured successful pairs fit these limits; larger discriminants do
+not. This size bound does not bound intermediate native memory or runtime,
+so the usual killable worker limits remain necessary.
+
+A static decline keeps the ordinary exact backend. Cancellation, runtime
+resource stops and failed exact reconstruction propagate without launching
+another expensive attempt. Completed results share the existing canonical
+operation caches; reports separately count segmented resultants and their
+largest output-bit bound. Baseline projection, low-degree discriminant
+identities and independent proof replay retain their existing backend.
+
+Seven focused module regressions compare exact signed rational results with
+ordinary Ducos, exercise variable maps, repeated/shared factors, centered
+decoding, static limits and cancellation. The full fast suite passes 489
+tests, including opt-in cache dispatch, static fallback and historical proof
+metadata. The profiling helper accepts `--strategy binary-segmentation` and
+`--expected-result FILE`: it binds the original input and compares the full
+signed polynomial with a saved, independently certified candidate before
+canonicalization. Its seven tests include rejection of altered signs/scales.
 
 ## Why reconstruction is exact
 

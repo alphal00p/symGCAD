@@ -2372,6 +2372,7 @@ pub fn solve_local(problem: &Problem, options: &LocalOptions) -> Result<LocalSol
     };
     let normalized = normalize(problem, &order)?;
     let cache_options = OptimizedProjectionOptions {
+        binary_resultants: problem.solver.binary_resultants,
         checkpoint_dir: options
             .cache_enabled
             .then(|| problem.solver.checkpoint_dir.clone())

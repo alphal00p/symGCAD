@@ -34,6 +34,10 @@ pub struct SolverOptions {
     pub search_local_progress: bool,
     pub checkpoint_dir: Option<PathBuf>,
     pub cache_memory_mib: usize,
+    /// Experimental exact binary segmentation of bounded two-parameter
+    /// pair resultants. Static declines retain the ordinary exact backend.
+    #[serde(skip_serializing_if = "is_false")]
+    pub binary_resultants: bool,
     pub positivity: bool,
     pub input_positivity: bool,
     pub prune_operations: bool,
@@ -124,6 +128,7 @@ impl Default for SolverOptions {
             search_local_progress: false,
             checkpoint_dir: None,
             cache_memory_mib: 128,
+            binary_resultants: false,
             positivity: false,
             input_positivity: false,
             prune_operations: false,
