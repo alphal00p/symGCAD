@@ -1,0 +1,85 @@
+# Integer fibers for exact root refinement
+
+The A414 CPU profile attributes 11.91% of sampled cycles to the exact sign
+evaluator, almost entirely its general rational-coefficient evaluation path.
+The existing integer Horner shortcut cannot help when a retained fiber has
+rational coefficients, even though a positive constant can clear them once.
+These inclusive percentages overlap other frames; see
+[the measured profile](A414_SUBTREE_CPU_PROFILE.md).
+
+Root-union construction now optionally divides a retained nonlinear fiber by
+the absolute value of its rational content. Symbolica performs the content
+and exact division. This produces a primitive integer polynomial with the
+same signs, roots, multiplicities and full-real root indices. It makes later
+sign bisections eligible for the existing integer evaluator.
+
+Normalization takes place **after** the original Symbolica isolation and
+square-free reduction, before interval endpoint correction and union
+refinement. Initial isolating intervals and all subsequent exact sign
+decisions are preserved. Linear and rootless fibers avoid this work; already
+integer fibers keep their coefficients. The public polynomial table, root
+ownership, exported bounds, verifier and proof obligations do not change.
+
+This is a bounded optional shortcut. At most 257 coefficients are considered.
+The maximum numerator bit length plus the sum of nonunit denominator bit
+lengths bounds each cleared coefficient. Candidates above 65,536 bits per
+coefficient or 8,388,608 total coefficient bits retain their original rational
+fibers. There is no floating-point decision or inferred nonvanishing premise.
+
+## Reconstructed-fiber experiment
+
+`examples/profile_rational_fibers.rs` reconstructs exact fibers from bounded
+reads of retained A414 factor records at a saved rational prefix. The actual
+selected map and prefix were independently checked against the A414 worker.
+This sample contains **two quadratic fibers and four nonexact roots**; 24 was
+only the requested selection ceiling. These are not claimed to be the actual
+simultaneous cuts of the profiled worker.
+
+A frozen helper using the original root code compared both paths within one
+process on CPU0. Five alternating repeats each perform 100 passes; input
+cloning, normalization and exact output comparisons are inside both timing
+loops. Root owners, indices and interval endpoints agree exactly on every
+pass. The second experiment starts with unchanged original isolation output,
+then performs 32 bisections per root, matching the proposed placement.
+
+| Work per repeat | Original, ms | Normalized, ms |
+| --- | ---: | ---: |
+| Complete reconstructed union, normalization before isolation | 14.554 | 12.822 |
+| Existing roots followed by 32 exact refinements | 35.449 | 12.899 |
+
+The full bounded worker completed in 0.872 seconds, with 10,436 KiB peak RSS.
+Only the second row measures normalization after unchanged isolation. The
+first row additionally tests an earlier normalization placement that is not
+used in production. These are development-build microbenchmarks with optimized
+dependencies, not fresh-process solve medians, native GCAD ratios or evidence
+of a newly completed original. The helper records its selected sources rather
+than assuming portable directory iteration; future executable comparisons
+must check identical source hashes, coefficients, prefix and variable map.
+
+| Evidence | SHA-256 |
+| --- | --- |
+| Frozen helper | `d219136417c101b525c8b2d3556635a47400d20c560d374526df9344f9ef421f` |
+| Five-repeat report | `1b785644a4aa68ea4c9511546ad11223161997cf3e07d5bc97e9f66c671287fc` |
+| Initial ten-pass report | `029fc62d65e13f683b77fc1f0910953fa28a37294029c4ed8a1905552175cb23` |
+| Original root source | `2b575f1fe61837f23d8015c0031e107b734e5287fcab2bfc41820c225a0d82e4` |
+| Saved prefix/progress | `df7b362708ddd4da3feccfc6ac0eb963782a41343107a01b20c4765890363b48` |
+
+The reports are under `artifacts/profile/rational-fibers-01/`; the frozen
+helper is `artifacts/bin/profile-rational-fibers-before-01`.
+
+## Correctness checks
+
+Focused regressions compare the new path with the original internal root
+construction, requiring identical owners, ordinals, complete intervals,
+16 further refinements and open-sector samples. Cases include negative
+rational scales, shared and extremely close roots, roots at isolation
+endpoints, repeated real and nonreal factors, duplicate external IDs and
+rootless fibers. Separate tests check exact positive scaling and bounded
+fallbacks. The initial focused run passed six tests, including the three new
+root regressions; its log is `artifacts/primitive-root-tests-01.log`, SHA-256
+`32e1ccef798db188b2a7125281336f85ab144c43a5c9ab52e66da5b0306d0d99`.
+
+With this change and the independently measured affine-prefix shortcut, the
+full fast suite passes **512 tests across 34 targets**. Its log is
+`artifacts/primitive-root-affine-fast-tests-01.log`, SHA-256
+`f5f98201ee335153f4ae1d11d08b847ff26a1c4407b706b2f2be83f33a48d02f`.

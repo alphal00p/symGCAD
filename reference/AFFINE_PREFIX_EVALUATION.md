@@ -64,3 +64,8 @@ large coefficients/coordinates, and the independent 17-axis decline. The helper
 also checks every measured value before timing. Failed early helper-compilation
 logs remain retained; final logs are `artifacts/affine-prefix-focused-tests-02.log`
 and `artifacts/affine-prefix-helper-tests-04.log`.
+
+The full fast suite subsequently passed **512 tests across 34 targets**, also
+covering the primitive-root-fiber change. Log:
+`artifacts/primitive-root-affine-fast-tests-01.log`, SHA-256
+`f5f98201ee335153f4ae1d11d08b847ff26a1c4407b706b2f2be83f33a48d02f`.

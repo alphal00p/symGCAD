@@ -5,6 +5,7 @@ use symbolica::prelude::*;
 
 mod collision;
 mod integer_sign;
+mod primitive_fiber;
 
 /// Symbolica's certified real isolator currently converts to u16 exponents.
 pub const MAX_ROOT_DEGREE: usize = u16::MAX as usize;
@@ -174,7 +175,15 @@ pub fn isolate_union(polynomials: Vec<(usize, UnivariatePolynomial<Q>)>) -> Resu
 /// and collision check; callers should throttle any filesystem output.
 pub fn isolate_union_observed(
     polynomials: Vec<(usize, UnivariatePolynomial<Q>)>,
+    observer: impl FnMut(&str, usize, &UnivariatePolynomial<Q>, usize) -> Result<()>,
+) -> Result<Vec<FiberRoot>> {
+    isolate_union_using(polynomials, observer, primitive_fiber::prepare)
+}
+
+fn isolate_union_using(
+    polynomials: Vec<(usize, UnivariatePolynomial<Q>)>,
     mut observer: impl FnMut(&str, usize, &UnivariatePolynomial<Q>, usize) -> Result<()>,
+    prepare_fiber: impl Fn(UnivariatePolynomial<Q>) -> UnivariatePolynomial<Q>,
 ) -> Result<Vec<FiberRoot>> {
     let mut roots = Vec::new();
     let mut sources = Vec::new();
@@ -208,6 +217,9 @@ pub fn isolate_union_observed(
         // Sign bisection only requires the *real* roots to be simple; repeated
         // nonreal factors never vanish on the real line and are harmless.
         let mut intervals = polynomial.isolate_real_root_intervals();
+        if intervals.is_empty() {
+            continue;
+        }
         let fiber = if intervals
             .iter()
             .any(|(_, _, multiplicity)| *multiplicity != 1)
@@ -219,6 +231,11 @@ pub fn isolate_union_observed(
         } else {
             polynomial
         };
+        // Keep Symbolica's original isolation intervals and square-free step.
+        // A positive constant rescaling of the retained fiber preserves every
+        // later sign, endpoint decision and full-real ordinal. Integer fibers
+        // use exact integer Horner arithmetic during repeated refinements.
+        let fiber = prepare_fiber(fiber);
         intervals.sort_by(|a, b| a.0.cmp(&b.0));
         for (index, (lo, hi, _)) in intervals.into_iter().enumerate() {
             let interval = open_or_exact_interval(&fiber, index, lo, hi)?;
@@ -385,6 +402,65 @@ pub fn sector_sample(lo: Option<&FiberRoot>, hi: Option<&FiberRoot>) -> Rational
                 b.interval.0.clone()
             };
             simplest_between(&lower, &upper)
+        }
+    }
+}
+
+#[cfg(test)]
+mod primitive_regressions {
+    use super::*;
+    use crate::algebra::Algebra;
+
+    #[test]
+    fn primitive_fibers_preserve_legacy_intervals_owners_and_samples() {
+        let algebra = Algebra::new(&["x".into()]).unwrap();
+        let cases = [
+            vec![
+                (9, "-7/13*(x^2-2)"),
+                (3, "(x^2-2-1/1000000000000000000000000000000)/17"),
+                (1, "(x^2-2)^3/19"),
+            ],
+            vec![(7, "(4*x^2-8*x)/13"), (2, "(x-1/7)^2*(x+2/3)^3/11")],
+            vec![(4, "(x^2+1)^2*(x^2-2)/17"), (4, "(x^2-2)*(x-3)/19")],
+            vec![(0, "(3*x-1)^2*(2*x^2-3)"), (1, "-2*x^2+3")],
+            vec![(0, "x^2/3+1/7")],
+        ];
+        for case in cases {
+            let input = case
+                .into_iter()
+                .map(|(id, text)| {
+                    (
+                        id,
+                        algebra
+                            .parse(text)
+                            .unwrap()
+                            .to_univariate_from_univariate(0),
+                    )
+                })
+                .collect::<Vec<_>>();
+            let mut legacy =
+                isolate_union_using(input.clone(), |_, _, _, _| Ok(()), |p| p).unwrap();
+            let mut current = isolate_union(input).unwrap();
+            assert_eq!(current.len(), legacy.len());
+            for (a, b) in current.iter_mut().zip(&mut legacy) {
+                assert_eq!(
+                    (a.polynomial, a.index, &a.interval),
+                    (b.polynomial, b.index, &b.interval)
+                );
+                assert!(a.fiber.coefficients().iter().all(|c| c.is_integer()));
+                for _ in 0..16 {
+                    refine_once(a);
+                    refine_once(b);
+                    assert_eq!(a.interval, b.interval);
+                }
+            }
+            for i in 0..=current.len() {
+                let prior = i.checked_sub(1);
+                assert_eq!(
+                    sector_sample(prior.and_then(|j| current.get(j)), current.get(i)),
+                    sector_sample(prior.and_then(|j| legacy.get(j)), legacy.get(i))
+                );
+            }
         }
     }
 }
