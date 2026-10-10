@@ -163,8 +163,11 @@ The encoding bound falls by approximately 18.13%. This is a modest static
 reduction, not measured algebra acceleration. A later native or encoded
 `Disc(Q)` experiment needs its own bounded authorization, complete signed
 reconstruction, and independent validation. The present work neither
-promotes a production cap nor relies on the separately computed, still
-independently-unverified original wide-segmentation candidate.
+promotes a production cap nor relies on the separately computed original
+wide-segmentation candidate.
+That original candidate was subsequently independently verified by the
+[complete signed grid](A377_D32_GRID_VERIFICATION.md); the affine gate
+remains an independent polynomial identity, with no transformed D result.
 
 Independent evidence review rehashed all source, binary, candidate, and
 capture bindings and checked the signed monomial-content product

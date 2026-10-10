@@ -52,6 +52,11 @@ struct Args {
     seconds: f64,
     #[arg(long, value_enum, default_value = "content")]
     stage: Stage,
+    /// Reconstruct only, from a bounded unverified proposal produced earlier.
+    #[arg(long, requires = "proposal_sha256")]
+    resume_proposal: Option<PathBuf>,
+    #[arg(long, requires = "resume_proposal")]
+    proposal_sha256: Option<String>,
     #[arg(long, hide = true)]
     worker: bool,
 }
@@ -323,6 +328,165 @@ fn reconstruct_factors(
     reconstruction(raw, &product, scale)?;
     Ok(())
 }
+// These proposals carry no square-freeness or exact-product authority.
+// Only complete reconstruction below can produce the two checked-product flags.
+fn factor_binding(report: &Value, scale: &Rational) -> Value {
+    json!({"capture_sha256":report["capture_sha256"],"candidate_sha256":report["candidate_sha256"],
+        "candidate_expression_sha256":report["candidate_expression_sha256"],"input_hash":report["input_hash"],
+        "full_variable_map":report["full_variable_map"],"canonical_expression_sha256":report["canonical"]["sparse_expression_sha256"],
+        "signed_scale":scale.to_string(),"signed_scale_sha256":hash(scale.to_string().as_bytes())})
+}
+fn sparse_text(p: &Poly) -> Result<String> {
+    let mut text = String::new();
+    for (i, (c, e)) in p.coefficients.iter().zip(p.exponents_iter()).enumerate() {
+        let term = format!("{}({c})*s^{}", if i == 0 { "" } else { "+" }, e[0]);
+        ensure!(
+            text.len()
+                .checked_add(term.len())
+                .is_some_and(|n| n <= MAX_BYTES),
+            "factor text cap"
+        );
+        text.push_str(&term);
+    }
+    Ok(text)
+}
+fn make_proposal(
+    source: &Poly,
+    factors: &mut [(Poly, usize)],
+    binding: &Value,
+    native_seconds: f64,
+) -> Result<Value> {
+    ensure!(
+        native_seconds.is_finite() && native_seconds >= 0. && native_seconds <= 3600.,
+        "native timing envelope"
+    );
+    product_preflight(source, factors)?;
+    let mut bytes = 0usize;
+    let mut rows = Vec::with_capacity(factors.len());
+    for (p, m) in factors {
+        let text = sparse_text(p)?;
+        bytes = bytes
+            .checked_add(text.len())
+            .ok_or_else(|| anyhow::anyhow!("proposal size overflow"))?;
+        ensure!(bytes <= MAX_BYTES, "aggregate proposal text cap");
+        rows.push(
+            json!({"expression_sha256":hash(text.as_bytes()),"expression":text,"multiplicity":m}),
+        );
+    }
+    Ok(
+        json!({"schema_version":1,"kind":"unverified_native_factor_proposal","binding":binding,
+        "native_square_free_seconds":native_seconds,"factors":rows,"exact_product_verified":false,
+        "square_freeness_certified":false,"original_coverage":false}),
+    )
+}
+fn load_proposal(
+    bytes: &[u8],
+    expected_hash: &str,
+    names: &[String],
+    source: &Poly,
+    binding: &Value,
+) -> Result<(Vec<(Poly, usize)>, f64)> {
+    ensure!(
+        bytes.len() <= MAX_BYTES && hash(bytes) == expected_hash,
+        "proposal bytes/hash"
+    );
+    let proposal: Value = serde_json::from_slice(bytes)?;
+    ensure!(
+        proposal["schema_version"] == 1
+            && proposal["kind"] == "unverified_native_factor_proposal"
+            && proposal["binding"] == *binding
+            && proposal["exact_product_verified"] == false
+            && proposal["square_freeness_certified"] == false,
+        "proposal type/source binding"
+    );
+    let seconds = proposal["native_square_free_seconds"]
+        .as_f64()
+        .ok_or_else(|| anyhow::anyhow!("native seconds"))?;
+    ensure!(
+        seconds.is_finite() && seconds >= 0. && seconds <= 3600.,
+        "proposal time bound"
+    );
+    let rows = proposal["factors"]
+        .as_array()
+        .ok_or_else(|| anyhow::anyhow!("proposal factors"))?;
+    ensure!(
+        !rows.is_empty() && rows.len() <= MAX_BLOCKS,
+        "proposal block cap"
+    );
+    // Preflight EVERY raw expression, multiplicity and aggregate coefficient
+    // storage before parsing any proposed Symbolica integer or polynomial.
+    let mut total_bits = 0u64;
+    let mut weighted_degree = 0u64;
+    for row in rows {
+        let expression = row["expression"]
+            .as_str()
+            .ok_or_else(|| anyhow::anyhow!("factor expression"))?;
+        ensure!(
+            row["expression_sha256"] == hash(expression.as_bytes()),
+            "factor expression hash"
+        );
+        let multiplicity = row["multiplicity"]
+            .as_u64()
+            .ok_or_else(|| anyhow::anyhow!("multiplicity"))?;
+        ensure!(
+            multiplicity > 0 && multiplicity <= u64::from(MAX_DEGREE),
+            "multiplicity envelope"
+        );
+        let terms = preflight(expression)?;
+        for (coefficient, _) in &terms {
+            ensure!(!coefficient.contains('/'), "integer factors required");
+            total_bits = total_bits
+                .checked_add(integer_bound(coefficient, true)? + 1)
+                .ok_or_else(|| anyhow::anyhow!("aggregate proposal coefficient overflow"))?;
+            ensure!(
+                total_bits <= MAX_BITS,
+                "aggregate proposal coefficient bound"
+            );
+        }
+        weighted_degree = weighted_degree
+            .checked_add(u64::from(terms.last().unwrap().1) * multiplicity)
+            .ok_or_else(|| anyhow::anyhow!("proposal degree overflow"))?;
+        ensure!(
+            weighted_degree <= u64::from(source.degree(0)),
+            "proposal degree cap"
+        );
+    }
+    ensure!(
+        weighted_degree == u64::from(source.degree(0)),
+        "complete proposal weighted degree"
+    );
+    let mut factors = rows
+        .iter()
+        .map(|row| {
+            let (_, p) = parse(names, row["expression"].as_str().unwrap())?;
+            Ok((p, usize::try_from(row["multiplicity"].as_u64().unwrap())?))
+        })
+        .collect::<Result<Vec<_>>>()?;
+    product_preflight(source, &mut factors)?;
+    Ok((factors, seconds))
+}
+fn save_proposal(path: &Path, proposal: &Value) -> Result<String> {
+    let bytes = serde_json::to_vec(proposal)?;
+    ensure!(bytes.len() <= MAX_BYTES, "serialized proposal cap");
+    let temp = path.with_extension("tmp");
+    ensure!(!path.exists() && !temp.exists(), "fresh proposal paths");
+    let mut f = fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&temp)?;
+    f.write_all(&bytes)?;
+    f.sync_all()?;
+    drop(f);
+    // Atomic no-overwrite publication in the same directory.
+    fs::hard_link(&temp, path)?;
+    fs::remove_file(temp)?;
+    Ok(hash(&bytes))
+}
+fn valid_deadline(stage: Stage, seconds: f64) -> bool {
+    seconds.is_finite()
+        && seconds > 0.
+        && seconds <= if stage == Stage::Content { 60. } else { 3600. }
+}
 fn summary(p: &Poly) -> Result<Value> {
     let mut numerator_bits = 0u64;
     let mut denominator_bits = 0u64;
@@ -423,12 +587,48 @@ fn worker(args: &Args) -> Result<()> {
                 .all(|c| c.is_integer() && c.numerator_ref().significant_bits() <= MAX_HEIGHT),
             "canonical SQF input height cap"
         );
-        // summary() already checks total coefficient storage before native work.
-        report["phase"] = json!("native_square_free");
-        progress(&args.output, &report)?;
-        let step = Instant::now();
-        let mut factors = primitive.square_free_factorization();
-        report["native_square_free_seconds"] = json!(step.elapsed().as_secs_f64());
+        // Proposal publication precedes expensive exact product reconstruction.
+        let binding = factor_binding(&report, &scale);
+        let mut factors = if let Some(path) = &args.resume_proposal {
+            report["phase"] = json!("bounded_unverified_proposal_load");
+            progress(&args.output, &report)?;
+            let step = Instant::now();
+            let bytes = read(path)?;
+            let digest = args
+                .proposal_sha256
+                .as_deref()
+                .ok_or_else(|| anyhow::anyhow!("proposal digest"))?;
+            let (factors, seconds) = load_proposal(
+                &bytes,
+                digest,
+                &capture.variable_names,
+                &primitive,
+                &binding,
+            )?;
+            report["proposal_load_seconds"] = json!(step.elapsed().as_secs_f64());
+            report["proposal_original_native_seconds"] = json!(seconds);
+            report["native_square_free_called"] = json!(false);
+            report["factor_proposal"] = json!({"path":path,"sha256":digest,"verified":false});
+            factors
+        } else {
+            // summary() already checks input storage before native work.
+            report["phase"] = json!("native_square_free");
+            progress(&args.output, &report)?;
+            let step = Instant::now();
+            let mut factors = primitive.square_free_factorization();
+            let seconds = step.elapsed().as_secs_f64();
+            report["native_square_free_seconds"] = json!(seconds);
+            report["native_square_free_called"] = json!(true);
+            report["phase"] = json!("unverified_factor_proposal_serialization");
+            progress(&args.output, &report)?;
+            let step = Instant::now();
+            let proposal = make_proposal(&primitive, &mut factors, &binding, seconds)?;
+            let path = args.output.with_extension("factors.json");
+            let digest = save_proposal(&path, &proposal)?;
+            report["factor_proposal_seconds"] = json!(step.elapsed().as_secs_f64());
+            report["factor_proposal"] = json!({"path":path,"sha256":digest,"verified":false});
+            factors
+        };
         report["phase"] = json!("factor_reconstruction");
         progress(&args.output, &report)?;
         let step = Instant::now();
@@ -436,6 +636,7 @@ fn worker(args: &Args) -> Result<()> {
         report["factor_reconstruction_seconds"] = json!(step.elapsed().as_secs_f64());
         report["exact_canonical_factor_product"] = json!(true);
         report["exact_signed_raw_factor_product"] = json!(true);
+        report["factor_proposal"]["verified"] = json!(true);
         report["factors"] = json!(
             factors
                 .iter()
@@ -455,16 +656,19 @@ fn worker(args: &Args) -> Result<()> {
 fn main() -> Result<()> {
     let args = Args::parse();
     ensure!(
-        args.seconds.is_finite()
-            && args.seconds > 0.0
-            && args.seconds
-                <= if args.stage == Stage::Content {
-                    60.0
-                } else {
-                    300.0
-                },
-        "deadline content (0,60], square-free (0,300]"
+        valid_deadline(args.stage, args.seconds),
+        "deadline content (0,60], square-free (0,3600]"
     );
+    ensure!(
+        args.resume_proposal.is_none() || args.stage == Stage::SquareFree,
+        "proposal replay requires square-free stage"
+    );
+    if let Some(digest) = &args.proposal_sha256 {
+        ensure!(
+            digest.len() == 64 && digest.bytes().all(|b| b.is_ascii_hexdigit()),
+            "proposal SHA256 syntax"
+        );
+    }
     for h in [
         &args.expected_capture_sha256,
         &args.expected_candidate_sha256,
@@ -480,12 +684,22 @@ fn main() -> Result<()> {
     ensure!(
         !args.output.exists()
             && !args.output.with_extension("progress.json").exists()
-            && !args.output.with_extension("progress.tmp").exists(),
+            && !args.output.with_extension("progress.tmp").exists()
+            && !args.output.with_extension("factors.json").exists()
+            && !args.output.with_extension("factors.tmp").exists(),
         "fresh output and sidecars required"
     );
     if let Some(parent) = args.output.parent().filter(|p| !p.as_os_str().is_empty()) {
         fs::create_dir_all(parent)?;
     }
+    let mut input_paths = vec![args.capture.clone(), args.candidate.clone()];
+    if let Some(p) = &args.resume_proposal {
+        input_paths.push(p.clone());
+    }
+    let before = input_paths
+        .iter()
+        .map(|p| Ok(hash(&read(p)?)))
+        .collect::<Result<Vec<_>>>()?;
     let executable = std::env::current_exe()?;
     let mut command = Command::new("taskset");
     command
@@ -505,6 +719,16 @@ fn main() -> Result<()> {
         .arg("--seconds")
         .arg(args.seconds.to_string())
         .arg("--worker");
+    if let Some(path) = &args.resume_proposal {
+        command
+            .arg("--resume-proposal")
+            .arg(path)
+            .arg("--proposal-sha256")
+            .arg(args.proposal_sha256.as_ref().unwrap());
+    }
+    command
+        .env("RAYON_NUM_THREADS", "1")
+        .env("OMP_NUM_THREADS", "1");
     let limits = Limits {
         wall_time_secs: args.seconds,
         memory_mib: 4096,
@@ -531,7 +755,12 @@ fn main() -> Result<()> {
     if result.is_some() {
         process.stdout.clear();
     }
+    let after = input_paths
+        .iter()
+        .map(|p| Ok(hash(&read(p)?)))
+        .collect::<Result<Vec<_>>>()?;
     let report = json!({"schema_version":1,"limits":limits,"cpu":args.cpu,
+        "input_paths":input_paths,"input_sha256":before,"inputs_unchanged":before==after,
         "binary_sha256":hash(&fs::read(executable)?),"process":process,"result":result});
     let mut file = fs::OpenOptions::new()
         .write(true)
@@ -539,7 +768,7 @@ fn main() -> Result<()> {
         .open(&args.output)?;
     file.write_all(&serde_json::to_vec_pretty(&report)?)?;
     ensure!(
-        success,
+        success && before == after,
         "bounded content stage incomplete; report and progress preserved"
     );
     Ok(())
@@ -696,5 +925,82 @@ mod tests {
         let wb = serde_json::to_vec(&wrong).unwrap();
         assert!(authenticate(&wb, &pb, &hash(&wb), &hash(&pb)).is_err());
         assert!(authenticate(&cb, &pb, &hash(&cb), &"0".repeat(64)).is_err());
+    }
+    #[test]
+    fn proposal_roundtrip_needs_exact_product_and_rejects_tampering() {
+        let a = Algebra::new(&names()).unwrap();
+        let raw = a.parse("-3/7*s^3*(s-4)^2*(s^2+1)").unwrap();
+        let (source, scale) = content(&raw).unwrap();
+        let report = json!({"capture_sha256":"a","candidate_sha256":"b","candidate_expression_sha256":"c",
+            "input_hash":"d","full_variable_map":names(),"canonical":summary(&source).unwrap()});
+        let binding = factor_binding(&report, &scale);
+        let mut factors = source.square_free_factorization();
+        let proposal = make_proposal(&source, &mut factors, &binding, 0.25).unwrap();
+        assert_eq!(proposal["exact_product_verified"], false);
+        let bytes = serde_json::to_vec(&proposal).unwrap();
+        let (mut restored, seconds) =
+            load_proposal(&bytes, &hash(&bytes), &names(), &source, &binding).unwrap();
+        assert_eq!(seconds, 0.25);
+        reconstruct_factors(&raw, &source, &scale, &mut restored).unwrap();
+        assert!(load_proposal(&bytes, "wrong", &names(), &source, &binding).is_err());
+        let wrong_binding = factor_binding(&report, &(-scale.clone()));
+        assert!(load_proposal(&bytes, &hash(&bytes), &names(), &source, &wrong_binding).is_err());
+        let mut altered = proposal.clone();
+        let row = altered["factors"]
+            .as_array_mut()
+            .unwrap()
+            .iter_mut()
+            .find(|row| row["expression"].as_str().unwrap().contains("s^1"))
+            .unwrap();
+        let (_, poly) = parse(&names(), row["expression"].as_str().unwrap()).unwrap();
+        let changed = &poly + &poly.one();
+        let text = sparse_text(&changed).unwrap();
+        row["expression"] = json!(text);
+        row["expression_sha256"] = json!(hash(text.as_bytes()));
+        let bytes = serde_json::to_vec(&altered).unwrap();
+        let (mut forged, _) =
+            load_proposal(&bytes, &hash(&bytes), &names(), &source, &binding).unwrap();
+        assert!(reconstruct_factors(&raw, &source, &scale, &mut forged).is_err());
+        altered["factors"][0]["multiplicity"] = json!(4097);
+        let bytes = serde_json::to_vec(&altered).unwrap();
+        assert!(load_proposal(&bytes, &hash(&bytes), &names(), &source, &binding).is_err());
+    }
+    #[test]
+    fn proposal_parser_and_deadlines_remain_bounded() {
+        assert!(valid_deadline(Stage::SquareFree, 3600.));
+        assert!(!valid_deadline(Stage::SquareFree, 3600.1));
+        assert!(!valid_deadline(Stage::Content, 61.));
+        assert!(!valid_deadline(Stage::SquareFree, f64::NAN));
+        let a = Algebra::new(&names()).unwrap();
+        let source = a.parse("s^2+1").unwrap();
+        let binding = json!({});
+        let mut factors = vec![(source.clone(), 1)];
+        let mut v = make_proposal(&source, &mut factors, &binding, 1.).unwrap();
+        v["factors"][0]["expression"] = json!("(1)*s^999999");
+        v["factors"][0]["expression_sha256"] = json!(hash(b"(1)*s^999999"));
+        let bytes = serde_json::to_vec(&v).unwrap();
+        assert!(load_proposal(&bytes, &hash(&bytes), &names(), &source, &binding).is_err());
+        assert!(make_proposal(&source, &mut factors, &binding, 3601.).is_err());
+    }
+    #[test]
+    fn proposal_publication_is_complete_and_refuses_overwrite() {
+        let stamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let dir = std::env::temp_dir().join(format!(
+            "symgcad-factor-proposal-{}-{stamp}",
+            std::process::id()
+        ));
+        fs::create_dir(&dir).unwrap();
+        let path = dir.join("factors.json");
+        let value = json!({"kind":"unverified_native_factor_proposal"});
+        let digest = save_proposal(&path, &value).unwrap();
+        assert_eq!(digest, hash(&read(&path).unwrap()));
+        assert!(save_proposal(&path, &json!({"changed":true})).is_err());
+        assert_eq!(digest, hash(&read(&path).unwrap()));
+        assert!(!path.with_extension("tmp").exists());
+        fs::remove_file(path).unwrap();
+        fs::remove_dir(dir).unwrap();
     }
 }
