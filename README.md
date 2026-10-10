@@ -93,7 +93,7 @@ New reference comparisons are capped at `max(300 s, 3 × symGCAD solve time)`, w
 
 Later certified reductions complete fixed A381/Ax381 with 836 cells each, negative Gluza30/Gluza33 with one/three cells, and positive Gluza30 with 80,980 cells. Discovery costs, verification costs, failed attempts and exact original-domain checks are recorded separately.
 
-The quadratic ladder also gives five verified cells for the crossed A446 chamber `t < 4`, retaining the original interior `F=0` sheet. Its [conditional proof and supplemental check](reference/QUADRATIC_LADDER_VALIDATION.md) leave the unrestricted symbolic problem unresolved.
+The quadratic ladder also gives five verified cells for the crossed A446 chamber `t < 4`, retaining the original interior `F=0` sheet. Its [conditional proof and supplemental check](reference/QUADRATIC_LADDER_VALIDATION.md) leave the unrestricted symbolic problem unresolved. [Release ablations](reference/QUADRATIC_RELEASE_ABLATION.md) report all 66 fresh solve-and-verify trials, including certificate overhead and cell-count reductions.
 
 Current physics-guided research studies [CFF-informed kinematic chambers](reference/CFF_KINEMATIC_PROJECTION.md), [positive-root critical maps](reference/RATIONAL_KINEMATIC_PAIR_MAP.md), and [two-point matrix pencils](reference/TWO_POINT_MATRIX_PENCIL.md). Exact identity replays support these investigations; full projection and boundary-ordering obligations remain.
 
