@@ -203,3 +203,30 @@ Independent review also checked every unchanged production gate, including a
 conservative 87,121,452-bit total encoded-input bound below the 512-million-bit
 cap. The frozen production path will be measured separately from the research
 helper; the full signed candidate is available for that comparison.
+
+## Frozen production replay
+
+The release built from `bbb701b` subsequently replayed that exact ordered pair
+through the production binary-segmentation path with the new default cap.
+It completed in **93.500180 seconds of algebra**, 94.060889 seconds for the
+whole worker, at 347,908 KiB peak RSS, on CPU8 with a 180-second/2-GiB limit.
+All 30,095 terms agree exactly with the independently grid-verified candidate,
+including rational scale and sign. Its canonical output hash also matches the
+historical 3041.788607-second ordinary-backend result. This is one captured
+operation comparison; it does not establish a whole-solve speedup or a new
+original-problem completion.
+
+| Evidence | SHA-256 |
+| --- | --- |
+| Frozen production profiler | `51a26df001ba8c5c611d488ac905da7a1afa7bd3c18bb6290dab388c998c18e2` |
+| `ac6f3048ce62-production-96m.json` | `5817f34a2b3f6721ea001a102d6409373cd84415996f08457e9ca28318685518` |
+| `ac6f3048ce62-production-96m.process.json` | `383a37d372993888b3ce329efbe29a02f7a9cd77cb5ae22041395975fc881663` |
+
+The release solver has SHA-256
+`578d31e639230854c6a7de3515161aac98aaf4ee0794ac490633c86fb28dd6bb`.
+The source manifest was checked unchanged after the build; its manifest is
+`artifacts/literature-followups-release-build-01.json`, SHA-256
+`4f6a7b538a60a20966ed9d651c14f72c0dba25744e36fe46b0cf421725d05f26`.
+A fresh public square solve and independent verification accepted two cells,
+two stacks and four rejected branches. The 521-test fast run is recorded in
+[the research index](../ALGORITHM_RESEARCH.md).
