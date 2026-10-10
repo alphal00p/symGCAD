@@ -12,7 +12,7 @@ use crate::{
     domain::{
         CertificateOptions, DomainCertificate, certify_nonzero, derive_domain, verify_certificate,
     },
-    output::{Axis, Cell, RootBound, RootIndexDomain, SolveResult, Status},
+    output::{Axis, Cell, RootBound, RootIndexDomain, SolveResult, Statistics, Status},
     problem::{NormalizedProblem, normalize},
     solver::{evaluate, merge},
     verify::Verification,
@@ -572,17 +572,79 @@ fn reconstruct(
 
 pub fn solve(problem: &Problem) -> Result<SolveResult> {
     let started = Instant::now();
-    let mut plan = discover(problem, Some(started))?;
-    check_time(problem, Some(started))?;
-    plan.base.limits.wall_time_secs =
-        problem.limits.wall_time_secs - started.elapsed().as_secs_f64();
-    if plan.base.limits.wall_time_secs <= 0.0 {
-        return Err(crate::resultant_interpolation::Stopped(
-            "negative linear delegated wall budget exhausted".into(),
-        )
-        .into());
-    }
+    let planned = discover(problem, Some(started)).and_then(|mut plan| {
+        check_time(problem, Some(started))?;
+        plan.base.limits.wall_time_secs =
+            problem.limits.wall_time_secs - started.elapsed().as_secs_f64();
+        if plan.base.limits.wall_time_secs <= 0.0 {
+            return Err(crate::resultant_interpolation::Stopped(
+                "negative linear delegated wall budget exhausted".into(),
+            )
+            .into());
+        }
+        Ok(plan)
+    });
+    // As in the monotone wrapper, ordering includes normalization and exact
+    // guide/peel planning. The delegated base's phases remain additive.
+    let planning_seconds = started.elapsed().as_secs_f64();
+    let plan = match planned {
+        Ok(plan) => plan,
+        Err(error) => {
+            return stopped_result(
+                problem,
+                started,
+                Statistics {
+                    ordering_seconds: planning_seconds,
+                    ..Statistics::default()
+                },
+                error,
+            );
+        }
+    };
     let base = crate::solver::solve(&plan.base)?;
+    finish_base(problem, plan, base, started, planning_seconds)
+}
+
+/// Preserve measurements for a resource stop without classifying ordinary
+/// algebra/input errors as incomplete mathematical work.
+fn stopped_result(
+    problem: &Problem,
+    started: Instant,
+    mut statistics: Statistics,
+    error: anyhow::Error,
+) -> Result<SolveResult> {
+    if error
+        .downcast_ref::<crate::resultant_interpolation::Stopped>()
+        .is_none()
+    {
+        return Err(error);
+    }
+    let mut result = SolveResult::failure(problem.clone(), Status::Incomplete, error.to_string());
+    statistics.total_seconds = started.elapsed().as_secs_f64();
+    statistics.raw_cells = 0;
+    result.statistics = statistics;
+    Ok(result)
+}
+
+fn retain_base(mut result: SolveResult, plan: Plan, base: SolveResult) -> SolveResult {
+    result.order = plan.order;
+    result.linear_negative = Some(Box::new(LinearNegativeEvidence {
+        target_constraint: plan.target,
+        steps: plan.steps,
+        base: Box::new(base),
+    }));
+    result
+}
+
+fn finish_base(
+    problem: &Problem,
+    plan: Plan,
+    base: SolveResult,
+    started: Instant,
+    planning_seconds: f64,
+) -> Result<SolveResult> {
+    let mut statistics = base.statistics.clone();
+    statistics.ordering_seconds += planning_seconds;
     if base.status != Status::CompleteGeneric
         && base.projection_levels.len() != plan.base.variables.len()
     {
@@ -593,32 +655,40 @@ pub fn solve(problem: &Problem) -> Result<SolveResult> {
                 .clone()
                 .unwrap_or_else(|| "negative linear base did not complete projection".into()),
         );
-        result.order = plan.order;
-        result.linear_negative = Some(Box::new(LinearNegativeEvidence {
-            target_constraint: plan.target,
-            steps: plan.steps,
-            base: Box::new(base),
-        }));
-        return Ok(result);
+        statistics.total_seconds = started.elapsed().as_secs_f64();
+        statistics.raw_cells = 0;
+        result.statistics = statistics;
+        return Ok(retain_base(result, plan, base));
     }
-    let data = reconstruct(problem, &plan.order, &plan.steps, &base, Some(started))?;
-    let mut statistics = base.statistics.clone();
-    statistics.total_seconds = started.elapsed().as_secs_f64();
+    let restoration_started = Instant::now();
+    let restored =
+        reconstruct(problem, &plan.order, &plan.steps, &base, Some(started)).map(|data| {
+            let normalized_constraints = data
+                .normalized
+                .positives
+                .iter()
+                .map(|p| data.normalized.algebra.format(p))
+                .collect();
+            (data, normalized_constraints)
+        });
+    statistics.lifting_seconds += restoration_started.elapsed().as_secs_f64();
+    let (data, normalized_constraints) = match restored {
+        Ok(data) => data,
+        Err(error) => {
+            let result = stopped_result(problem, started, statistics, error)?;
+            return Ok(retain_base(result, plan, base));
+        }
+    };
     statistics.raw_cells = data.cells.len();
+    let merge_started = Instant::now();
     let merged_cells = (problem.solver.merge == "aggressive").then(|| merge(&data.cells));
-    check_time(problem, Some(started))?;
-    statistics.total_seconds = started.elapsed().as_secs_f64();
-    Ok(SolveResult {
+    statistics.merging_seconds += merge_started.elapsed().as_secs_f64();
+    let mut result = SolveResult {
         schema_version: 1,
         status: base.status.clone(),
         problem: problem.clone(),
         order: plan.order,
-        normalized_constraints: data
-            .normalized
-            .positives
-            .iter()
-            .map(|p| data.normalized.algebra.format(p))
-            .collect(),
+        normalized_constraints,
         split_polynomials: vec![],
         polynomials: data.table,
         projection_levels: data.levels,
@@ -637,7 +707,15 @@ pub fn solve(problem: &Problem) -> Result<SolveResult> {
             steps: plan.steps,
             base: Box::new(base),
         })),
-    })
+    };
+    // Keep a completed base and any reconstructed data for diagnostics while
+    // preventing a late or empty reconstruction from escaping the wall cap.
+    if let Err(error) = check_time(problem, Some(started)) {
+        result.status = Status::Incomplete;
+        result.diagnostic = Some(error.to_string());
+    }
+    result.statistics.total_seconds = started.elapsed().as_secs_f64();
+    Ok(result)
 }
 
 pub fn verify(result: &SolveResult) -> Result<Verification> {
@@ -725,4 +803,144 @@ pub fn verify(result: &SolveResult) -> Result<Verification> {
         stacks: verification.stacks,
         rejected_branches: verification.rejected_branches,
     })
+}
+
+#[cfg(test)]
+mod statistics_tests {
+    use super::*;
+    use std::time::Duration;
+
+    fn problem() -> Problem {
+        let mut problem = Problem {
+            variables: vec!["x".into(), "z".into()],
+            constraints: vec!["x>0".into(), "z>0".into(), "(x-1)*z+x<0".into()],
+            ..Default::default()
+        };
+        problem.solver.engine = "linear_negative".into();
+        problem.solver.ordering = "given".into();
+        problem.solver.negative_linear_guide = Some("z+1".into());
+        problem.limits.wall_time_secs = 10.0;
+        problem
+    }
+
+    #[test]
+    fn successful_phases_include_planning_restoration_and_merge() {
+        let mut problem = problem();
+        problem.solver.merge = "aggressive".into();
+        let result = solve(&problem).unwrap();
+        assert!(verify(&result).unwrap().verified);
+        let base = &result.linear_negative.as_ref().unwrap().base.statistics;
+        let actual = &result.statistics;
+        assert!(actual.ordering_seconds > base.ordering_seconds);
+        assert!(actual.lifting_seconds > base.lifting_seconds);
+        assert!(actual.merging_seconds > base.merging_seconds);
+        assert_eq!(actual.projection_seconds, base.projection_seconds);
+        assert_eq!(actual.search_seconds, base.search_seconds);
+        assert_eq!(actual.raw_cells, result.cells.len());
+        assert!(actual.total_seconds >= base.total_seconds);
+        assert!(
+            actual.total_seconds
+                >= actual.ordering_seconds
+                    + actual.projection_seconds
+                    + actual.lifting_seconds
+                    + actual.merging_seconds
+        );
+    }
+
+    #[test]
+    fn planning_stop_keeps_elapsed_cost_and_does_not_hide_ordinary_errors() {
+        let mut problem = problem();
+        problem.limits.wall_time_secs = 1e-12;
+        let result = solve(&problem).unwrap();
+        assert_eq!(result.status, Status::Incomplete);
+        assert!(result.statistics.ordering_seconds > 0.0);
+        assert!(result.statistics.total_seconds >= result.statistics.ordering_seconds);
+        assert!(result.cells.is_empty());
+        assert!(result.linear_negative.is_none());
+        assert!(verify(&result).is_err());
+        assert!(
+            stopped_result(
+                &problem,
+                Instant::now(),
+                Statistics::default(),
+                anyhow!("ordinary algebra failure")
+            )
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn missing_projection_stop_retains_base_statistics_and_evidence() {
+        let problem = problem();
+        let plan = discover(&problem, None).unwrap();
+        let mut base =
+            SolveResult::failure(plan.base.clone(), Status::Incomplete, "projection cap");
+        base.statistics.ordering_seconds = 0.01;
+        base.statistics.projection_seconds = 0.02;
+        base.statistics.visited_stacks = 17;
+        let result = finish_base(
+            &problem,
+            plan,
+            base,
+            Instant::now() - Duration::from_millis(100),
+            0.03,
+        )
+        .unwrap();
+        assert_eq!(result.status, Status::Incomplete);
+        assert_eq!(result.diagnostic.as_deref(), Some("projection cap"));
+        assert_eq!(result.statistics.ordering_seconds, 0.01 + 0.03);
+        assert_eq!(result.statistics.projection_seconds, 0.02);
+        assert_eq!(result.statistics.visited_stacks, 17);
+        assert!(result.statistics.total_seconds >= 0.1);
+        assert_eq!(result.statistics.raw_cells, 0);
+        assert!(result.cells.is_empty());
+        assert_eq!(
+            result.linear_negative.as_ref().unwrap().base.status,
+            Status::Incomplete
+        );
+        assert!(verify(&result).is_err());
+    }
+
+    #[test]
+    fn restoration_deadline_keeps_completed_base_and_handles_empty_output() {
+        for empty in [false, true] {
+            let mut problem = problem();
+            problem.limits.wall_time_secs = 1.0;
+            if empty {
+                problem.constraints.push("false".into());
+            }
+            let plan = discover(&problem, None).unwrap();
+            let base = crate::solver::solve(&plan.base).unwrap();
+            assert!(crate::verify::verify(&base).unwrap().verified);
+            assert_eq!(base.cells.is_empty(), empty);
+            let inherited = base.statistics.clone();
+            let result = finish_base(
+                &problem,
+                plan,
+                base,
+                Instant::now() - Duration::from_secs(2),
+                0.01,
+            )
+            .unwrap();
+            assert_eq!(result.status, Status::Incomplete);
+            assert_eq!(
+                result.statistics.ordering_seconds,
+                inherited.ordering_seconds + 0.01
+            );
+            assert_eq!(
+                result.statistics.projection_seconds,
+                inherited.projection_seconds
+            );
+            assert!(result.statistics.lifting_seconds > inherited.lifting_seconds);
+            assert!(result.statistics.total_seconds >= 2.0);
+            assert_eq!(result.statistics.raw_cells, 0);
+            assert!(result.cells.is_empty());
+            assert!(
+                crate::verify::verify(&result.linear_negative.as_ref().unwrap().base)
+                    .unwrap()
+                    .verified
+            );
+            assert!(verify(&result).is_err());
+        }
+    }
 }
