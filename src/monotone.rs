@@ -473,6 +473,45 @@ pub fn selected_order(problem: &Problem) -> Result<Vec<String>> {
     Ok(plan(problem)?.order)
 }
 
+/// A projection-free inspection, not a solve or a coverage certificate.
+/// Every returned peel has had its exact coefficient evidence replayed. The
+/// remaining prefix order is merely the original/group order: no projection
+/// ordering heuristic or base decomposition has been run.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct PeelInspection {
+    pub provisional_order: Vec<String>,
+    /// Last lifted axis first, as in MonotoneEvidence.
+    pub steps: Vec<MonotoneStep>,
+    /// Exact endpoint problem in the provisional remaining-coordinate order.
+    pub base: Problem,
+}
+
+/// Inspect the existing production discovery without solving its endpoint.
+/// Accepts one split polynomial after any certified scale reduction. Callers
+/// handling a strict target must first remove that target from the coefficient
+/// domain and transfer its polynomial to the split, exactly as sign filtering
+/// does. A result with no steps is a valid inapplicability diagnostic.
+pub fn inspect_peels(problem: &Problem) -> Result<PeelInspection> {
+    ensure!(
+        problem.solver.homogeneous_anchor.is_none() && problem.solver.homogeneous_block.is_empty(),
+        "peel inspection requires an input after certified homogeneous reduction"
+    );
+    let (_, steps, _) = discover_steps(problem)?;
+    let peeled: BTreeSet<_> = steps.iter().map(|s| s.variable.as_str()).collect();
+    let mut order = given_order(problem);
+    order.retain(|v| !peeled.contains(v.as_str()));
+    order.extend(steps.iter().rev().map(|s| s.variable.clone()));
+    // This independently repeats coefficient identities, domain certificates,
+    // group/fixed-order constraints and exact endpoint construction. It never
+    // calls selected_order or solve on the remaining problem.
+    let base = check_steps(problem, &order, &steps)?;
+    Ok(PeelInspection {
+        provisional_order: order,
+        steps,
+        base,
+    })
+}
+
 fn check_steps(problem: &Problem, order: &[String], steps: &[MonotoneStep]) -> Result<Problem> {
     let normalized = input(problem)?;
     check_order(problem, order)?;
