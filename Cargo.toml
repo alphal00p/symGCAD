@@ -15,11 +15,14 @@ sha2 = "0.10"
 blake3 = "1"
 libc = "0.2"
 rand = "0.9"
-symbolica = { path = "DO_NOT_PUSH_REFERENCES/symbolica", default-features = false, features = ["integer-gmp", "float-mpfr", "tracing_max_level_info"] }
+symbolica = { version = "3.0.1", default-features = false, features = ["integer-gmp", "float-mpfr", "tracing_max_level_info"] }
 
+# Standalone pins. A consuming workspace supplies its own root patches, so
+# symGCAD shares the consumer's Symbolica types instead of a private checkout.
 [patch.crates-io]
-numerica = { path = "DO_NOT_PUSH_REFERENCES/symbolica/lib/numerica" }
-graphica = { path = "DO_NOT_PUSH_REFERENCES/symbolica/lib/graphica" }
+symbolica = { git = "https://github.com/symbolica-dev/symbolica", rev = "75f8350094b90254ee71dc2a391fde0d14b0204a" }
+numerica = { git = "https://github.com/symbolica-dev/symbolica", rev = "75f8350094b90254ee71dc2a391fde0d14b0204a" }
+graphica = { git = "https://github.com/symbolica-dev/symbolica", rev = "75f8350094b90254ee71dc2a391fde0d14b0204a" }
 
 [profile.release]
 codegen-units = 1

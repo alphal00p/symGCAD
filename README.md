@@ -10,12 +10,11 @@ The subsequent [positive Gluza33 continuation](reference/GLUZA33_AFFINE_ORDER_CO
 
 ## Quick start
 
-Requires Git and Nix with flakes enabled. External dependencies are fetched at exact revisions; they are not included in this repository.
+Requires Git and Nix with flakes enabled. Cargo fetches the public dependencies at the locked revisions; no source bootstrap or private checkout is required.
 
 ```sh
 git clone --branch codex/symgcad git@github.com:alphal00p/symGCAD.git
 cd symGCAD
-scripts/bootstrap-deps.sh
 nix develop
 cargo build --release --locked
 mkdir -p artifacts
