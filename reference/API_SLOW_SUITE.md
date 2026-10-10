@@ -60,14 +60,56 @@ and one exact projection) in 18.252 seconds. Every native call had an explicit
 report is `artifacts/bench/api-fast-capped-01/report.json`, SHA-256
 `2bc0abc2f588f2214c188cd4b196e29a1751e8ec41126d679691a29502668896`.
 
-The first two one-hour API attempts cover symbolic massless and symbolic
-physical elliptic ordering on CPUs 0 and 1, at 8 GiB each. They are stored in
-`artifacts/bench/api-hour-01/{massless,physical}/`; their results remain pending
-at this checkpoint. A third one-hour attempt, `test_gluza_ex33_trivial/order/1`,
-started on CPU2 with the same frozen helper, solver, limits and reference-cap
-policy. Its records are under `artifacts/bench/api-hour-01/gluza33-trivial/`.
-The three other slow API cases are still pending.
-These workers are independent of the ongoing original-decomposition queue.
+The first two one-hour API attempts, symbolic massless and symbolic physical
+elliptic ordering on CPUs 0 and 1 at 8 GiB each, **both timed out without an
+order**. Their native calls did not start: the Rust attempt exhausted the
+one-hour campaign. This is `rust_incomplete_reference_pending`, with
+`reference_status="campaign_exhausted"`, not a native timeout or a match.
+
+| Original API | Original heuristic | Rust wall seconds | Peak RSS, KiB | Campaign wall seconds |
+| --- | --- | ---: | ---: | ---: |
+| `test_massless_planar_elliptic_symb/order/1` | `mods` | 3600.094002363 | 613,476 | 3600.095273268 |
+| `test_elliptic2l_physical_symb/order/1` | `t1` | 3600.030009300 | 94,504 | 3600.031283764 |
+
+The worker deadlines were 3599.999666199 and 3599.999666349 seconds,
+respectively; the small excess in observed wall time includes supervisor
+polling and termination. Each saved process has `status="timeout"`, no exit
+code because it was killed, empty stdout/stderr, untruncated output and
+`result=null`. Neither directory contains a Rust result file or a native
+process record. The outer comparison helpers exited 1, as required for an
+unfinished API check. These attempts supply no completed Rust timing for an
+adaptive native cap and no compatibility or speed-ratio evidence. Both API
+identifiers remain `slow`; the separate mathematical solve completion count
+is unchanged.
+
+An independent read-only audit checked exact equality of the input names,
+variables, groups, constraints, splits and parameters with regenerated
+original corpus entries0312 and0317. The original ordering heuristic, empty
+fixed order, merge mode and seed also match. Input bytes match the report
+hashes; the snapshotted executable hashes match the report provenance. Saved
+process status, wall time and peak RSS agree with the final report rows. The
+core-input, classification and both adapter hashes were checked against the
+current files, and the frozen helper hash was independently checked.
+
+The immutable evidence is under
+`artifacts/bench/api-hour-01/{massless,physical}/`:
+
+| Case | File | SHA-256 |
+| --- | --- | --- |
+| Massless | `report.json` | `68d0a1864d483dd27c1edb5a4baf297c39fdc87fb1a7b1ea02d988d3d408b7a9` |
+| Massless | `0004-input.json` | `ca7bb9e2fd7764231917c9824dce5c374ada7d5ac28d825f9e90146ce2c7d32f` |
+| Massless | `0004-rust.json` | `2ca4e0a3e99047acd9109c7dc345db9270fc2fa5d21b07c87c5d897c8c9ddf52` |
+| Physical | `report.json` | `3ba473b31baf862f2c408ef23d78e9c4c137c37655df8607e463dfbf72beeda0` |
+| Physical | `0007-input.json` | `306f5296db86feba3cc1717b91f837a55201d5187fbd7ed03e24336c2a1981ff` |
+| Physical | `0007-rust.json` | `fc7ff282bd1b479a6c00278234e36a0dae01ab50cec459fbaa004fb2325b7520` |
+
+At this audit checkpoint, a third one-hour attempt,
+`test_gluza_ex33_trivial/order/1`, is running on CPU2, and a fourth,
+`test_gluza_ex33/order/1`, started on CPU1 at approximately 09:18 UTC on
+2026-10-10. They use the same frozen helper, solver, limits and reference-cap
+policy, under `artifacts/bench/api-hour-01/{gluza33-trivial,gluza33}/`.
+The symbolic pentabox-b and pentabox-d ordering APIs are still pending.
+These workers are independent of the original-decomposition queue.
 
 | Evidence | SHA-256 |
 | --- | --- |
