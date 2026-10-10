@@ -25,6 +25,22 @@ counterexamples, required graph metadata and bounded ablations. Tropical
 approximations and singularity alphabets do not replace the original real
 F=0 boundary inventory.
 
+The [bounded obstruction observer](reference/LOCAL_OBSTRUCTION_OBSERVER.md) is
+implemented and off by default. The first [A377 block-sum
+pilot](reference/A377_BLOCK_SHEAR_PILOT.md) timed out in both coordinate systems;
+fewer input terms alone did not establish a benefit. Separately, an independently
+verified [large A377 resultant](reference/A377_BINARY_RESULTANT_DIAGNOSTIC.md)
+justified raising the opt-in binary-segmentation output cap from 64 to 96 million
+bits. No original problem gained completion credit from these diagnostics.
+
+The resulting fast library, binary and integration suite passed **521 tests
+across 36 targets**, with no failures or ignored tests, in 52.48 seconds of
+test execution (compilation excluded). Its retained log is
+`artifacts/literature-support-observer-fast-tests-01.log`, SHA-256
+`6b792621095985f9169f8925b9ee9fd38b0b24656b09255af281161a4ee3d9a5`.
+Research examples have separate focused tests; unresolved mathematical problems
+remain in the one-hour slow suite. Coverage remains 303/331.
+
 ## Workloads and reference method
 
 The supplied local paper is [Jones, Olsson and Stone, 2024](https://arxiv.org/abs/2407.06973).

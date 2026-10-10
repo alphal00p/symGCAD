@@ -112,10 +112,15 @@ the campaign was exhausted. Its final report SHA-256 is
 the process record is
 `3440fe542d802a4f5c385c962d0dc12e6b6ae51f7f895d11c456299045ef0581`.
 
-At this checkpoint, the fourth attempt, `test_gluza_ex33/order/1`, is running
-on CPU1 after starting at approximately 09:16 UTC on 2026-10-10. It uses the
-same frozen helper, solver, limits and reference-cap policy. The third and
-fourth evidence directories are
+The fourth attempt, `test_gluza_ex33/order/1`, timed out on CPU1 after
+3600.101920466 seconds, with 512,764 KiB peak RSS. Its input, original `t1`
+heuristic and frozen executable passed the same independent provenance audit.
+The native call remains pending because the campaign was exhausted; neither
+an order nor a compatibility result was obtained. Its final report SHA-256 is
+`61964679e1fbd7eb2ca036fabbc3dfadc7f155b6432ac318dca269441f69b607`;
+the process record is
+`6fd92dfc2813c10afbf15ea43f20076fb39c6392fc92581a7c42e793550751d3`.
+The third and fourth evidence directories are
 `artifacts/bench/api-hour-01/{gluza33-trivial,gluza33}/`.
 The fifth attempt, `test_pentabox_exb_symb/order/1`, started on CPU0 at
 approximately 09:49 UTC with the same frozen helper, solver and limits under
