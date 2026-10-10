@@ -244,3 +244,91 @@ injection, or production performance improvement follows. The captured height
 exceeds the Taylor helper's unchanged 20000-bit default. Comparing it requires
 a separately explicit research-policy extension with all existing encoding,
 storage, exact-division and coefficient-equality checks retained.
+
+## Explicit height policy and the authentic shift comparison
+
+The second helper version keeps the default input-height limit at 20000 bits.
+Its explicit research policies additionally allow 32768 or 65536 bits, with
+the same degree, coefficient-storage, encoded-integer, output-text and worker
+limits. The authentic VAS operand uses the 32768-bit policy. Its literal
+coefficient strings and exponents are copied without arithmetic; the native
+variable `symgcad::s` is bound to axis zero of the original full alias map
+`[s,t,x0,x3,x5,x6,x8]`. Pinned native control flow identifies this as an
+internal **negative-root VAS operand**, not the original block polynomial on
+the positive axis.
+
+Factorial convolution remains the default. The recursive method splits
+`p(x)=p_low(x)+x^m p_high(x)` and forms
+`p_low(x+a)+(x+a)^m p_high(x+a)`. It caches exact signed binomial powers, uses
+native shifts below the chosen leaf length, and checks every packed product
+by complete centered decoding and exact re-encoding. A third comparator
+admits only `a=+1` or `a=-1` and performs the triangular recurrence with direct
+integer additions or subtractions. It leaves the recursive method's native
+leaves unchanged.
+
+Every mode retains the conservative factorial admission envelope; recursive
+and unit modes additionally apply their own bounded preflight. This can
+decline inputs that a less conservative method-specific envelope would admit.
+The selected input passed a 1,966,182,414-bit logical reservation bound;
+this is not process RAM. The unchanged default correctly declined it before
+integer construction, while the explicit 32768-bit plan passed.
+
+Fifteen focused tests passed, including signed and rational identities,
+zero/constant inputs, uneven recursive splits, 700-bit and 24000-bit
+coefficients, unchanged storage limits, exact height boundaries and exclusive
+CLI modes. The conventional release tests/build completed in 547 s with
+3,875,008 KiB sampled aggregate peak RSS under an 8 GiB supervisor. All
+production and helper source hashes remained unchanged during the build.
+Only the research examples and this note changed; no production dispatch did.
+
+All six fresh processes used the same standard release helper, the exact
+captured literal, CPU2, a 60 s worker deadline and 2 GiB memory limit. Every
+coefficient agreed with native `shift_var`, and all six serialized outputs
+had the same hash. Kernel timings exclude input parsing and output writing;
+each native comparison ran afterward in the same process.
+
+| Method | Method kernel (s) | Native comparison (s) | Process wall (s) |
+|---|---:|---:|---:|
+| Factorial convolution | 0.657005 | 0.228648 | 1.116229 |
+| Direct unit addition | **0.137993** | **0.227206** | 0.587678 |
+| Recursive, leaf 32 | 0.470921 | 0.227367 | 0.913056 |
+| Recursive, leaf 64 | 0.439413 | 0.226318 | 0.891871 |
+| Recursive, leaf 128 | 0.372769 | 0.226544 | 0.832046 |
+| Recursive, leaf 256 | 0.324307 | 0.226221 | 0.770503 |
+
+The convolution variants showed no gain on this operand. Direct addition
+used about 39% less kernel time in this single comparison. This motivates a
+separate isolated native patch and complete root-inventory comparison; it
+does not establish a root-isolation or solver speedup. Earlier development
+and observer timings are operand-selection evidence, not controls for this
+release comparison. No native patch was applied to the active dependency.
+
+The input SHA256 is
+`e7545e4d5e0a651e4e843b7880297380bec42540757fd9f6147ec6b1f8fe0fb4`;
+the common output SHA256 is
+`a7a34434ae082b382274aed934b7566106df16608b0850f1e0c2a4a1929a4c17`.
+The frozen release helper SHA256 is
+`3c31be0bbbaf02a98e118b27f4784c6752cc16b7205debc7224b276424135a08`.
+Bound inputs, commands, source manifests, individual process reports and the
+checked summary are under
+`artifacts/research/taylor-convolution-authentic-02/`; summary SHA256 is
+`327462691b7e371f5782123d63ce3e453e3a3f51919c99c367582207d76b18ff`.
+The test/build log SHA256 is
+`413929f5cff2b5884c5fc7f7db653f7e86391179d4f0d34846ac119c646039b6`.
+Independent review checked 49 bound files and the complete statuses and common
+outputs; its audit SHA256 is
+`17874e69e886705f9b0f321f6b94a7a636b2337d8eb3c11150b945aa0b85a936`.
+
+For another bounded literal in the helper's strict full-map input schema:
+
+```sh
+cargo test --release --locked --example profile_taylor_convolution
+cargo run --release --locked --example profile_taylor_convolution -- \
+  INPUT.json --input-sha256 SHA256 --output FRESH_DIRECTORY \
+  --input-height-bits 32768 --shift 1 --cpu 2 --seconds 60 --unit-add
+```
+
+Omit `--unit-add` for factorial convolution, or replace it with
+`--recursive-leaf 32`, `64`, `128` or `256`. All completed comparisons require
+exact native coefficient equality. No root inventory or original CAD
+completion is claimed by this helper.

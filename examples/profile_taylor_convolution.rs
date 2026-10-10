@@ -1,5 +1,7 @@
-//! Research-only integer Taylor shifts by bounded factorial convolution.
+//! Research-only integer Taylor shifts by bounded exact convolution.
 //! Every completed experiment compares all coefficients with native shift_var.
+#[path = "support/taylor_recursive.rs"]
+mod recursive;
 use anyhow::{Context, Result, ensure};
 use clap::Parser;
 use serde::{Deserialize, Serialize};
@@ -40,6 +42,15 @@ struct Args {
     output: PathBuf,
     #[arg(long, default_value = "1", allow_hyphen_values = true)]
     shift: String,
+    /// Explicit research policy; does not increase any storage or work bound.
+    #[arg(long, default_value_t = MAX_HEIGHT)]
+    input_height_bits: u64,
+    /// Compare the recursive method with native leaves of this maximum length.
+    #[arg(long, conflicts_with = "plan_only")]
+    recursive_leaf: Option<usize>,
+    /// Compare direct triangular additions/subtractions for shifts +1 or -1.
+    #[arg(long, conflicts_with_all = ["recursive_leaf", "plan_only"])]
+    unit_add: bool,
     #[arg(long, default_value_t = 3)]
     cpu: usize,
     #[arg(long, default_value_t = 60.0)]
@@ -67,6 +78,7 @@ struct Input {
 struct Plan {
     degree: usize,
     input_height_bits: u64,
+    input_height_limit_bits: u64,
     factorial_height_bound: u64,
     digit_bits_bound: u64,
     encoded_output_bits_bound: u64,
@@ -154,7 +166,39 @@ fn integer_literal(text: &str, bits: u64) -> Result<Integer> {
     );
     Ok(r.numerator_ref().clone())
 }
+fn height_policy(bits: u64) -> Result<()> {
+    ensure!(
+        matches!(bits, 20_000 | 32_768 | 65_536),
+        "input-height policy must be 20000, 32768, or 65536"
+    );
+    Ok(())
+}
+fn recursive_policy(leaf: Option<usize>) -> Result<()> {
+    ensure!(
+        leaf.is_none_or(|n| n.is_power_of_two() && (8..=512).contains(&n)),
+        "recursive leaf must be a power of two from 8 through 512"
+    );
+    Ok(())
+}
+fn method(leaf: Option<usize>, unit_add: bool) -> &'static str {
+    if unit_add {
+        "triangular_unit_add_or_subtract"
+    } else if leaf.is_some() {
+        "recursive_cached_binomial_convolution"
+    } else {
+        "factorial_convolution"
+    }
+}
+#[cfg(test)]
 fn input(bytes: &[u8], expected: &str) -> Result<(Input, UnivariatePolynomial<Z>)> {
+    input_with_height(bytes, expected, MAX_HEIGHT)
+}
+fn input_with_height(
+    bytes: &[u8],
+    expected: &str,
+    height_limit: u64,
+) -> Result<(Input, UnivariatePolynomial<Z>)> {
+    height_policy(height_limit)?;
     ensure!(
         bytes.len() as u64 <= MAX_BYTES && expected.len() == 64 && hash(bytes) == expected,
         "input hash/byte binding"
@@ -183,6 +227,7 @@ fn input(bytes: &[u8], expected: &str) -> Result<(Input, UnivariatePolynomial<Z>
     // or registering a Symbolica variable. JSON itself is byte bounded above.
     let mut previous = None;
     let mut decimal_bits = 0u64;
+    let decimal_cap = height_limit * 30103 / 100000 + 1;
     for t in &i.terms {
         ensure!(
             t.exponents.len() == i.variables.len()
@@ -201,7 +246,7 @@ fn input(bytes: &[u8], expected: &str) -> Result<(Input, UnivariatePolynomial<Z>
         previous = Some(e);
         let d = t.coefficient.strip_prefix('-').unwrap_or(&t.coefficient);
         ensure!(
-            !d.is_empty() && d.len() <= 6021 && d.bytes().all(|b| b.is_ascii_digit()),
+            !d.is_empty() && d.len() as u64 <= decimal_cap && d.bytes().all(|b| b.is_ascii_digit()),
             "coefficient literal preflight"
         );
         decimal_bits = decimal_bits
@@ -215,7 +260,7 @@ fn input(bytes: &[u8], expected: &str) -> Result<(Input, UnivariatePolynomial<Z>
     }
     let mut coefficients = vec![Integer::zero(); previous.map_or(0, |e| e + 1)];
     for t in &i.terms {
-        let c = integer_literal(&t.coefficient, MAX_HEIGHT)?;
+        let c = integer_literal(&t.coefficient, height_limit)?;
         ensure!(!c.is_zero(), "sparse zero term");
         coefficients[t.exponents[i.axis]] = c;
     }
@@ -234,7 +279,12 @@ fn ceil_log2(n: u64) -> u64 {
         64 - (n - 1).leading_zeros() as u64
     }
 }
+#[cfg(test)]
 fn plan(p: &UnivariatePolynomial<Z>, a: &Integer) -> Result<Plan> {
+    plan_with_height(p, a, MAX_HEIGHT)
+}
+fn plan_with_height(p: &UnivariatePolynomial<Z>, a: &Integer, height_limit: u64) -> Result<Plan> {
+    height_policy(height_limit)?;
     let n = if p.is_zero() { 0 } else { p.degree() };
     ensure!(
         n <= MAX_DEGREE && a.significant_bits() <= MAX_SHIFT_HEIGHT,
@@ -247,7 +297,7 @@ fn plan(p: &UnivariatePolynomial<Z>, a: &Integer) -> Result<Plan> {
         .max()
         .unwrap_or(0);
     ensure!(
-        height <= MAX_HEIGHT
+        height <= height_limit
             && p.coefficients()
                 .iter()
                 .map(Integer::significant_bits)
@@ -302,6 +352,7 @@ fn plan(p: &UnivariatePolynomial<Z>, a: &Integer) -> Result<Plan> {
     Ok(Plan {
         degree: n,
         input_height_bits: height,
+        input_height_limit_bits: height_limit,
         factorial_height_bound: factorial,
         digit_bits_bound: digit,
         encoded_output_bits_bound: output,
@@ -352,13 +403,22 @@ fn quotient(value: &Integer, divisor: &Integer) -> Result<Integer> {
     ensure!(r.is_zero(), "factorial quotient is not integral");
     Ok(q)
 }
+#[cfg(test)]
 fn fast_shift(
     p: &UnivariatePolynomial<Z>,
     a: &Integer,
+    event: impl FnMut(&str, &Value) -> Result<()>,
+) -> Result<(UnivariatePolynomial<Z>, Value)> {
+    fast_shift_with_height(p, a, MAX_HEIGHT, event)
+}
+fn fast_shift_with_height(
+    p: &UnivariatePolynomial<Z>,
+    a: &Integer,
+    height_limit: u64,
     mut event: impl FnMut(&str, &Value) -> Result<()>,
 ) -> Result<(UnivariatePolynomial<Z>, Value)> {
     let started = Instant::now();
-    let policy = plan(p, a)?;
+    let policy = plan_with_height(p, a, height_limit)?;
     let n = policy.degree;
     if p.is_zero() {
         return Ok((p.clone(), json!({"plan":policy,"zero_input":true})));
@@ -480,9 +540,9 @@ fn process_record(process: &ProcessOutcome) -> Value {
 fn worker(args: &Args) -> Result<()> {
     let started = Instant::now();
     let bytes = read(&args.input, MAX_BYTES)?;
-    let (i, p) = input(&bytes, &args.input_sha256)?;
+    let (i, p) = input_with_height(&bytes, &args.input_sha256, args.input_height_bits)?;
     let a = integer_literal(&args.shift, MAX_SHIFT_HEIGHT)?;
-    let policy = plan(&p, &a)?;
+    let policy = plan_with_height(&p, &a, args.input_height_bits)?;
     let mut progress = |phase: &str, details: &Value| {
         ensure!(
             started.elapsed().as_secs_f64() < args.seconds,
@@ -505,7 +565,17 @@ fn worker(args: &Args) -> Result<()> {
         )?;
         return Ok(());
     }
-    let (fast, stats) = fast_shift(&p, &a, &mut progress)?;
+    // Keep the same conservative factorial envelope for both comparisons.
+    // The recursive implementation additionally checks its own storage bounds.
+    let (fast, stats) = if args.unit_add {
+        progress("triangular_unit_shift_composite", &json!({}))?;
+        recursive::unit_shift(&p, &a)?
+    } else if let Some(leaf) = args.recursive_leaf {
+        progress("recursive_shift_composite", &json!({"leaf":leaf}))?;
+        recursive::recursive_shift(&p, &a, leaf)?
+    } else {
+        fast_shift_with_height(&p, &a, args.input_height_bits, &mut progress)?
+    };
     progress("native_shift_var", &stats)?;
     let step = Instant::now();
     let native = p.shift_var(&a);
@@ -524,13 +594,22 @@ fn worker(args: &Args) -> Result<()> {
     )?;
     save(
         &args.output.join("worker.json"),
-        &json!({"complete":true,"plan_only":false,"input_sha256":args.input_sha256,"variables":i.variables,"axis":i.axis,"shift":a.to_string(),"degree":policy.degree,"statistics":stats,"native_shift_seconds":native_seconds,"all_coefficients_equal":true,"shifted_sha256":file_hash(&args.output.join("shifted.json"))?,"pipeline_seconds":started.elapsed().as_secs_f64(),"original_cad_coverage":false,"root_isolation_computed":false,"production_modified":false}),
+        &json!({"complete":true,"plan_only":false,"research_policy":"bounded-taylor-v2-explicit-input-height","method":method(args.recursive_leaf,args.unit_add),"recursive_leaf":args.recursive_leaf,"unit_add":args.unit_add,"shared_preflight":"conservative_factorial_envelope","plan":policy,"input_height_limit_bits":args.input_height_bits,"input_sha256":args.input_sha256,"variables":i.variables,"axis":i.axis,"shift":a.to_string(),"degree":policy.degree,"statistics":stats,"native_shift_seconds":native_seconds,"all_coefficients_equal":true,"shifted_sha256":file_hash(&args.output.join("shifted.json"))?,"pipeline_seconds":started.elapsed().as_secs_f64(),"original_cad_coverage":false,"root_isolation_computed":false,"production_modified":false}),
         false,
         MAX_METADATA,
     )
 }
 fn main() -> Result<()> {
     let args = Args::parse();
+    height_policy(args.input_height_bits)?;
+    recursive_policy(args.recursive_leaf)?;
+    if args.unit_add {
+        let shift = integer_literal(&args.shift, MAX_SHIFT_HEIGHT)?;
+        ensure!(
+            shift.is_one() || shift == Integer::from(-1),
+            "unit shift requires +1 or -1"
+        );
+    }
     ensure!(
         args.seconds.is_finite() && args.seconds > 0. && args.seconds <= 60.,
         "deadline (0,60]"
@@ -597,7 +676,7 @@ fn main() -> Result<()> {
         });
     save(
         &args.output.join("report.json"),
-        &json!({"complete":complete,"process":terminal,"limits":limits,"cpu":args.cpu,"binary_sha256":binary_hash,"input_sha256":args.input_sha256,"inputs_unchanged":unchanged,"result":result,"original_cad_coverage":false}),
+        &json!({"complete":complete,"process":terminal,"limits":limits,"cpu":args.cpu,"research_policy":"bounded-taylor-v2-explicit-input-height","method":method(args.recursive_leaf,args.unit_add),"recursive_leaf":args.recursive_leaf,"unit_add":args.unit_add,"input_height_limit_bits":args.input_height_bits,"binary_sha256":binary_hash,"input_sha256":args.input_sha256,"inputs_unchanged":unchanged,"result":result,"original_cad_coverage":false}),
         false,
         MAX_METADATA,
     )?;
@@ -782,5 +861,145 @@ mod tests {
         assert!(serde_json::to_vec(&record).unwrap().len() < 4096);
         assert_eq!(record["stdout_bytes"], 2 * 1024 * 1024);
         assert_eq!(record["stdout_sha256"], hash(p.stdout.as_bytes()));
+    }
+    #[test]
+    fn explicit_height_policy_preserves_default_and_signed_identity() {
+        let args = Args::try_parse_from([
+            "helper",
+            "input",
+            "--input-sha256",
+            "hash",
+            "--output",
+            "fresh",
+        ])
+        .unwrap();
+        assert_eq!(args.input_height_bits, MAX_HEIGHT);
+        assert_eq!(args.recursive_leaf, None);
+        assert!(!args.unit_add);
+        assert!(height_policy(20_001).is_err());
+        assert!(height_policy(65_537).is_err());
+        let high = shl(Integer::one(), 24_000) + Integer::from(7);
+        let variable = Arc::new(Algebra::new(&["alpha".into()]).unwrap().variables[0].clone());
+        let p = UnivariatePolynomial::from_coefficients(
+            &Z,
+            vec![
+                -high.clone(),
+                Integer::zero(),
+                high.clone(),
+                Integer::from(-3),
+            ],
+            variable,
+        );
+        assert!(plan(&p, &Integer::one()).is_err());
+        for shift in [-2, 0, 1, 3] {
+            let a = Integer::from(shift);
+            let (q, stats) = fast_shift_with_height(&p, &a, 32_768, |_, _| Ok(())).unwrap();
+            assert_eq!(q, p.shift_var(&a));
+            assert_eq!(stats["plan"]["input_height_limit_bits"], 32_768);
+        }
+        let input_record = Input {
+            schema_version: 1,
+            variables: vec!["unused".into(), "alpha".into()],
+            axis: 1,
+            terms: vec![Term {
+                coefficient: (-high).to_string(),
+                exponents: vec![0, 0],
+            }],
+        };
+        let bytes = serde_json::to_vec(&input_record).unwrap();
+        assert!(input(&bytes, &hash(&bytes)).is_err());
+        let (i, parsed) = input_with_height(&bytes, &hash(&bytes), 32_768).unwrap();
+        assert_eq!(i.variables, input_record.variables);
+        assert_eq!(i.axis, 1);
+        assert_eq!(parsed.coefficients()[0], p.coefficients()[0]);
+    }
+    #[test]
+    fn raised_height_keeps_exact_boundary_and_storage_caps() {
+        let at = shl(Integer::one(), 65_535);
+        assert_eq!(integer_literal(&at.to_string(), 65_536).unwrap(), at);
+        let over = shl(Integer::one(), 65_536);
+        assert!(integer_literal(&over.to_string(), 65_536).is_err());
+        let lexical = json!({"schema_version":1,"variables":["x"],"axis":0,"terms":[{"coefficient":"9".repeat(19730),"exponents":[0]}]});
+        let bytes = serde_json::to_vec(&lexical).unwrap();
+        assert!(
+            input_with_height(&bytes, &hash(&bytes), 65_536)
+                .err()
+                .unwrap()
+                .to_string()
+                .contains("literal preflight")
+        );
+        let p = UnivariatePolynomial::from_coefficients(
+            &Z,
+            vec![shl(Integer::one(), 20_000); MAX_DEGREE + 1],
+            Arc::new(Algebra::new(&["x".into()]).unwrap().variables[0].clone()),
+        );
+        assert!(
+            plan_with_height(&p, &Integer::one(), 32_768)
+                .unwrap_err()
+                .to_string()
+                .contains("input coefficient cap")
+        );
+        let p = UnivariatePolynomial::from_coefficients(
+            &Z,
+            vec![Integer::one(); MAX_DEGREE + 1],
+            Arc::new(Algebra::new(&["x".into()]).unwrap().variables[0].clone()),
+        );
+        assert!(plan_with_height(&p, &shl(Integer::one(), 255), 65_536).is_err());
+    }
+    #[test]
+    fn recursive_cli_selection_and_envelope_are_explicit() {
+        let argv = [
+            "helper",
+            "input",
+            "--input-sha256",
+            "hash",
+            "--output",
+            "fresh",
+            "--recursive-leaf",
+            "32",
+            "--input-height-bits",
+            "32768",
+        ];
+        let args = Args::try_parse_from(argv).unwrap();
+        assert_eq!(args.recursive_leaf, Some(32));
+        assert_eq!(args.input_height_bits, 32_768);
+        assert_eq!(
+            method(args.recursive_leaf, args.unit_add),
+            "recursive_cached_binomial_convolution"
+        );
+        assert!(Args::try_parse_from(argv.into_iter().chain(["--plan-only"])).is_err());
+        assert!(Args::try_parse_from(argv.into_iter().chain(["--unit-add"])).is_err());
+        let unit = Args::try_parse_from([
+            "helper",
+            "input",
+            "--input-sha256",
+            "hash",
+            "--output",
+            "fresh",
+            "--unit-add",
+        ])
+        .unwrap();
+        assert_eq!(
+            method(unit.recursive_leaf, unit.unit_add),
+            "triangular_unit_add_or_subtract"
+        );
+        for leaf in [0, 7, 9, 1024] {
+            assert!(recursive_policy(Some(leaf)).is_err());
+        }
+        for leaf in [32, 64, 128, 256] {
+            recursive_policy(Some(leaf)).unwrap();
+            let p = poly(
+                &(0..259)
+                    .map(|i| (i * 17 % 29) as i64 - 14)
+                    .collect::<Vec<_>>(),
+                "shift_axis",
+            );
+            let a = Integer::from(-3);
+            plan_with_height(&p, &a, MAX_HEIGHT).unwrap();
+            assert_eq!(
+                recursive::recursive_shift(&p, &a, leaf).unwrap().0,
+                p.shift_var(&a)
+            );
+        }
     }
 }
