@@ -2,8 +2,9 @@
 
 This is an example-only driver around the existing public exact kernel. It does
 not change production dispatch, resource defaults, operation caches, proof
-schemas, or verification. The large Gluza calculation has **not been run** with
-this driver. A completed algebra candidate would not establish CAD coverage.
+schemas, or verification. The large Gluza calculation **launched on 10 October
+at 17:59 UTC**, with no completed result at this checkpoint. A completed
+algebra candidate would not establish CAD coverage.
 
 ## Why this experiment is distinct
 
@@ -130,6 +131,29 @@ preflight uses `--capture-sha256 SHA --output FRESH_DIR --plan-only --seconds
 resource envelope requires explicit scheduling after the original campaign
 ends; no production cap escalation or performance claim follows from this
 preparation.
+
+## Launched hard-operand trial
+
+After both original continuations had stopped and their worker groups were
+audited empty, the authenticated Gluza discriminant trial launched at
+**17:59:23.609 UTC** on CPU 13. It uses the frozen development helper above,
+the unchanged captured operand, a **7,200-second / 51,200-MiB** worker, and
+the already checked three-parameter policy. The initial progress record
+admits the same 2,325,141-digit plan; its observable phase is the composite
+`segmentation_encoding_native_decode`, not a measurement of a private native
+subphase. This is an algebra experiment following the failed original solve.
+
+Evidence under `artifacts/research/gluza33-three-parameter-segmentation-hard-01/`
+records the actual executable, complete input map/digest, CPU affinity and
+53,687,091,200-byte address-space limit. The independent launch audit is
+SHA-256 `5a7b35e32fc29fedfc129865d6f32300961d84f4a76f95cff8689306f7b5b44b`.
+The outer limit is 7,320 seconds; the worker's computation budget remains
+7,200 seconds. Initial reservation alongside the separately bounded 8-GiB
+observer build was 58 GiB, within the aggregate campaign ceiling.
+
+The candidate directory and terminal process record will determine the
+outcome. At launch there is no result, independent resultant verification,
+cache insertion, root inventory, or original-problem completion credit.
 
 # Separate degree-84 frontier: static rejection only
 
