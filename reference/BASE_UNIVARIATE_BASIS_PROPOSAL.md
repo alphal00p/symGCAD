@@ -202,9 +202,98 @@ Test execution took 54.58 seconds after a 3m23s development build. The log
 `9f9ec5ff2264d8fcf6a5176c1a70cd4bca9302a5e1d527d2f91cef0c456df28f`.
 The unrelated A381 files are not part of this change or original coverage.
 
-The next gates are a frozen worker, a captured
-production guard-basis replay with its full independent root inventory,
-and a bounded original A377 solve including preprocessing and verification.
+## Captured production-path replay
+
+The test-only harness in
+[`base_univariate_replay.rs`](../src/local_projection/base_univariate_replay.rs)
+completed on the authenticated degree-2169, 2,030-term signed discriminant.
+It uses the complete captured map `[s,t,x0,x3,x5,x6,x8]`, the actual
+`Builder::guard_basis`, an immutable second lookup, and `Builder::visit`.
+After dropping the builder and its caches, it independently validates the
+source records, calls fresh `Checker::guard_basis` on the original signed
+operand, and runs full `verify_local_parts`, including a second root union.
+No prior factor inventory or checkpoint is supplied.
+
+This is an **unconstrained synthetic support problem**, with the generated
+blocks seeded as in-memory cut hints. It is not an A377 solve: no original
+constraint, split or domain coverage is claimed. The real production path
+admitted one source and eight grouped native blocks, with no static decline.
+This grouping can differ from the earlier predeflated sidecar. Exact signed
+product reconstruction and the complete root union are the authority, not
+equality of block counts.
+
+The frozen **development** test executable completed with exit zero in
+**200.77 seconds**, at **105,992 KiB peak RSS**, on CPU10 under a 300-second
+external deadline and 4-GiB address-space limit. Process wall includes input
+parsing, both root isolations, proof checking and output. Its internal stages
+were:
+
+| Stage | Seconds |
+|---|---:|
+| Native support decomposition | 31.400 |
+| Exact product reconstruction | 3.455 |
+| Builder root union | 74.365 |
+| Builder pipeline including preparation | 109.776 |
+| Fresh raw-guard inventory replay | 4.076 |
+| Full independent proof verification | 85.453 |
+
+The builder pipeline row includes the preceding three rows. These are one
+development correctness replay's diagnostics, not a release benchmark or
+an on/off solver comparison.
+
+The verified support tree has **84 distinct real roots and 85 sectors**.
+An independent exact comparison with the matched release square-free
+inventory found identical rational intervals, identical owner-polynomial
+format hashes and identical owner-local ordinals for all 84 roots. All 168
+adjacent exported cell bounds equal the corresponding report root. Both
+inventories have 46 roots below 4, the exact root 4 and 37 above 4.
+
+Evidence is in `artifacts/research/base-univariate-production-replay-01/`.
+The source/test commit is `9b7dd5649d2baa380c467ce05246ea21680b4b04`.
+The frozen executable, input, capture and source bindings were rechecked
+after completion. Principal SHA-256 values are:
+
+| Artifact | SHA-256 |
+|---|---|
+| Frozen development test executable | `e9705d09d808920043276b1caf2d445d158f6178ced01610bf039f54fb5f6f82` |
+| Authentic signed candidate | `0c457cfce6ed2df4545054b7ba79b76e62123e284a665ea39db12bc4124c09c2` |
+| Original capture | `df2a381b027bbbf7e721c47c4533d11177a9172038375ae0a8fd029a7c4aab92` |
+| Worker report | `9a90d91a2c447c7dd3586b9594784b67ea14ba74273006200ecb83458e4864b5` |
+| Synthetic support proof | `354740432ec73c6d60e5bf5e25bb106c6daa5024ecc053ba0ffa55999b389a6a` |
+| Independent root comparison | `36aa38a782adfe2cf5b2160a360ff0fbafe16a26663176f84518b19f194583ea` |
+
+The comparison's initial diagnostic misread a native factor ID as an
+expression. It is preserved separately; the final comparison uses the
+helper's defined `factor.summary.sha256` field.
+
+The ordinary focused test needs no artifact files:
+
+```sh
+nix develop -c cargo test --locked --lib base_univariate_replay -- --test-threads=1
+```
+
+The captured test is ignored by default. To repeat it, first build the
+library test executable with `cargo test --locked --lib --no-run`, freeze
+the printed executable as `TEST_BINARY`, and retain the two hash-bound
+local artifact inputs. Within `nix develop`, with `.symgcad-env` sourced,
+use a fresh output directory and an external deadline covering the whole
+test, including verification:
+
+```sh
+export SYMGCAD_BASE_REPLAY_CANDIDATE="$PWD/artifacts/research/a377-univariate-segmentation-01/discriminant.json"
+export SYMGCAD_BASE_REPLAY_CAPTURE="$PWD/artifacts/research/a377-univariate-segmentation-01/capture-observed.json"
+export SYMGCAD_BASE_REPLAY_OUTPUT="$PWD/artifacts/research/base-univariate-production-replay-rerun/worker"
+ulimit -v 4194304
+timeout --signal=KILL 300s taskset -c 10 "$TEST_BINARY" --ignored --exact \
+  local_projection::base_univariate_replay::captured_a377_discriminant_production_replay \
+  --test-threads=1 --nocapture
+```
+
+The recorded run also wraps that command in GNU `time -v`; its exact script,
+status, stdout, stderr and RSS record are retained alongside the reports.
+
+The remaining gates are a frozen release worker and a bounded original
+A377 solve including preprocessing and verification.
 Only those measurements can establish whole-solver benefit. The option
 remains default-off; this document does not authorize boundary removal or
 promotion to the default policy.
