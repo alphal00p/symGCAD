@@ -29,9 +29,14 @@ and projection assertions must retain their separate dispositions at M6.
 The deterministic fast-core aggressive replay
 `artifacts/bench/core-fast-aggressive-deterministic-release/report.json` matches
 all 48 raw and merged counts with three paired repetitions. The full M2
-aggregate deliberately uses no merging and does not extend that assertion
-coverage to the remaining slow cases. Upstream slow merge assertions include
-the physical elliptic, massless elliptic, `test_ex_e5`, and pentabox B/D cases.
+aggregate deliberately uses no merging. The subsequent twelve-case slow
+aggressive campaign covers physical elliptic, massless elliptic, `test_ex_e5`,
+and pentabox B/D: three fresh paired repetitions all complete, all original
+native assertions and raw counts match, eight merged counts match and four
+differ under the declared policies. All twelve have independently verified
+Rust proofs. [The slow-merge disposition](SLOW_MERGE_ASSERTIONS.md) preserves
+those four differences, timings, hashes, and the separate inactive symbolic
+comments. It does not claim a merged-parity pass or alter the M2 denominator.
 
 The three disabled examples also contain merge assertions: ex38 and ex43 expect
 29 cells; ex44 T/C1/B2 expects 28 while its own source comment reports 19.
