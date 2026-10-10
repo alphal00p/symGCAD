@@ -107,3 +107,48 @@ fn bounded_mcts_honors_scale_order_and_exports_search_costs() {
     assert!(symgcad::verify::verify(&result).unwrap().verified);
     fs::remove_dir_all(directory).unwrap();
 }
+
+#[test]
+fn interrupted_worker_reports_its_elapsed_wall_time() {
+    let directory = directory();
+    let input = directory.join("deadline.toml");
+    let output = directory.join("result.json");
+    let problem = Problem {
+        variables: vec!["x".into()],
+        constraints: vec!["x>0".into()],
+        split: vec!["x^2-2".into()],
+        limits: Limits {
+            wall_time_secs: 0.000_001,
+            memory_mib: 1024,
+            workers: 1,
+            ..Default::default()
+        },
+        ..Default::default()
+    };
+    fs::write(&input, toml::to_string(&problem).unwrap()).unwrap();
+    let mut command = Command::new(env!("CARGO_BIN_EXE_symgcad"));
+    command
+        .arg("solve")
+        .arg(&input)
+        .arg("--output")
+        .arg(&output);
+    let process = run_bounded(
+        &mut command,
+        &Limits {
+            wall_time_secs: 10.0,
+            ..problem.limits.clone()
+        },
+    )
+    .unwrap();
+    assert_eq!(process.status, "completed", "{}", process.stderr);
+    let result: SolveResult = serde_json::from_slice(&fs::read(&output).unwrap()).unwrap();
+    assert_eq!(result.status, Status::Incomplete);
+    assert!(result.statistics.total_seconds > 0.0);
+    assert!(result.statistics.total_seconds <= process.wall_time_secs);
+    assert_eq!(result.statistics.search_seconds, 0.0);
+    assert_eq!(result.statistics.projection_seconds, 0.0);
+    assert_eq!(result.statistics.lifting_seconds, 0.0);
+    assert!(result.cells.is_empty() && result.trace.is_none() && result.local.is_none());
+    assert!(symgcad::verify::verify(&result).is_err());
+    fs::remove_dir_all(directory).unwrap();
+}

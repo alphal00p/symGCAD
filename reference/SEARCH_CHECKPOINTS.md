@@ -91,3 +91,29 @@ a test-only failure from an unrealistically short allowance for hashing the
 large debug executable. The corrected test uses the existing checkpoint test's
 bounded seed allowance. No search-performance gain is claimed without a cold,
 same-binary flag ablation.
+
+The subsequent full library/integration run, including the six bilinear-premise
+research regressions, passed 478 tests across 33 targets in
+`artifacts/local-search-promotion-full-tests-01.log`. The separate helper bundle
+passed 13 tests and built the updated `probe_prepared` helper, so its problem
+roundtrip preserves the opt-in flag. Those logs are
+`artifacts/local-search-promotion-helper-{tests,build}-01.log`.
+
+An interrupted final worker has no trustworthy final solver-phase timer. Its
+fallback result now reports measured worker wall time plus the preceding search
+time exactly once in `statistics.total_seconds`; unavailable projection/lifting
+phase timers retain their default values. This total includes worker startup
+and any export work before interruption. A typed optional
+`statistics.interrupted_local_progress` retains the last local diagnostic
+snapshot, separately from local proof evidence. Recognized optimized-projection
+snapshots continue using their existing field. Malformed or ambiguous snapshots
+are ignored, and neither diagnostics nor worker stdout can upgrade the failure
+to a completed proof. Historical statistics without the new field deserialize
+unchanged.
+
+The timing correction passed four deterministic failure-construction tests,
+three public CLI tests (including an interrupted worker), and five local search
+regressions in `artifacts/interrupted-worker-timing-focused-tests-01.log`.
+The earlier `interrupted-worker-timing-tests-{01,02,03}.log` files retain
+subsequently corrected compile errors in unrelated research helpers; they are
+not failed mathematical or timing assertions.

@@ -97,6 +97,10 @@ pub struct Statistics {
     pub projection_steps: Vec<ProjectionStep>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub optimized_projection: Option<crate::optimized_projection::OptimizedProjectionReport>,
+    /// Last diagnostic snapshot from a worker that did not return a complete
+    /// result file. This is neither local coverage evidence nor phase timing.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub interrupted_local_progress: Option<crate::local_projection::LocalReport>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

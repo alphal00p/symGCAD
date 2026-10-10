@@ -218,25 +218,56 @@ fn forward(
             println!();
         }
     } else {
-        let status = if ["timeout", "memory_limit"].contains(&process.status.as_str()) {
-            Status::Incomplete
-        } else {
-            Status::ComputationFailure
-        };
-        let mut failure = SolveResult::failure(
-            problem,
-            status,
-            format!("worker {}: {}", process.status, process.stderr),
-        );
-        failure.statistics.optimized_projection =
-            progress.and_then(|p| serde_json::from_value(p).ok());
-        if let Some(search) = search {
-            attach_search(&mut failure, search.clone());
-        }
+        let failure = interrupted_result(problem, &process, progress, search);
         emit(&failure, output.as_deref())?;
     }
     fs::remove_file(result_path)?;
     Ok(())
+}
+
+fn interrupted_result(
+    problem: Problem,
+    process: &ProcessOutcome,
+    progress: Option<Value>,
+    search: Option<&Value>,
+) -> SolveResult {
+    let status = if ["timeout", "memory_limit"].contains(&process.status.as_str()) {
+        Status::Incomplete
+    } else {
+        Status::ComputationFailure
+    };
+    let mut failure = SolveResult::failure(
+        problem,
+        status,
+        format!("worker {}: {}", process.status, process.stderr),
+    );
+    // The killed worker cannot supply a final solver timer. Retain its measured
+    // wall cost, including initialization/export, without guessing phase costs.
+    // Search happened in the parent before this worker, so attach it once below.
+    failure.statistics.total_seconds = process.wall_time_secs;
+    if let Some(progress) = progress {
+        // LocalReport has serde defaults. Require its own identifying fields
+        // instead of interpreting arbitrary JSON as an empty local snapshot.
+        let local_shape = progress["speculative_nodes"].is_u64()
+            && progress["refinements"].is_u64()
+            && progress["active_phase"].is_string()
+            && progress["current_prefix"].is_array();
+        let optimized_shape = progress["checkpoints"].is_array() && progress["cache"].is_object();
+        match (local_shape, optimized_shape) {
+            (true, false) => {
+                failure.statistics.interrupted_local_progress =
+                    serde_json::from_value(progress).ok();
+            }
+            (false, true) => {
+                failure.statistics.optimized_projection = serde_json::from_value(progress).ok();
+            }
+            _ => {} // Unknown, malformed or ambiguous diagnostics are optional.
+        }
+    }
+    if let Some(search) = search {
+        attach_search(&mut failure, search.clone());
+    }
+    failure
 }
 
 fn run_search(problem: &Problem) -> Result<Value> {
@@ -661,5 +692,136 @@ fn main() -> Result<()> {
                 emit(&inventory, None)
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod interrupted_tests {
+    use super::*;
+
+    fn process(status: &str) -> ProcessOutcome {
+        ProcessOutcome {
+            status: status.into(),
+            wall_time_secs: 1200.25,
+            user_cpu_secs: 1100.0,
+            system_cpu_secs: 10.0,
+            peak_rss_kib: 1024,
+            exit_code: None,
+            stdout: "{\"status\":\"complete_generic\"}".into(),
+            stderr: "interrupted".into(),
+            output_truncated: false,
+        }
+    }
+
+    fn assert_no_proof(result: &SolveResult) {
+        assert!(result.cells.is_empty());
+        assert!(result.trace.is_none());
+        assert!(result.local.is_none());
+        assert!(result.statistics.projection_steps.is_empty());
+        assert_eq!(result.statistics.projection_seconds, 0.0);
+        assert_eq!(result.statistics.lifting_seconds, 0.0);
+        assert_eq!(result.statistics.merging_seconds, 0.0);
+        assert!(symgcad::verify::verify(result).is_err());
+    }
+
+    #[test]
+    fn interrupted_wall_and_search_are_counted_once_without_phase_inference() {
+        let search = json!({"total_seconds":300.5,"search":{"trials":[]}});
+        for status in ["timeout", "memory_limit", "failed"] {
+            let plain = interrupted_result(Problem::default(), &process(status), None, None);
+            assert_eq!(plain.statistics.total_seconds, 1200.25);
+            assert_eq!(plain.statistics.search_seconds, 0.0);
+            assert_eq!(plain.statistics.ordering_seconds, 0.0);
+            assert_no_proof(&plain);
+            let searched =
+                interrupted_result(Problem::default(), &process(status), None, Some(&search));
+            assert_eq!(searched.statistics.total_seconds, 1500.75);
+            assert_eq!(searched.statistics.search_seconds, 300.5);
+            assert_eq!(searched.statistics.ordering_seconds, 300.5);
+            assert_eq!(searched.statistics.ordering_search, Some(search.clone()));
+            assert_eq!(
+                searched.status,
+                if status == "failed" {
+                    Status::ComputationFailure
+                } else {
+                    Status::Incomplete
+                }
+            );
+            assert_no_proof(&searched);
+        }
+    }
+
+    #[test]
+    fn interrupted_progress_retains_typed_diagnostics_without_coverage() {
+        let local = symgcad::local_projection::LocalReport {
+            speculative_nodes: 23,
+            refinements: 7,
+            active_phase: "resultant".into(),
+            current_prefix: vec!["3/2".into()],
+            elapsed_seconds: 1190.0,
+            ..Default::default()
+        };
+        let result = interrupted_result(
+            Problem::default(),
+            &process("timeout"),
+            Some(serde_json::to_value(local).unwrap()),
+            None,
+        );
+        let snapshot = result
+            .statistics
+            .interrupted_local_progress
+            .as_ref()
+            .unwrap();
+        assert_eq!(snapshot.speculative_nodes, 23);
+        assert_eq!(snapshot.refinements, 7);
+        assert_eq!(snapshot.current_prefix, ["3/2"]);
+        assert!(result.statistics.optimized_projection.is_none());
+        assert_eq!(result.statistics.total_seconds, 1200.25);
+        assert_no_proof(&result);
+
+        let optimized = symgcad::optimized_projection::OptimizedProjectionReport::default();
+        let result = interrupted_result(
+            Problem::default(),
+            &process("timeout"),
+            Some(serde_json::to_value(optimized).unwrap()),
+            None,
+        );
+        assert!(result.statistics.interrupted_local_progress.is_none());
+        assert!(result.statistics.optimized_projection.is_some());
+        assert_no_proof(&result);
+    }
+
+    #[test]
+    fn malformed_or_ambiguous_progress_is_not_reinterpreted() {
+        for progress in [
+            json!({}),
+            json!({"status":"complete_generic","cells":[{}]}),
+            json!({"speculative_nodes":0,"refinements":0,"active_phase":"x","current_prefix":[3]}),
+            json!({"checkpoints":[],"cache":false}),
+            json!({"speculative_nodes":0,"refinements":0,"active_phase":"x","current_prefix":[],"checkpoints":[],"cache":{}}),
+        ] {
+            let result = interrupted_result(
+                Problem::default(),
+                &process("timeout"),
+                Some(progress),
+                None,
+            );
+            assert!(result.statistics.interrupted_local_progress.is_none());
+            assert!(result.statistics.optimized_projection.is_none());
+            assert_no_proof(&result);
+        }
+    }
+
+    #[test]
+    fn historical_statistics_default_to_no_interrupted_progress() {
+        let statistics: symgcad::output::Statistics =
+            serde_json::from_value(json!({"total_seconds":12.0})).unwrap();
+        assert!(statistics.interrupted_local_progress.is_none());
+        assert!(
+            serde_json::to_value(statistics)
+                .unwrap()
+                .get("interrupted_local_progress")
+                .is_none()
+        );
     }
 }
