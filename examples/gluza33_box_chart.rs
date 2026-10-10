@@ -295,12 +295,41 @@ fn run(args: &Args) -> Result<()> {
         args.output.join("input.toml"),
         toml::to_string_pretty(&problem)?,
     )?;
+    // These are independent complexity probes. Their union is NOT asserted
+    // cylindrical: eventual assembly must refine their ancestor trees jointly.
+    for (label, signs) in [("pinch", [-1, 1, -1]), ("positive", [1, 1, 1])] {
+        let piece = conditional_piece(&problem, signs)?;
+        fs::write(
+            args.output.join(format!("piece-{label}.toml")),
+            toml::to_string_pretty(&piece)?,
+        )?;
+    }
     fs::write(
         args.output.join("report.json"),
         serde_json::to_vec_pretty(&json!({"source":args.input,
         "source_sha256":format!("{:x}",Sha256::digest(bytes)),"elapsed_seconds":start.elapsed().as_secs_f64(),"result":identities}))?,
     )?;
     Ok(())
+}
+
+fn conditional_piece(source: &Problem, signs: [i8; 3]) -> Result<Problem> {
+    ensure!(source.split.len() == 4, "requires a,b,c,H in that order");
+    ensure!(signs.iter().all(|s| [-1, 1].contains(s)));
+    let mut result = source.clone();
+    result.name = Some(format!("research conditional a,b,c pattern {signs:?}"));
+    for (p, sign) in source.split[..3].iter().zip(signs) {
+        result
+            .constraints
+            .push(format!("({p}){}0", if sign > 0 { ">" } else { "<" }));
+    }
+    result.split = if signs == [-1, 1, -1] {
+        vec![source.split[3].clone()]
+    } else {
+        vec![]
+    };
+    result.solver.local_positive_pair_witnesses = true;
+    result.validate()?;
+    Ok(result)
 }
 fn main() -> Result<()> {
     let args = Args::parse();
@@ -390,6 +419,30 @@ mod tests {
                 .collect(),
         ];
         assert!(prepare(&p).is_err());
+        Ok(())
+    }
+    #[test]
+    fn conditional_probes_retain_domain_and_only_the_pinch_h_cut() -> Result<()> {
+        let (source, _) = prepare(&base())?;
+        let pinch = conditional_piece(&source, [-1, 1, -1])?;
+        let positive = conditional_piece(&source, [1, 1, 1])?;
+        for p in [&pinch, &positive] {
+            assert_eq!(
+                &p.constraints[..source.constraints.len()],
+                source.constraints
+            );
+            assert_eq!(p.variables, source.variables);
+            assert_eq!(p.solver.order, source.solver.order);
+            assert!(p.solver.local_positive_pair_witnesses);
+        }
+        assert_eq!(pinch.split, vec![source.split[3].clone()]);
+        assert!(positive.split.is_empty());
+        let n = normalize(&pinch, &pinch.variables)?;
+        let original = normalize(&source, &source.variables)?;
+        let k = original.positives.len();
+        assert_eq!(n.positives[k], -original.split[0].clone());
+        assert_eq!(n.positives[k + 1], original.split[1]);
+        assert_eq!(n.positives[k + 2], -original.split[2].clone());
         Ok(())
     }
 }

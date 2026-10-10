@@ -360,3 +360,39 @@ intervals put only three and four of these roots in the chart's interval
 `0<r<1`. The current positive-ray rule still preserves ordering beyond
 that upper endpoint. These measurements motivate investigating a narrower
 pair certificate, but do not themselves justify dropping any pair guard.
+
+Enabling the already implemented positive-pair separator rule cleared this
+particular obstruction but did not complete the transformed problem.
+The matched cold trial timed out after 120.050 seconds with 180,348 KiB
+peak RSS. Its final snapshot had 113,703 speculative nodes, 1,344
+refinements, 2,359 admitted pair templates and 10,118 pair-resultant
+omissions. Evidence is retained under
+`artifacts/research/gluza33-box-chart-pair-02/`. These are diagnostic
+counts from one incomplete trial, not an end-to-end speedup result.
+
+The helper also prepares two exact conditional research pieces. Both keep
+the full chart domain and `d>0`, then constrain the signs of `a,b,c`.
+The `(-,+,-)` pinch piece retains the `H` sign cut; the `(+,+,+)` piece
+does not need that ordering cut. Each problem is merely a subdomain
+complexity diagnostic. Combining independently generated piece CADs would
+still require common refinement of all ancestor projections before an
+original cylindrical decomposition could be claimed. The third helper
+regression checks these exact constraints, ordered cuts and preserved
+variable order.
+
+Both pieces timed out at their 120-second limits. The pinch trial used
+184,412 KiB peak RSS and reached 157,021 speculative nodes / 1,379
+refinements. The positive-coefficient trial used 121,208 KiB and reached
+296,162 nodes / 1,600 refinements. Both were on the same frozen release,
+with 4 GiB limits and separate CPUs/cold caches. Reports are under
+`artifacts/research/gluza33-conditional-pieces-01/{pinch,positive}/`.
+
+The earlier full endpoint-base MCTS campaign also remained incomplete:
+99 timed-out ordering trials consumed 300.029 seconds, followed by the
+selected order `[x1,x0,x2,x4,x6,x7]` under the remaining budget. The public
+solve ended after 1,501.081 seconds with 417,980 KiB peak RSS. Its saved
+ordering snapshots do not identify the final fallback's algebra phase.
+Evidence is under `artifacts/research/gluza33-positive-endpoint-promotion-01/`.
+These partial research campaigns add no original completions. Subsequent
+work switched to the requested one-hour regime over all 28 unresolved
+originals; it does not substitute these reduced pieces for original cases.
