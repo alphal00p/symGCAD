@@ -1,0 +1,416 @@
+//! Exact support blocks for generated guards in Q[x_0]. No irreducibility
+//! assertion is made here, and no ordinary factor cache receives these blocks.
+use super::*;
+use symbolica::{domains::InternalOrdering, poly::factor::Factorize};
+
+pub(super) const MAX_SOURCES: usize = 128;
+pub(super) const MAX_RETAINED_BITS: u64 = 128_000_000;
+const MAX_DEGREE: u32 = 4096;
+const MAX_TERMS: usize = 4096;
+const MAX_AXES: usize = 64;
+const MAX_HEIGHT: u64 = 20_000;
+const MAX_BLOCKS: usize = 64;
+const MAX_TEXT: usize = 32 * 1024 * 1024;
+
+pub(super) fn map_admissible(algebra: &Algebra) -> bool {
+    // Together with degree/term/coefficient caps this bounds formatted source
+    // text before allocation; inactive names do not occur in a source string.
+    !algebra.names.is_empty() && algebra.names.len() <= MAX_AXES && algebra.names[0].len() <= 1024
+}
+
+fn bounded(condition: bool, reason: &str) -> Result<()> {
+    if !condition {
+        return Err(crate::resultant_interpolation::Stopped(reason.into()).into());
+    }
+    Ok(())
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct BaseUnivariateBasis {
+    pub schema_version: u32,
+    pub sources: Vec<BaseUnivariateSource>,
+}
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct BaseUnivariateSource {
+    pub polynomial: String,
+    pub blocks: Vec<BaseUnivariateBlock>,
+}
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct BaseUnivariateBlock {
+    pub polynomial: usize,
+    pub multiplicity: u32,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(default)]
+pub struct BaseUnivariateReport {
+    pub sources: usize,
+    pub blocks: usize,
+    pub hits: usize,
+    pub static_declines: usize,
+    pub decomposition_seconds: f64,
+    pub reconstruction_seconds: f64,
+    pub root_union_seconds: f64,
+}
+
+/// Static admission is checked before primitive normalization or native work.
+pub(super) fn cost(p: &Poly) -> Option<u64> {
+    if p.nvars() == 0
+        || p.nvars() > MAX_AXES
+        || p.nterms() > MAX_TERMS
+        || p.is_constant()
+        || highest(p) != Some(0)
+        || p.degree(0) > MAX_DEGREE
+    {
+        return None;
+    }
+    let mut bits = 0u64;
+    let mut denominator_bits = 0u64;
+    for c in &p.coefficients {
+        let numerator = c.numerator_ref().significant_bits();
+        let denominator = c.denominator_ref().significant_bits();
+        if numerator > MAX_HEIGHT || denominator > MAX_HEIGHT {
+            return None;
+        }
+        bits = bits.checked_add(numerator.checked_add(denominator)?)?;
+        denominator_bits = denominator_bits.checked_add(denominator)?;
+    }
+    (bits <= 64_000_000 && denominator_bits <= 65_536).then_some(bits)
+}
+
+/// Degree-one sources already have a cheap ordinary factor identity. Preserve
+/// the finite source quota for guards needing a nontrivial support basis.
+pub(super) fn source_cost(p: &Poly) -> Option<u64> {
+    if p.nvars() == 0 || p.degree(0) < 2 {
+        None
+    } else {
+        cost(p)
+    }
+}
+
+/// Replays a canonical product with degree/height bounds checked before powers.
+/// The factors need not be square-free, coprime, distinct or irreducible.
+pub(super) fn check_product(
+    source: &Poly,
+    blocks: &[(Poly, u32)],
+    mut budget: impl FnMut() -> Result<()>,
+) -> Result<()> {
+    ensure!(
+        source_cost(source).is_some() && canonical(source) == *source,
+        "invalid base support source"
+    );
+    ensure!(!blocks.is_empty(), "empty base support product");
+    bounded(blocks.len() <= MAX_BLOCKS, "base support block count cap")?;
+    let mut degree = 0u64;
+    let mut bound = 0u64;
+    for (p, multiplicity) in blocks {
+        budget()?;
+        ensure!(*multiplicity > 0, "invalid base support multiplicity");
+        bounded(*multiplicity <= MAX_DEGREE, "base support multiplicity cap")?;
+        ensure!(
+            p.variables() == source.variables() && highest(p) == Some(0),
+            "base support block map or support changed"
+        );
+        bounded(cost(p).is_some(), "base support block size cap")?;
+        ensure!(canonical(p) == *p, "noncanonical base support block");
+        degree = degree
+            .checked_add(u64::from(p.degree(0)) * u64::from(*multiplicity))
+            .ok_or_else(|| anyhow!("base support degree overflow"))?;
+        let height = p
+            .coefficients
+            .iter()
+            .map(|c| c.numerator_ref().significant_bits())
+            .max()
+            .unwrap_or(0);
+        let log_terms = p.nterms().max(1).next_power_of_two().trailing_zeros() as u64;
+        bound = bound
+            .checked_add((height + log_terms) * u64::from(*multiplicity))
+            .ok_or_else(|| anyhow!("base support height overflow"))?;
+        ensure!(
+            degree <= u64::from(source.degree(0)),
+            "base support product degree changed"
+        );
+        bounded(bound <= 65_536, "base support product height cap")?;
+    }
+    ensure!(
+        degree == u64::from(source.degree(0)),
+        "base support product degree changed"
+    );
+    bounded(
+        (degree + 1) * bound <= 256_000_000,
+        "base support product work cap",
+    )?;
+    let mut product = source.one();
+    for (p, multiplicity) in blocks {
+        budget()?;
+        product = &product * &p.pow(*multiplicity as usize);
+        budget()?;
+    }
+    ensure!(
+        product == *source,
+        "base support product does not reconstruct its canonical source"
+    );
+    Ok(())
+}
+
+pub(super) fn discover(
+    source: &Poly,
+    report: &mut BaseUnivariateReport,
+    mut budget: impl FnMut() -> Result<()>,
+) -> Result<Vec<(Poly, u32)>> {
+    budget()?;
+    let started = Instant::now();
+    let proposed = source.square_free_factorization();
+    report.decomposition_seconds += started.elapsed().as_secs_f64();
+    budget()?;
+    let started = Instant::now();
+    bounded(
+        proposed.len() <= MAX_BLOCKS + 2,
+        "native base support block count cap",
+    )?;
+    let mut blocks: HashMap<Poly, u32> = HashMap::new();
+    for (mut p, m) in proposed {
+        budget()?;
+        ensure!(!p.is_zero() && m > 0, "invalid native base support factor");
+        bounded(
+            m <= MAX_DEGREE as usize,
+            "native base support multiplicity cap",
+        )?;
+        if p.is_constant() {
+            p = source.constant(p.get_constant());
+        }
+        ensure!(
+            p.variables() == source.variables(),
+            "native base support map changed"
+        );
+        if p.is_constant() {
+            continue;
+        }
+        ensure!(
+            highest(&p) == Some(0),
+            "native base support factor support changed"
+        );
+        bounded(cost(&p).is_some(), "native base support factor cap")?;
+        let p = canonical(&p);
+        let old = blocks.entry(p).or_default();
+        *old = old
+            .checked_add(m as u32)
+            .ok_or_else(|| anyhow!("base support multiplicity overflow"))?;
+    }
+    let mut blocks: Vec<_> = blocks.into_iter().collect();
+    blocks.sort_by(|a, b| a.0.internal_cmp(&b.0));
+    check_product(source, &blocks, &mut budget)?;
+    report.reconstruction_seconds += started.elapsed().as_secs_f64();
+    Ok(blocks)
+}
+
+/// Strict sparse integer grammar prevents an evidence string from expanding
+/// huge expressions before support/degree/height caps can be checked.
+fn parse_source(algebra: &Algebra, text: &str) -> Result<Poly> {
+    ensure!(
+        text.len() <= MAX_TEXT && !text.is_empty() && map_admissible(algebra),
+        "base source text/map cap"
+    );
+    let axis = format!("*{}", algebra.names[0]);
+    let mut p = algebra.parse("0")?;
+    let mut previous = None;
+    for (i, term) in text.split('+').enumerate() {
+        ensure!(i < MAX_TERMS, "base source term cap");
+        let (coefficient, suffix) = term
+            .strip_prefix('(')
+            .and_then(|s| s.split_once(')'))
+            .ok_or_else(|| anyhow!("invalid base source term"))?;
+        let digits = coefficient.strip_prefix('-').unwrap_or(coefficient);
+        ensure!(
+            !digits.is_empty()
+                && digits.len() <= 6021
+                && digits.bytes().all(|b| b.is_ascii_digit()),
+            "invalid base source integer"
+        );
+        let exponent = if suffix.is_empty() {
+            0
+        } else if suffix == axis {
+            1
+        } else {
+            suffix
+                .strip_prefix(&format!("{axis}^"))
+                .ok_or_else(|| anyhow!("base source is not in its first axis"))?
+                .parse::<u32>()?
+        };
+        ensure!(
+            exponent <= MAX_DEGREE && previous.is_none_or(|old| old < exponent),
+            "base source exponent cap/order"
+        );
+        previous = Some(exponent);
+        let c = crate::algebra::rational(coefficient)?;
+        ensure!(
+            !c.is_zero() && c.numerator_ref().significant_bits() <= MAX_HEIGHT,
+            "base source coefficient cap"
+        );
+        let mut exponents = vec![0; algebra.names.len()];
+        exponents[0] = exponent;
+        p.append_monomial(c, &exponents);
+    }
+    ensure!(
+        source_cost(&p).is_some() && canonical(&p) == p && algebra.format(&p) == text,
+        "noncanonical base source"
+    );
+    Ok(p)
+}
+
+#[derive(Default)]
+pub(super) struct Validated {
+    pub sources: HashMap<Poly, Vec<usize>>,
+    pub typed: BTreeSet<usize>,
+}
+
+pub(super) fn validate(
+    algebra: &Algebra,
+    polynomials: &[Poly],
+    evidence: Option<&BaseUnivariateBasis>,
+    enabled: bool,
+) -> Result<Validated> {
+    let mut result = Validated::default();
+    let Some(evidence) = evidence else {
+        return Ok(result);
+    };
+    ensure!(enabled, "base support evidence requires enabled option");
+    ensure!(
+        evidence.schema_version == 1
+            && !evidence.sources.is_empty()
+            && evidence.sources.len() <= MAX_SOURCES,
+        "invalid base support schema/source count"
+    );
+    let mut retained_bits = 0u64;
+    for record in &evidence.sources {
+        ensure!(
+            !record.blocks.is_empty() && record.blocks.len() <= MAX_BLOCKS,
+            "base support block count cap"
+        );
+        let source = parse_source(algebra, &record.polynomial)?;
+        retained_bits += cost(&source).unwrap();
+        ensure!(
+            retained_bits <= MAX_RETAINED_BITS,
+            "base support retained source cap"
+        );
+        ensure!(
+            !result.sources.contains_key(&source),
+            "duplicate base support source"
+        );
+        let mut previous = None;
+        let mut blocks = Vec::new();
+        let mut block_bits = 0u64;
+        for block in &record.blocks {
+            ensure!(
+                previous.is_none_or(|id| id < block.polynomial),
+                "base support IDs are not unique and sorted"
+            );
+            previous = Some(block.polynomial);
+            let p = polynomials
+                .get(block.polynomial)
+                .ok_or_else(|| anyhow!("invalid base support block ID"))?;
+            block_bits += cost(p).ok_or_else(|| anyhow!("invalid base support block"))?;
+            ensure!(block_bits <= 64_000_000, "base support block storage cap");
+            blocks.push((p.clone(), block.multiplicity));
+        }
+        retained_bits += block_bits;
+        ensure!(
+            retained_bits <= MAX_RETAINED_BITS,
+            "base support retained source/block cap"
+        );
+        check_product(&source, &blocks, || Ok(()))?;
+        let ids: Vec<_> = record.blocks.iter().map(|b| b.polynomial).collect();
+        result.typed.extend(&ids);
+        result.sources.insert(source, ids);
+    }
+    Ok(result)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn composite_repeated_shared_blocks_replay_without_irreducibility() {
+        let a = Algebra::new(&["x".into(), "z".into()]).unwrap();
+        let p = canonical(&a.parse("-3/5*(x-1)^3*(x+2)^2*(x^2-2)").unwrap());
+        let blocks = vec![
+            (a.parse("(x-1)*(x+2)").unwrap(), 2),
+            (a.parse("(x-1)*(x^2-2)").unwrap(), 1),
+        ];
+        check_product(&p, &blocks, || Ok(())).unwrap();
+        let mut bad = blocks.clone();
+        bad[0].1 = 1;
+        assert!(check_product(&p, &bad, || Ok(())).is_err());
+        let blocks = discover(&p, &mut BaseUnivariateReport::default(), || Ok(())).unwrap();
+        check_product(&p, &blocks, || Ok(())).unwrap();
+    }
+    #[test]
+    fn caps_maps_sparse_grammar_and_stop_are_explicit() {
+        let a = Algebra::new(&["x".into(), "z".into()]).unwrap();
+        for text in ["0", "1", "z+1", "x^4097+1"] {
+            assert!(cost(&a.parse(text).unwrap()).is_none());
+        }
+        let p = a.parse("x^2-3*x+2").unwrap();
+        assert_eq!(parse_source(&a, &a.format(&p)).unwrap(), p);
+        for text in [
+            "(1)*(x+1)^4096",
+            "(1)*z",
+            "(1)*x^4097",
+            "(1)*x+(1)*x",
+            "(-1)*x",
+        ] {
+            assert!(parse_source(&a, text).is_err());
+        }
+        assert!(
+            discover(&p, &mut BaseUnivariateReport::default(), || Err(anyhow!(
+                "stop"
+            )))
+            .is_err()
+        );
+        let other = Algebra::new(&["x".into()])
+            .unwrap()
+            .parse("x^2-3*x+2")
+            .unwrap();
+        assert!(check_product(&p, &[(other, 1)], || Ok(())).is_err());
+    }
+    #[test]
+    fn entered_stage_failures_and_late_budget_stops_never_select_fallback() {
+        assert!(matches!(
+            base_stage_stop(anyhow!("native reconstruction failure")),
+            Stop::Failed(_)
+        ));
+        let stopped = crate::resultant_interpolation::Stopped("budget".into());
+        assert!(matches!(base_stage_stop(stopped.into()), Stop::Resource(_)));
+        let a = Algebra::new(&["x".into()]).unwrap();
+        let p = a.parse("x^2-3*x+2").unwrap();
+        let mut calls = 0;
+        let mut report = BaseUnivariateReport::default();
+        let result = discover(&p, &mut report, || {
+            calls += 1;
+            if calls == 2 {
+                Err(crate::resultant_interpolation::Stopped("after native".into()).into())
+            } else {
+                Ok(())
+            }
+        });
+        assert!(matches!(
+            base_stage_stop(result.unwrap_err()),
+            Stop::Resource(_)
+        ));
+        let mut calls = 0;
+        assert!(
+            check_product(&p, &[(p.clone(), 1)], || {
+                calls += 1;
+                if calls == 3 {
+                    Err(anyhow!("after product"))
+                } else {
+                    Ok(())
+                }
+            })
+            .is_err()
+        );
+    }
+}

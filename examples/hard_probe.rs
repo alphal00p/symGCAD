@@ -105,6 +105,9 @@ struct Args {
     /// Replay ordinary projection over the zero-dimensional initial base.
     #[arg(long)]
     no_base_point_projection: bool,
+    /// Experimental exact support blocks for generated first-axis guards.
+    #[arg(long)]
+    base_univariate_basis: bool,
     /// Experimental adjacent-root pair projection, with exact proof replay.
     #[arg(long)]
     adjacent_pairs: bool,
@@ -390,6 +393,7 @@ struct Campaign {
     descartes_intervals: bool,
     positive_pair_witnesses: bool,
     base_point_projection: bool,
+    base_univariate_basis: bool,
     adjacent_pairs: bool,
     subtree_cache_mib: usize,
     learned_cut_cache_mib: usize,
@@ -471,6 +475,7 @@ fn run_trial(campaign: &Campaign, trial: Trial) -> Result<Record> {
     problem.solver.local_positive_pair_witnesses = campaign.positive_pair_witnesses;
     problem.solver.local_stable_samples = campaign.stable_samples;
     problem.solver.local_base_point_projection = campaign.base_point_projection;
+    problem.solver.local_base_univariate_basis = campaign.base_univariate_basis;
     problem.solver.local_adjacent_pairs = campaign.adjacent_pairs;
     problem.solver.local_subtree_cache_mib = campaign.subtree_cache_mib;
     problem.solver.local_learned_cut_cache_mib = campaign.learned_cut_cache_mib;
@@ -1021,6 +1026,7 @@ fn main() -> Result<()> {
         descartes_intervals: args.descartes_intervals,
         positive_pair_witnesses: args.positive_pair_witnesses,
         base_point_projection: !args.no_base_point_projection,
+        base_univariate_basis: args.base_univariate_basis,
         adjacent_pairs: args.adjacent_pairs,
         subtree_cache_mib: args.subtree_cache_mib,
         learned_cut_cache_mib: args.learned_cut_cache_mib,

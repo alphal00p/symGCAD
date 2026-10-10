@@ -67,8 +67,7 @@ impl Builder<'_> {
             }
             let leading = p.univariate_lcoeff(level);
             if prefix_value(&leading, prefix)?.is_zero() {
-                let factors = self.operations.factors(&[leading])?;
-                let guards = factors.into_iter().map(|p| self.intern(p)).collect();
+                let guards = self.guard_basis(&[leading])?;
                 self.guard_nonzero(&guards, prefix)?;
                 return Err(Stop::Unsupported(
                     "degree-drop guard did not refine its ancestor".into(),
@@ -89,7 +88,21 @@ impl Builder<'_> {
                 ))
             })
             .collect::<Result<Vec<_>>>()?;
-        let mut roots = isolate_union(fibers)?;
+        let typed_base = cuts.iter().any(|id| self.base_typed.contains(id));
+        let mut roots = isolate_union(fibers).map_err(|e| {
+            if typed_base {
+                base_stage_stop(e)
+            } else {
+                Stop::from(e)
+            }
+        })?;
+        if typed_base {
+            self.report
+                .base_univariate_basis
+                .as_mut()
+                .unwrap()
+                .root_union_seconds += started.elapsed().as_secs_f64();
+        }
         if ray.is_some() {
             // A tentative nongeneric cut may share zero with the coordinate.
             // Union ownership is irrelevant to discovery. Final projection

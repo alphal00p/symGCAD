@@ -106,6 +106,9 @@ pub struct SolverOptions {
     /// Isolate the first-axis root union without constant projection algebra.
     #[serde(skip_serializing_if = "is_true")]
     pub local_base_point_projection: bool,
+    /// Experimental exact support blocks for generated first-axis guards.
+    #[serde(skip_serializing_if = "is_false")]
+    pub local_base_univariate_basis: bool,
     /// Experimental projection through adjacent relevant root branches only.
     #[serde(skip_serializing_if = "is_false")]
     pub local_adjacent_pairs: bool,
@@ -158,6 +161,7 @@ impl Default for SolverOptions {
             local_positive_pair_witnesses: false,
             local_strict_bezout_hints: Vec::new(),
             local_base_point_projection: true,
+            local_base_univariate_basis: false,
             local_adjacent_pairs: false,
             local_subtree_cache_mib: 32,
             local_learned_cut_cache_mib: 8,
@@ -225,6 +229,14 @@ impl Problem {
         ensure!(
             !self.solver.local_deferred_projection || self.solver.local_stable_samples,
             "local_deferred_projection requires local_stable_samples"
+        );
+        ensure!(
+            !self.solver.local_base_univariate_basis || self.solver.local_base_point_projection,
+            "local_base_univariate_basis requires local_base_point_projection"
+        );
+        ensure!(
+            !self.solver.local_base_univariate_basis || !self.solver.local_hint_archive,
+            "local_base_univariate_basis does not permit local_hint_archive in v1"
         );
         let names: BTreeSet<_> = self.variables.iter().collect();
         ensure!(names.len() == self.variables.len(), "duplicate variables");

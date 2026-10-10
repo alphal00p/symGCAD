@@ -65,7 +65,11 @@ use symbolica::prelude::*;
 mod descartes;
 mod interval_descartes;
 pub use interval_descartes::{PositiveInterval, PositiveIntervalEndpoint, PositiveIntervalWitness};
+mod base_univariate;
 mod hint_archive;
+pub use base_univariate::{
+    BaseUnivariateBasis, BaseUnivariateBlock, BaseUnivariateReport, BaseUnivariateSource,
+};
 mod lazy_projection;
 mod learned_cuts;
 mod obstruction_observer;
@@ -155,6 +159,9 @@ pub struct LocalOptions {
     /// Missing historical evidence retains ordinary local projection replay.
     #[serde(default)]
     pub base_point_projection: bool,
+    /// Experimental exact support blocks for generated first-axis guards only.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub base_univariate_basis: bool,
     /// Experimental: project only consecutive relevant root branches after
     /// their individual delineability guards have been established.
     #[serde(default)]
@@ -198,6 +205,7 @@ impl Default for LocalOptions {
             descartes_intervals: false,
             descartes_interval_template_limit: 2,
             base_point_projection: true,
+            base_univariate_basis: false,
             adjacent_pairs: false,
             subtree_cache_mib: 32,
             learned_cut_cache_mib: 8,
@@ -220,6 +228,8 @@ pub struct LocalPhaseCosts {
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 #[serde(default)]
 pub struct LocalReport {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub base_univariate_basis: Option<BaseUnivariateReport>,
     /// Diagnostic failed visits, including propagation; no coverage evidence.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub obstruction_observer: Option<ObstructionReport>,
@@ -508,6 +518,9 @@ pub enum LocalEvidence {
         /// Only records referenced by the final tree establish an obligation.
         #[serde(default)]
         guard_certificates: Vec<LocalGuardRemoval>,
+        /// Exact canonical products, not irreducible factorization witnesses.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        base_univariate_basis: Option<BaseUnivariateBasis>,
         root: LocalNode,
         report: LocalReport,
     },
@@ -535,6 +548,8 @@ enum Stop {
     /// This nonconstant factor vanishes on the current tentative prefix.
     Guard(usize),
     Resource(String),
+    /// An entered optional algebra stage failed: never start another backend.
+    Failed(String),
     Unsupported(String),
 }
 type Work<T> = std::result::Result<T, Stop>;
@@ -548,6 +563,17 @@ impl From<anyhow::Error> for Stop {
         } else {
             Self::Unsupported(error.to_string())
         }
+    }
+}
+
+fn base_stage_stop(error: anyhow::Error) -> Stop {
+    if error
+        .downcast_ref::<crate::resultant_interpolation::Stopped>()
+        .is_some()
+    {
+        Stop::Resource(error.to_string())
+    } else {
+        Stop::Failed(format!("base-univariate stage failed: {error}"))
     }
 }
 
@@ -1632,6 +1658,10 @@ struct Builder<'a> {
     pair_witness_stock: pair_witnesses::WitnessStock,
     bezout_registry: strict_bezout::Registry,
     obstruction_observer: Option<obstruction_observer::Observer>,
+    base_sources: HashMap<Poly, Vec<usize>>,
+    base_records: Vec<BaseUnivariateSource>,
+    base_typed: BTreeSet<usize>,
+    base_retained_bits: u64,
 }
 #[derive(Serialize, Deserialize)]
 struct Built {
@@ -1673,7 +1703,10 @@ impl Builder<'_> {
     }
     fn publish(&mut self, force: bool) -> Result<()> {
         if let Some(archive) = &mut self.hint_archive {
-            let terminal = matches!(self.report.active_phase.as_str(), "incomplete" | "complete");
+            let terminal = matches!(
+                self.report.active_phase.as_str(),
+                "incomplete" | "complete" | "computation_failure"
+            );
             archive.snapshot(
                 self.learned_cuts.snapshots(),
                 &self.polynomials,
@@ -1690,7 +1723,7 @@ impl Builder<'_> {
         if let Some(observer) = &mut self.obstruction_observer {
             observer.publish(matches!(
                 self.report.active_phase.as_str(),
-                "incomplete" | "complete"
+                "incomplete" | "complete" | "computation_failure"
             ));
         }
         if let Some(path) = &self.progress_path {
@@ -1725,6 +1758,110 @@ impl Builder<'_> {
         self.ids.insert(polynomial.clone(), id);
         self.polynomials.push(polynomial);
         id
+    }
+    /// Only projection-generated guards enter this separate support registry.
+    /// Initial inputs and the ordinary factor cache keep their old contracts.
+    fn guard_basis(&mut self, raw: &[Poly]) -> Work<BTreeSet<usize>> {
+        if !self.options.base_univariate_basis {
+            let factors = self.operations.factors(raw)?;
+            return Ok(factors.into_iter().map(|p| self.intern(p)).collect());
+        }
+        let mut result = BTreeSet::new();
+        for p in raw {
+            self.check_budget()?;
+            let eligible = base_univariate::map_admissible(&self.normalized.algebra)
+                && p.variables() == &self.normalized.algebra.variables
+                && base_univariate::source_cost(p).is_some();
+            let source = eligible.then(|| canonical(p));
+            if let Some(source) = &source {
+                if let Some(ids) = self.base_sources.get(source) {
+                    result.extend(ids);
+                    self.report.base_univariate_basis.as_mut().unwrap().hits += 1;
+                    continue;
+                }
+            }
+            let cost = source.as_ref().and_then(base_univariate::source_cost);
+            if cost.is_none()
+                || self.base_records.len() >= base_univariate::MAX_SOURCES
+                || cost.is_some_and(|bits| {
+                    self.base_retained_bits.saturating_add(bits)
+                        > base_univariate::MAX_RETAINED_BITS
+                })
+            {
+                self.report
+                    .base_univariate_basis
+                    .as_mut()
+                    .unwrap()
+                    .static_declines += 1;
+                for factor in self.operations.factors(std::slice::from_ref(p))? {
+                    result.insert(self.intern(factor));
+                }
+                continue;
+            }
+            let source = source.unwrap();
+            self.report.active_phase = "base_univariate_decomposition".into();
+            self.publish(true)?;
+            let mut timings = BaseUnivariateReport::default();
+            let started = self.started;
+            let limit = self.problem.limits.wall_time_secs;
+            let blocks = base_univariate::discover(&source, &mut timings, || {
+                if started.elapsed().as_secs_f64() >= limit {
+                    return Err(crate::resultant_interpolation::Stopped(
+                        "base support wall time limit".into(),
+                    )
+                    .into());
+                }
+                Ok(())
+            });
+            let report = self.report.base_univariate_basis.as_mut().unwrap();
+            report.decomposition_seconds += timings.decomposition_seconds;
+            report.reconstruction_seconds += timings.reconstruction_seconds;
+            let blocks = blocks.map_err(base_stage_stop)?;
+            let retained_cost = blocks
+                .iter()
+                .try_fold(cost.unwrap(), |sum, (p, _)| {
+                    sum.checked_add(base_univariate::cost(p)?)
+                })
+                .ok_or_else(|| Stop::Resource("base support storage bound overflow".into()))?;
+            if self.base_retained_bits.saturating_add(retained_cost)
+                > base_univariate::MAX_RETAINED_BITS
+            {
+                return Err(Stop::Resource(
+                    "base support retained source/block cap".into(),
+                ));
+            }
+            // Primitive normalization keeps a signed nonzero rational unit.
+            let scale = p.lcoeff() / source.lcoeff();
+            if &source * &source.constant(scale) != *p {
+                return Err(Stop::Failed(
+                    "base support signed source normalization failed".into(),
+                ));
+            }
+            self.check_budget()?;
+            let mut references = Vec::new();
+            for (block, multiplicity) in blocks {
+                let id = self.intern(block);
+                self.base_typed.insert(id);
+                result.insert(id);
+                references.push(BaseUnivariateBlock {
+                    polynomial: id,
+                    multiplicity,
+                });
+            }
+            references.sort_by_key(|b| b.polynomial);
+            let ids = references.iter().map(|b| b.polynomial).collect();
+            self.base_sources.insert(source.clone(), ids);
+            self.base_retained_bits += retained_cost;
+            self.base_records.push(BaseUnivariateSource {
+                polynomial: self.normalized.algebra.format(&source),
+                blocks: references,
+            });
+            let report = self.report.base_univariate_basis.as_mut().unwrap();
+            report.sources = self.base_records.len();
+            report.blocks = self.base_typed.len();
+            self.check_budget()?;
+        }
+        Ok(result)
     }
     fn seed_archive(&mut self, prefix: &[Rational], cuts: &mut BTreeSet<usize>) {
         let Some(mut archive) = self.hint_archive.take() else {
@@ -2056,8 +2193,7 @@ impl Builder<'_> {
                 self.report.nonadjacent_pairs_omitted += all - selection.selected_pairs.len();
             }
         }
-        let factors = self.operations.factors(&raw)?;
-        let mut guards: BTreeSet<_> = factors.into_iter().map(|p| self.intern(p)).collect();
+        let mut guards = self.guard_basis(&raw)?;
         self.guard_nonzero(&guards, prefix)?;
         let mut removals = Vec::new();
         for guard in guards.iter().copied().collect::<Vec<_>>() {
@@ -2146,6 +2282,7 @@ impl Builder<'_> {
             self.report.active_phase = "root_isolation".into();
             self.publish(level == 0 && cut_list.len() > 64)?;
             let root_started = Instant::now();
+            let typed_base = cut_list.iter().any(|id| self.base_typed.contains(id));
             let roots = stack_roots(
                 &self.normalized.algebra,
                 &self.polynomials,
@@ -2154,7 +2291,21 @@ impl Builder<'_> {
                 prefix,
                 projection.positive_ray.as_ref(),
                 &projection.root_bearing,
-            )?;
+            )
+            .map_err(|e| {
+                if typed_base {
+                    base_stage_stop(e)
+                } else {
+                    Stop::from(e)
+                }
+            })?;
+            if typed_base {
+                self.report
+                    .base_univariate_basis
+                    .as_mut()
+                    .unwrap()
+                    .root_union_seconds += root_started.elapsed().as_secs_f64();
+            }
             self.operations.phases.root_isolation_seconds += root_started.elapsed().as_secs_f64();
             self.publish(false)?;
             let mut required = self.projection_requirements(&projection);
@@ -2461,6 +2612,14 @@ pub fn solve_local(problem: &Problem, options: &LocalOptions) -> Result<LocalSol
         !options.defer_projection || options.stable_sector_samples,
         "deferred projection requires stable sector samples"
     );
+    ensure!(
+        !options.base_univariate_basis || options.base_point_projection,
+        "base-univariate support requires base-point projection"
+    );
+    ensure!(
+        !options.base_univariate_basis || !problem.solver.local_hint_archive,
+        "base-univariate support does not permit durable hint archives in v1"
+    );
     let started = Instant::now();
     let order = match selected_order(problem) {
         Ok(order) => order,
@@ -2489,6 +2648,9 @@ pub fn solve_local(problem: &Problem, options: &LocalOptions) -> Result<LocalSol
         ..Default::default()
     };
     let mut report = LocalReport::default();
+    if options.base_univariate_basis {
+        report.base_univariate_basis = Some(BaseUnivariateReport::default());
+    }
     if problem.solver.search_local_progress {
         report.search_inventory = Some(crate::search::local_progress::LocalInventory::new());
     }
@@ -2569,6 +2731,10 @@ pub fn solve_local(problem: &Problem, options: &LocalOptions) -> Result<LocalSol
         pair_witness_stock: pair_witnesses::WitnessStock::default(),
         bezout_registry,
         obstruction_observer,
+        base_sources: HashMap::new(),
+        base_records: Vec::new(),
+        base_typed: BTreeSet::new(),
+        base_retained_bits: 0,
     };
     builder.report.active_phase = "input_factorization".into();
     builder.publish(true)?;
@@ -2595,6 +2761,13 @@ pub fn solve_local(problem: &Problem, options: &LocalOptions) -> Result<LocalSol
                 started,
                 Some(builder.snapshot()),
             ));
+        }
+        Err(Stop::Failed(reason)) => {
+            builder.report.active_phase = "computation_failure".into();
+            builder.publish(true)?;
+            let mut result = unfinished(problem, reason, started, Some(builder.snapshot()));
+            result.solution.status = Status::ComputationFailure;
+            return Ok(result);
         }
         Err(Stop::Unsupported(reason)) => return fallback(problem, options, started, reason),
         Err(Stop::Guard(id)) => {
@@ -2658,6 +2831,9 @@ pub fn solve_local(problem: &Problem, options: &LocalOptions) -> Result<LocalSol
         + report.phases.domain_certificate_seconds
         + report.phases.pair_separation_seconds
         + report.strict_bezout_preparation_seconds;
+    if let Some(base) = &report.base_univariate_basis {
+        statistics.projection_seconds += base.decomposition_seconds + base.reconstruction_seconds;
+    }
     statistics.lifting_seconds =
         report.phases.root_classification_seconds + report.phases.root_isolation_seconds;
     let solution = SolveResult {
@@ -2700,6 +2876,12 @@ pub fn solve_local(problem: &Problem, options: &LocalOptions) -> Result<LocalSol
             options: options.clone(),
             input_factors: builder.input_factors,
             guard_certificates: builder.guard_certificates,
+            base_univariate_basis: (!builder.base_records.is_empty()).then_some(
+                BaseUnivariateBasis {
+                    schema_version: 1,
+                    sources: builder.base_records,
+                },
+            ),
             root: built.node,
             report,
         },
@@ -2728,8 +2910,46 @@ struct Checker<'a> {
     base_point_projection: bool,
     adjacent_pairs: bool,
     binary_discriminants: bool,
+    base_basis: base_univariate::Validated,
 }
 impl Checker<'_> {
+    fn guard_basis(&self, raw: &[Poly]) -> Result<BTreeSet<usize>> {
+        let mut result = BTreeSet::new();
+        if self.base_basis.sources.is_empty() {
+            for q in factors_checked(raw)? {
+                result.insert(
+                    *self
+                        .ids
+                        .get(&q)
+                        .ok_or_else(|| anyhow!("missing local projection guard factor"))?,
+                );
+            }
+            return Ok(result);
+        }
+        for p in raw {
+            if base_univariate::source_cost(p).is_some() {
+                let source = canonical(p);
+                if let Some(ids) = self.base_basis.sources.get(&source) {
+                    let scale = p.lcoeff() / source.lcoeff();
+                    ensure!(
+                        &source * &source.constant(scale) == *p,
+                        "base support signed source mismatch"
+                    );
+                    result.extend(ids);
+                    continue;
+                }
+            }
+            for q in factors_checked(std::slice::from_ref(p))? {
+                result.insert(
+                    *self
+                        .ids
+                        .get(&q)
+                        .ok_or_else(|| anyhow!("missing local projection guard factor"))?,
+                );
+            }
+        }
+        Ok(result)
+    }
     fn check_registry(&self) -> Result<()> {
         ensure!(
             self.domain_pruning || self.guard_certificates.is_empty(),
@@ -2856,6 +3076,11 @@ impl Checker<'_> {
                     cuts == &cut_set.iter().copied().collect::<Vec<_>>(),
                     "cuts are not unique and sorted"
                 );
+                ensure!(
+                    !cuts.iter().any(|id| self.base_basis.typed.contains(id))
+                        || (level == 0 && prefix.is_empty() && projection.base_point),
+                    "typed base support used outside the empty-prefix base-point stack"
+                );
                 let mut adjacent_pairs = None;
                 let (bearing, raw) = if projection.base_point {
                     ensure!(
@@ -2936,15 +3161,7 @@ impl Checker<'_> {
                     projection.root_bearing == bearing,
                     "incorrect root-bearing cut subset"
                 );
-                let mut projected = BTreeSet::new();
-                for p in factors_checked(&raw)? {
-                    projected.insert(
-                        *self
-                            .ids
-                            .get(&p)
-                            .ok_or_else(|| anyhow!("missing local projection guard factor"))?,
-                    );
-                }
+                let projected = self.guard_basis(&raw)?;
                 let retained: BTreeSet<_> = projection.guards.iter().copied().collect();
                 ensure!(
                     projection.guards == retained.iter().copied().collect::<Vec<_>>(),
@@ -3078,17 +3295,24 @@ pub fn verify_local_parts(
         solution.linear_negative.is_none() && solution.bilinear_positive.is_none(),
         "incompatible additional fiber reduction evidence"
     );
-    let (input_factors, guard_certificates, root, options) = match evidence {
+    let (input_factors, guard_certificates, base_evidence, root, options) = match evidence {
         LocalEvidence::GlobalFallback { .. } => return crate::verify::verify_nonlocal(solution),
         LocalEvidence::NotApplicable { .. } => anyhow::bail!("local projection was not applicable"),
         LocalEvidence::Unfinished { .. } => anyhow::bail!("unfinished local projection evidence"),
         LocalEvidence::Local {
             input_factors,
             guard_certificates,
+            base_univariate_basis,
             root,
             options,
             ..
-        } => (input_factors, guard_certificates, root, options),
+        } => (
+            input_factors,
+            guard_certificates,
+            base_univariate_basis.as_ref(),
+            root,
+            options,
+        ),
     };
     solution.problem.validate()?;
     ensure!(
@@ -3100,6 +3324,14 @@ pub fn verify_local_parts(
         "interval template limit must be between two and eight"
     );
     ensure!(solution.schema_version == 1, "unsupported output schema");
+    ensure!(
+        !options.base_univariate_basis || options.base_point_projection,
+        "base support requires base-point projection"
+    );
+    ensure!(
+        !options.base_univariate_basis || !solution.problem.solver.local_hint_archive,
+        "base support does not permit durable hint archives in v1"
+    );
     ensure!(
         solution.order == selected_order(&solution.problem)?,
         "local output changed the fixed variable order"
@@ -3133,6 +3365,13 @@ pub fn verify_local_parts(
         .map(|p| normalized.algebra.parse(p))
         .collect::<Result<Vec<_>>>()?;
     let mut ids = HashMap::new();
+    let base_basis = base_univariate::validate(
+        &normalized.algebra,
+        &polynomials,
+        base_evidence,
+        options.base_univariate_basis,
+    )?;
+    let protected: BTreeSet<_> = input_factors.iter().flatten().copied().collect();
     for (id, p) in polynomials.iter().enumerate() {
         ensure!(
             !p.is_constant() && canonical(p) == *p,
@@ -3142,10 +3381,12 @@ pub fn verify_local_parts(
             ids.insert(p.clone(), id).is_none(),
             "duplicate local polynomial"
         );
-        ensure!(
-            factors_checked(std::slice::from_ref(p))? == vec![p.clone()],
-            "local cut is not a primitive irreducible factor"
-        );
+        if !base_basis.typed.contains(&id) || protected.contains(&id) {
+            ensure!(
+                factors_checked(std::slice::from_ref(p))? == vec![p.clone()],
+                "local cut is not a primitive irreducible factor"
+            );
+        }
     }
     ensure!(
         input_factors.len() == normalized.positives.len() + normalized.split.len(),
@@ -3171,6 +3412,7 @@ pub fn verify_local_parts(
         );
     }
     let checker = Checker {
+        base_basis,
         binary_discriminants: solution.problem.solver.binary_resultants,
         normalized: &normalized,
         polynomials: &polynomials,

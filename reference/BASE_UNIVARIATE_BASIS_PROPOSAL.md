@@ -1,12 +1,18 @@
 # Exact support blocks at the first lifting axis
 
-This is a proposed, opt-in local proof extension, not an implemented exception.
-It can avoid irreducible factorization of projection guards already in
-`Q[x_0]`, where `x_0` is the **actual first normalized lifting coordinate**.
-It does not remove any real zero, change the original domain, or establish
-completion of A377. The captured discriminant's complete checked block union
-has now been isolated; production integration and original CAD cost remain
-unmeasured.
+The default-off local prototype `solver.local_base_univariate_basis = true`
+avoids irreducible factorization of bounded projection-generated guards
+already in `Q[x_0]`, where `x_0` is the **actual first normalized lifting
+coordinate**. It preserves every real zero, the original domain and the
+complete generic proof. Initial constraint/split factorization is unchanged.
+The focused implementation tests pass; original A377 completion and total
+CAD cost with this option remain unmeasured.
+
+A matched release-build experiment motivated the prototype: complete
+square-free-decomposition/reconstruction/root-union work took 92.063 s,
+versus 185.827 s for full factorization followed by the same checks, on one
+captured A377 discriminant. Both returned the same 84 distinct real roots.
+This is one operand pair, not a repeated benchmark or a solver speedup claim.
 
 ## Why the base case permits composites
 
@@ -16,231 +22,182 @@ Let a nonzero, nonconstant rational polynomial satisfy the exact identity
 p(x_0)=c\prod_i q_i(x_0)^{m_i},\qquad c\in\mathbb Q\setminus\{0\},\quad m_i>0.
 \]
 
-Its real zero set is exactly the union of the real zero sets of the blocks
-`q_i`, including repeated and shared roots. Isolate this complete distinct-root
-union and retain every complementary open interval. Every block, and hence
+Its real zero set is exactly the union of the blocks' real zero sets,
+including repeated and shared roots. Isolate this complete distinct-root
+union and retain every complementary open interval. Each block, and hence
 `p`, is continuous and nonzero with constant sign on each such interval.
-This is lifting over a zero-dimensional base: there are no parameters along
-which roots can collide, disappear or escape. No discriminant, pair resultant,
-irreducibility or square-freeness assertion is needed for this base theorem.
+The base is zero-dimensional: there are no parameters along which roots
+can collide, disappear or escape. This argument needs no discriminant,
+pair resultant, irreducibility or square-freeness assertion.
 
-Higher-dimensional local proofs remain conditional on their complete raw
-guard inventory. Exact product reconstruction and nonvanishing of **all**
-blocks establish each replaced raw guard's nonvanishing on the base cell.
-The existing induction can then use those obligations unchanged. Original
-constraint and split signs must still be evaluated from the original
-normalized polynomials, not inferred from discarded multiplicities or scalar
-signs. Every retained zero remains an excluded generic seam.
+Higher-dimensional local proofs still require their complete raw guard
+inventory. Exact product reconstruction and nonvanishing of **all** blocks
+establish each replaced raw guard's nonvanishing. Original constraints and
+split labels are evaluated from the original normalized polynomials, not
+from discarded multiplicities or scalar signs. Every retained zero remains
+a generic seam. No `s>4` boundary or even-multiplicity zero is erased.
 
-This argument does not cover a multivariate polynomial that merely becomes
-univariate after substituting a tentative prefix. For example,
-`(y-x)*(y+x)` at `x=1` still has a parameter-dependent collision at `x=0`.
-Such a polynomial must retain the ordinary higher-dimensional projection
-requirements.
+This does not cover a multivariate polynomial that only becomes univariate
+after substituting a tentative prefix. For example, `(y-x)*(y+x)` at `x=1`
+still has a parameter-dependent collision at `x=0`; its higher-dimensional
+projection requirements remain mandatory.
 
-## Current implementation boundary
+## Implemented scope and independent replay
 
-The relevant contracts are:
+The option requires `local_base_point_projection = true`. It is omitted
+when false, and historical proofs without the new fields retain their
+ordinary irreducible-factor contract. Global projection, root-index types,
+the ordinary factor cache and native root isolation are unchanged.
 
-| Source | Present behavior and required boundary |
+| Source | Responsibility |
 |---|---|
-| [`local_projection::check_base_point_cuts`](../src/local_projection.rs) | Already requires level zero, empty prefix and exact highest axis zero. |
-| `Builder::project` and `Checker::walk` in the same file | Base-point certificates already use the complete root union, no positive-ray restriction, and no ancestor projection guards. |
-| `verify_local_parts` in the same file | Independently requires `factors_checked([p]) == [p]` for every registry entry, checks input factor inventories, and refactors raw guards during tree replay. All three contracts must be addressed explicitly; relaxing the registry check alone is insufficient. |
-| [`lazy_projection::discovery_roots`](../src/local_projection/lazy_projection.rs) | A vanishing leading coefficient is factored before propagating its ancestor obligation; this path also needs the same support-basis policy. |
-| [`roots::isolate_union_using`](../src/roots.rs) | Native rational isolation performs square-free decomposition and VAS isolation; shared roots are checked exactly. A further derivative GCD is performed when returned real-root multiplicities exceed one. |
-| [`ProjectionCache::factor_basis`](../src/optimized_projection.rs), [`factors_checked`](../src/algebra.rs) | These retain the ordinary irreducible-factor contract. Composite blocks must not be inserted into their caches or returned under their existing API names. |
+| [`base_univariate.rs`](../src/local_projection/base_univariate.rs) | Bounded sparse source parsing, native square-free proposals, exact canonical products and versioned evidence validation. |
+| [`local_projection.rs`](../src/local_projection.rs), `Builder::guard_basis` | Admit only generated guards with full-map support in the actual first axis; maintain one immutable block inventory per canonical source. |
+| The same file, `Checker::guard_basis` and `verify_local_parts` | Independently validate every recorded product, regenerate each raw guard, check protected inputs, and restrict typed cut use. |
+| [`lazy_projection::discovery_roots`](../src/local_projection/lazy_projection.rs) | Apply the identical basis policy to leading-coefficient obligations during deferred discovery. |
+| [`roots::isolate_union_using`](../src/roots.rs) | Retain existing exact isolation, repeated/shared-root handling, full-real owner ordinals and interval separation. |
+| [`ProjectionCache::factor_basis`](../src/optimized_projection.rs), [`factors_checked`](../src/algebra.rs) | Keep the ordinary irreducible-factor contract; composite blocks never enter this cache under a factorization identity. |
 
-The existing test `base_point_root_union_handles_duplicate_shared_and_repeated_roots`
-in [`tests/local_projection.rs`](../tests/local_projection.rs) first factors
-its inputs. It therefore does **not** test acceptance of a composite registry.
+`LocalEvidence::Local` has an optional `base_univariate_basis` record with
+`schema_version = 1`. Each source stores its canonical sparse polynomial
+and sorted `(polynomial registry ID, positive multiplicity)` references.
+Source and blocks use primitive positive-leading normalization. The checker
+verifies their exact product equals the canonical source. It independently
+recovers the signed rational content of each regenerated raw guard and
+checks the full signed identity too.
 
-## Minimal evidence and independent replay
+Replay enforces all of these obligations:
 
-Use a new default-false local option and an optional, explicitly versioned
-`BaseUnivariateBasisV1` member of `LocalEvidence::Local`. Missing fields retain
-historical semantics. Require the existing base-point projection option too.
-One possible minimal record contains a canonical source polynomial and a
-sorted list of `(registry_id, positive_multiplicity)` block references.
-The union of these references supplies the explicitly typed block IDs.
+1. Every source is nonconstant of degree at least two, canonical, in the
+   complete current map and supported only on axis zero. Blocks may be
+   linear, reducible, repeated or share roots, but obey the same map/support
+   and canonicality checks. Every record is checked, including an unused
+   discovery record. Duplicate source records and repeated block IDs fail.
+2. Only IDs explicitly referenced by checked products receive the typed
+   exception. Every untyped registry entry retains independent
+   irreducibility checking. Original input-factor IDs remain protected and
+   independently irreducible even when they overlap a generated basis.
+   Every original input's factor inventory is recomputed independently.
+3. Each regenerated raw projection obligation either matches its exact
+   canonical source record or uses ordinary factorization. Retained guards
+   plus independently certified removals must equal that entire inventory.
+   Hashes, samples or supplied discovery history never establish equality.
+4. Typed blocks may be ancestor obligations, but may occur as cuts only
+   at level zero, with an empty prefix and `base_point = true`. They cannot
+   enter a higher-dimensional discriminant, pair selection or
+   irreducibility-based cancellation as current-axis cuts.
+5. The checker isolates every base cut, merges shared roots exactly and
+   recomputes each owning block's full-real ordinal. It checks all roots,
+   all roots-plus-one sectors, strict samples, children, propagated guards,
+   exported cells and exceptional-polynomial inventory. An irreducible
+   factor's ordinal is never copied onto a composite owner.
 
-Use the existing primitive, positive-leading canonical normalization for the
-source and every block. The checker then verifies exact equality of the
-canonical source with the block product. Equivalently, multiplying by the
-independently recovered signed rational content reconstructs each raw source
-exactly. A format retaining nonprimitive blocks instead must record and check
-the nonzero rational scalar explicitly. Neither variant may compare only
-degrees, hashes, samples or approximate values.
+Native square-free decomposition only proposes blocks. The certificate
+asserts an exact product, not that the blocks are square-free or irreducible.
+The unchanged root kernel can handle repeated/reducible blocks. A single
+whole-source block would also satisfy the theorem, but could repeat costly
+square-free/GCD work and is not the discovery strategy used here.
 
-Replay must enforce all of the following:
+## Lifetime, resource and failure rules
 
-1. Every source and typed block is nonconstant, canonical, in the full current
-   variable map, and has exact highest axis zero. IDs, records and
-   multiplicities are bounded and unambiguous. Every untyped registry entry
-   retains the existing independent irreducibility check.
-2. The checker independently regenerates each raw projection obligation.
-   A replacement record must match its canonical source exactly and reproduce
-   its entire block inventory. All other raw polynomials use the ordinary
-   factor basis. Retained guards plus independently certified removals must
-   equal this complete inventory, as in current replay.
-3. The same policy applies to initial input witnesses if v1 permits composite
-   original inputs. A still narrower first version may keep original input
-   factorization unchanged and allow only projection-generated base guards.
-   Protected input/coordinate obligations and domain-certificate provenance
-   retain their existing checks.
-4. A typed block may be an ancestor guard of a higher stack, but may occur as
-   a **cut** only at level zero with an empty prefix and `base_point=true`.
-   It must never enter higher-dimensional cut classification, discriminants,
-   pair selection or irreducibility-based cancellation as a current-axis cut.
-5. Independently isolate every base cut, merge shared roots exactly, and
-   recompute all full-real ordinals from each owning block. Do not copy an
-   irreducible factor's index onto a composite polynomial. Check the complete
-   roots-plus-one sector inventory, strict samples, all children, propagated
-   requirements, exported cells and exceptional-polynomial inventory.
+The separate registry is immutable per admitted canonical source. Initial
+inputs keep ordinary factorization. In-memory learned cuts and completed
+subtrees can reference append-only typed IDs because their obligations are
+replayed. Combining this mode with `local_hint_archive = true` is explicitly
+rejected in v1; no stored hint is silently reinterpreted. Verification reads
+only the proof and original problem, independently of disk caches.
 
-Native square-free factorization may propose blocks, but its square-free
-claim need not become certificate authority. The product identity alone
-establishes the required zero-set equality; unchanged isolation can handle
-reducible or repeated blocks. The smallest valid record is the whole raw
-canonical polynomial as one block of multiplicity one. That variant avoids
-irreducible factorization but can repeat substantial square-free/GCD work.
+Static admission bounds the complete map, first-axis name, degree, term
+count and rational coefficient height before primitive normalization and
+native work. Sources have degree 2–4096; linear blocks remain allowed. The
+registry permits at most 128 sources and 64 blocks per source, with a
+128-million-coefficient-bit cumulative source-plus-block allowance. Source
+strings use a bounded sparse integer grammar, not arbitrary expression
+expansion. Degree, multiplicity and coefficient/product-work estimates are
+checked before powers and products; the source-text cap is 32 MiB.
 
-## Lifetime, caches and resource limits
+| Bound | Prototype limit |
+|---|---:|
+| Complete variable map / first-axis name | 64 axes / 1,024 bytes |
+| Source degree / terms | 2–4,096 / 4,096 |
+| Individual rational numerator or denominator | 20,000 bits |
+| Per-polynomial coefficient bits / summed denominator bits | 64,000,000 / 65,536 |
+| Sources / blocks per source / multiplicity | 128 / 64 / 4,096 |
+| Product coefficient-bound estimate / `(degree + 1) × bound` work | 65,536 / 256,000,000 |
 
-Use a separate bounded local support-basis helper, memoized by exact canonical
-source. Once admitted, its block inventory must remain immutable for that
-builder. Wire ordinary projection, any enabled input path and deferred
-leading-coefficient discovery consistently. Deterministic normalization and
-one inventory per source avoid sample-dependent regrouping. Existing finite
-projection and witness-template limits remain in force.
+These are algebraic size estimates, not a process-memory guarantee; the
+separate hard worker memory and wall limits remain necessary.
 
-Do not relabel a completed algebra-operation factor checkpoint as a support
-basis. In-process learned cuts and completed subtrees can retain append-only
-typed IDs because their obligations are still replayed. For a minimal first
-experiment, omit typed composite IDs from durable hint snapshots, or disable
-that archive with an explicit reason. Its current load contract refactors
-every candidate and admits only a single irreducible factor; silently reusing
-that contract would either restore the bottleneck or misstate its meaning.
-Proof verification must remain independent of all disk caches and hints.
+Static inapplicability can use ordinary factorization. Once the optional
+algebra stage starts, a deadline or output/storage/work cap returns
+**incomplete**; an invalid algebraic identity or map returns
+**computation failure**. Neither starts another factorization backend or a
+fresh global solve. The hard worker remains necessary to bound an individual
+native call. Decomposition, reconstruction and root-union costs are reported
+separately. Existing root limits and all other projection/template limits
+remain in force.
 
-Check record counts, term/height limits, maps, nonzero factors, positive bounded
-multiplicities and the multiplicity-weighted degree before taking powers or
-constructing products. Preserve the existing root-degree cap and hard worker
-time/memory limits. Native square-free decomposition, reconstruction and
-isolation require separate timings. A static inapplicability may use the old
-path; an interrupted entered stage must remain incomplete rather than trigger
-a second unbudgeted factorization attempt. Reusing private native isolation
-or square-free state would be a separate interface change.
+## Measured motivation and its limits
 
-## Evidence and acceptance tests
+Earlier [factorization](A377_UNIVARIATE_FACTORIZATION.md) and
+[root-isolation](A377_ROOT_ISOLATION.md) diagnostics showed that threshold
+predeflation had no measured total-time benefit. A 60-second full-factor
+run timed out, but a later release control completed in 177.241 s; this is
+not an intractable factorization barrier. A development-build matched
+full-factor pipeline also timed out at 300 s. Neither timeout is used as
+a completed timing or an exact speed ratio.
 
-The [A377 factorization diagnostic](A377_UNIVARIATE_FACTORIZATION.md) records
-one fresh bounded process per stage. Native square-free decomposition of the
-original degree-2169 discriminant completed in 36.598 s total (30.579 s native).
-Deflation followed by square-free decomposition of its degree-2021 residual
-completed in 37.059 s total (29.001 s native). Residual full factorization
-timed out after 60.026 s. Thus explicit threshold deflation has no measured
-total-time benefit. The residual's seven blocks have degrees
-`111, 881, 10, 2, 4, 1, 1`, with multiplicities `1, 2, 6, 8, 10, 12, 20`;
-their distinct-degree sum is 1010. Coordinate and threshold factors remain
-in the exact original reconstruction.
+The subsequent matched release experiment used the same frozen helper,
+raw degree-2169 signed discriminant, map `[s]`, CPU10, 4 GiB and 300-second
+limit. Both fresh processes started without a sidecar, predeflation or
+factor cache and used identical signed reconstruction and root-union code.
 
-Residual report SHA-256:
-`dc27df111359c427066f92a8aef399636714530833c4a176fff2371ffd113da0`.
-That report binds the signed discriminant and successful reconstruction. A
-subsequent [root-isolation diagnostic](A377_ROOT_ISOLATION.md) independently
-reconstructed signed D from the complete sidecar before isolating all nine
-nonconstant blocks. It completed with **84 distinct real roots: 46 below 4,
-the exact root 4, and 37 above 4**. No interval straddles 4. The degree-881
-block alone has 69 real roots, 35 above 4; it cannot be removed by a claim of
-nonvanishing on `s>4`.
+| Pipeline | Process wall | Decomposition | Signed reconstruction | Root union | Peak RSS |
+|---|---:|---:|---:|---:|---:|
+| Native square-free blocks | 92.063 s | 16.608 s | 2.544 s | 72.618 s | 71,724 KiB |
+| Native irreducible factors | 185.827 s | 172.125 s | 3.346 s | 10.104 s | 69,828 KiB |
 
-The complete-union process took 77.316 s and 75,300 KiB peak RSS, including
-2.698 s for signed reconstruction and 74.011 s for isolation/union separation.
-These are one development-build diagnostic's measurements after square-free
-block generation, not an end-to-end production timing or a matched speedup
-comparison. The exact interval inventory comes from the existing certified
-native/root-union path, not a second high-degree isolation implementation.
-Its worker-report SHA-256 is
-`4f61ff75242777dd35dc2b6257a8ecac8264e77d85db0ad5496961f47c91361d`;
-the completed, untruncated supervisor report is
-`7ebf07e2a3c2652956187bd14d35b742194b53e56ddfaf657236ec7d07fcc6ea`.
-**Resulting CAD size and original-problem completion remain unmeasured.**
-The subsequent ordinary full-D factorization control, with a 300-second cap,
-completed in **177.241 s**, using 74,072 KiB peak RSS and checking exact signed
-multiplicity reconstruction. Its report SHA-256 is
-`a46b124d56c52d1c57e8944406633bebae6455a7279c435de88e4606fc23fbdc`.
-Thus the earlier 60-second timeout establishes only an insufficient budget,
-not an intractable factorization barrier. This release-profile measurement
-and the development-build SQF/union stages are not a matched comparison;
-there is no speed-ratio claim. Ordinary factor-basis root isolation has not
-yet been measured in this control.
+Both inventories contain **84 distinct real roots: 46 below 4, the exact
+root 4 and 37 above 4**. Every corresponding ordered interval intersects by
+exact rational comparison; none straddles 4. Full factorization makes
+isolation cheaper by splitting the large block, but costs more decomposition
+work in this single pair. Neither route removes the degree-881 block's
+35 roots above 4. Total CAD size and original-problem completion remain
+unmeasured.
 
-Required focused regressions before production admission:
+Evidence is in `artifacts/research/a377-isolation-matched-release-01/`.
+The [root-isolation note](A377_ROOT_ISOLATION.md) records all source,
+input, worker and build bindings. Principal SHA-256 values are:
 
-- Composite/repeated inputs, odd/even multiplicities, shared roots between
-  blocks, rational and irrational roots, rootless quadratics and zero split
-  annotations. Compare independently verified generic coverage with the old
-  factor basis; polynomial IDs and owner ordinals need not match.
-- False scalar/product/multiplicity, missing block, duplicate/invalid ID,
-  changed exponent, later-axis support, or a typed cut placed above the base.
-- Missing root/sector/seam, wrong composite ordinal, an unproved child guard,
-  and a degree-drop guard propagated through deferred discovery.
-- Original strict coordinate constraints and protected input obligations;
-  empty or contradictory domains; exact original sign labels.
-- Historical missing fields, opt-out and global fallback; nested homogeneity
-  and monotone wrappers; independent replay after cache/archive deletion.
-- Bounded rejection of oversized records and incomplete status after stops
-  in square-free decomposition, reconstruction or root isolation.
+| Artifact | SHA-256 |
+|---|---|
+| Frozen helper | `6ed81cc04132676c0c9a457a9605eefe52123c92e9b5d00ccb4ed01d86da9797` |
+| Square-free process report | `3e34dd241d2d40a27991eee08966e2d142f3c32800d971cca70d6756e44941b8` |
+| Full-factor process report | `40e8e5302bf85e0b4e1c3e3ac4cc8c006935abbace553737b548f134169687c8` |
+| Exact paired comparison | `1fbc3a2a58ed472725be384b2a4de2506f1a57c97fa958ddfdaa378b282928fd` |
 
-## Conditional implementation sequence and ownership
+## Validation and remaining gates
 
-**Defer production implementation.** The proposed trigger of an incomplete
-300-second full-factor control was not met. First compare complete
-irreducible-factor-plus-union and SQF-block-plus-union pipelines in the same
-build, with the same exact source, limits and cold operation state, including
-product reconstruction and all root work. Potential savings must justify the
-additional proof format and checker complexity. The current A377 follow-up
-should use only the already qualified discriminant acceleration.
+The focused bundle passed **277 tests**, including 13 independently written
+[`local_base_univariate`](../tests/local_base_univariate.rs) integration
+tests. These cover composite owner ordinals, repeated irrational roots,
+rootless blocks, original-input overlap, the actual-first-axis restriction,
+deferred leading-coefficient refinement, zero split labels, contradictory
+constant domains, forged identities/multiplicities/IDs/version/support,
+missing roots/sectors, historical fields, incomplete status, nested
+homogeneity/monotone proofs and replay after checkpoint deletion. Small
+module tests also cover shared blocks, signed rational content, caps and
+stops after native decomposition or during product work.
 
-If a later measured decision supports the mode, the following gives the
-smallest coherent implementation sequence and file ownership:
+The remaining tests in that bundle cover existing library, local, deferred,
+homogeneity, monotone and supervisor behavior. The log is
+`artifacts/base-univariate-focused-tests-04.log`, SHA-256
+`57893e9e1dcc02869edc2f43aa5fd79793fbca3750903d68e6f56b1f751e4b73`.
+Earlier compile/expectation failures are retained as separate logs.
 
-1. **Local kernel owner:** add `src/local_projection/base_univariate.rs` for
-   the bounded typed records, native square-free discovery, canonical product
-   reconstruction, and immutable per-source registry. Use native SQF on the
-   complete source; the measurements do not justify a threshold-deflation
-   prepass. Implement pure reconstruction/tamper tests before builder wiring.
-2. **Same owner, coherent local integration:** modify `local_projection.rs`
-   and the small leading-coefficient path in `lazy_projection.rs`. Initially
-   apply the alternative only to exact first-axis **projection-generated**
-   guards; leave initial input factorization unchanged. Record the optional
-   basis in local evidence, replay raw-to-block inventories, restrict typed
-   cut use, and keep the existing root kernel. Report SQF/reconstruction time
-   and admitted sources/blocks separately. Exclude typed blocks from durable
-   hints, or explicitly disable that archive for this option in v1.
-3. **Wiring owner, coordinated after the API is fixed:** add a default-false,
-   omitted-when-false `local_base_univariate_basis` solver option in
-   `config.rs`, map it in `solver.rs`, and expose the research flag through
-   `examples/hard_probe.rs`. Require local base-point projection for the
-   alternative. Preserve disabled serialization/cache fingerprints; do not
-   alter global projection, `factor_basis`, or root-index types.
-4. **Independent test/review owner:** add `tests/local_base_univariate.rs`
-   covering the above adversarial and compatibility cases, including ordinary
-   input factors that overlap a composite guard. Check both eager and deferred
-   modes and independent replay with every discovery cache removed. Then run
-   focused tests, the normal full suite, and freeze the tested worker.
-5. **Measurement owner, only after those gates:** replay the captured
-   discriminant through the production guard-basis path and its independent
-   reconstruction/root inventory. Compare total SQF, replay and isolation
-   cost with the same-build ordinary control. Only then allocate a bounded
-   original A377 follow-up, counting preprocessing and verification cost.
-
-These ownership boundaries keep one writer on the large local module and a
-separate reviewer on the proof tests. If concurrent source work resumes,
-prepare the kernel/integration in an isolated worktree with its own target
-directory, then apply one coherent tested change after the shared source
-freeze is released. No worktree, build or production edit is started by this
-document update.
-
-No production code or default behavior is changed by this proposal.
+The next gates are the normal full suite and frozen worker, a captured
+production guard-basis replay with its full independent root inventory,
+and a bounded original A377 solve including preprocessing and verification.
+Only those measurements can establish whole-solver benefit. The option
+remains default-off; this document does not authorize boundary removal or
+promotion to the default policy.

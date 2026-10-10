@@ -618,6 +618,7 @@ fn solve_impl(problem: &Problem) -> Result<SolveResult> {
                 positive_pair_witnesses: problem.solver.local_positive_pair_witnesses,
                 strict_bezout: !problem.solver.local_strict_bezout_hints.is_empty(),
                 base_point_projection: problem.solver.local_base_point_projection,
+                base_univariate_basis: problem.solver.local_base_univariate_basis,
                 adjacent_pairs: problem.solver.local_adjacent_pairs,
                 subtree_cache_mib: problem.solver.local_subtree_cache_mib,
                 learned_cut_cache_mib: problem.solver.local_learned_cut_cache_mib,
