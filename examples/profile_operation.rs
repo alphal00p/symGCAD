@@ -137,7 +137,7 @@ struct Args {
 
 const PLAN_CAPTURE_BYTES: usize = 8 * 1024 * 1024;
 
-fn bounded_capture_bytes(path: &Path) -> Result<Vec<u8>> {
+pub(crate) fn bounded_capture_bytes(path: &Path) -> Result<Vec<u8>> {
     ensure!(
         std::fs::symlink_metadata(path)?.file_type().is_file(),
         "plan capture must be a regular file"
@@ -159,7 +159,7 @@ fn bounded_capture_bytes(path: &Path) -> Result<Vec<u8>> {
 
 /// Captures contain literal sparse monomials, not general expressions. Check
 /// bounds before rational construction and never expand powers of sums here.
-fn plan_operand(algebra: &Algebra, text: &str) -> Result<Poly> {
+pub(crate) fn plan_operand(algebra: &Algebra, text: &str) -> Result<Poly> {
     ensure!(text.len() <= PLAN_CAPTURE_BYTES, "plan operand byte cap");
     if text == "0" {
         return algebra.parse("0");
