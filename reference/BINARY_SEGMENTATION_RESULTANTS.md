@@ -81,7 +81,7 @@ operands and eliminated axis. Current canonical cache values lose scalar/sign,
 and final factor tables also lose multiplicities, so neither is that witness.
 The verifier could instead validate each supplied raw candidate using the
 existing research helper's complete nested degree grid. At every recursion
-level it needs `D_i+1` distinct accepted values for a independently derived
+level it needs `D_i+1` distinct accepted values for an independently derived
 resultant degree bound `D_i`; adaptive node sets are valid by polynomial
 identity induction. Exact leading-degree drops are skipped, with the number
 of possible skips bounded by the two leading-coefficient degrees. Every leaf
