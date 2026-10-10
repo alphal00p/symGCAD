@@ -122,16 +122,34 @@ the process record is
 `6fd92dfc2813c10afbf15ea43f20076fb39c6392fc92581a7c42e793550751d3`.
 The third and fourth evidence directories are
 `artifacts/bench/api-hour-01/{gluza33-trivial,gluza33}/`.
-The fifth attempt, `test_pentabox_exb_symb/order/1`, started on CPU0 at
-approximately 09:49 UTC with the same frozen helper, solver and limits under
-`artifacts/bench/api-hour-01/pentabox-b/`. Its input SHA-256 is
-`120e230d5d07bdd6e54a086d4a541b3c3644e6ce1b628d86be85fede672a8fa5`.
-The sixth and final API, `test_pentabox_exd_symb/order/1`, started on CPU3 at
-approximately 10:02 UTC under `artifacts/bench/api-hour-01/pentabox-d/`, again
-with the same frozen solver and limits. All six slow APIs have now started
-their first one-hour attempt; unfinished workers provide no compatibility
-credit.
-These workers are independent of the original-decomposition queue.
+The fifth attempt, `test_pentabox_exb_symb/order/1`, timed out on CPU0 after
+3600.255444751 seconds, with 2,628,308 KiB peak RSS. Its native call remains
+pending because the campaign was exhausted.
+
+The sixth, `test_pentabox_exd_symb/order/1`, failed on CPU3 after
+395.231326809 seconds with an allocation failure under the 8-GiB limit;
+peak RSS was 8,174,724 KiB. It produced no order. The subsequent native call
+used the required 300-second cap, since failed Rust work supplies no completed
+timing, and timed out after 300.345387732 seconds at 2,943,216 KiB peak RSS.
+The combined campaign took 695.593972095 seconds. The report's aggregate
+`reference_timeout` label does not conceal its separate `rust_status="failed"`.
+
+All six slow API attempts are now finished: five Rust timeouts and one memory
+failure, with no completed compatibility result. They remain `slow`. These
+ordering APIs are separate from the 331 mathematical decomposition groups.
+The final two inputs passed the same original-math, heuristic, executable,
+adapter and process-record audit; the evidence is under
+`artifacts/bench/api-hour-01/{pentabox-b,pentabox-d}/`.
+
+| Case | File | SHA-256 |
+| --- | --- | --- |
+| Pentabox B | `report.json` | `9820c59dff5a5a34ffa25870ee15db3ae8a91c3a0b014ea4ab6f1f41b3b05994` |
+| Pentabox B | `0015-rust.json` | `7810547ebacf432ab997c9a83bc57dc6acbd2cbeaa56a90b0a13057f4e9d5594` |
+| Pentabox B | `0015-input.json` | `120e230d5d07bdd6e54a086d4a541b3c3644e6ce1b628d86be85fede672a8fa5` |
+| Pentabox D | `report.json` | `74eacd2214decbf06534f933444dfeb52097cedf6e0402569c33d05567a4c6a6` |
+| Pentabox D | `0017-rust.json` | `f0239481a734bcdc13e6ff970c2bf08c9d0f0e0c64a390853e106c259918035a` |
+| Pentabox D | `0017-reference.json` | `67c14e849f41cd299ea139f36cfe56f6549390337f203a21a2de735c643de4f1` |
+| Pentabox D | `0017-input.json` | `f90600fcfc51f02799c1028ec1827f204ded31a37c364ef74b097feacc0b2bbb` |
 
 | Evidence | SHA-256 |
 | --- | --- |
