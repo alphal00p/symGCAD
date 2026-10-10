@@ -92,13 +92,13 @@ with three fresh repetitions and identical orders. *±* means two separate sign-
   Completing its positive and negative branches separately does not automatically certify the full split problem.
   The current audit has #data.completion_summary.complete_verified verified groups and
   #data.completion_summary.unresolved unresolved groups. The unresolved set is marked slow and assigned
-  full one-hour campaigns; this snapshot must be regenerated as those runs finish.
+  full one-hour campaigns. The first complete campaign exhausted all 28 budgets.
   Missing times and cells are not zeros, and timeouts do not produce finite speedup ratios.
 
-  The first one-hour wave (10 October 2026) ended with four timeouts: symbolic A317,
-  A318, A446 and Ax12-A446 each ran 3600.024 seconds without exporting a result.
-  The audited queue then had four further runs active and twenty pending. These attempts
-  add no completion credit; the frozen queue snapshot and ledger hashes are in the JSON.
+  The completed one-hour campaign (10 October 2026) timed out on all 27 symbolic ZZ
+  originals and positive Gluza33. None exported a complete result or verification.
+  These attempts add no completion credit; the frozen queue snapshot and all 28 ledger
+  hashes are in the JSON. Targeted continuations retain completed algebra separately.
 
   Measurements prefer verified three-repeat controls, otherwise the fastest accepted original-problem
   run. Builds are labelled. Cache tags mean cold (C), shared and possibly warm (S), or unrecorded (?).
