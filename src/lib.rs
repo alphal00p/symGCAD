@@ -17,6 +17,7 @@ pub mod output;
 pub mod problem;
 pub mod projection;
 pub mod resultant_interpolation;
+pub mod resultant_segmentation;
 pub mod roots;
 pub mod search;
 pub mod sign_filter;
