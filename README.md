@@ -4,6 +4,8 @@ Exact generic cylindrical algebraic decomposition in Rust, using Symbolica for a
 
 The audited checkpoint solves **303/331 distinct original problems**, including **124/124 fixed-kinematics ZZ cases**. The remaining 27 symbolic ZZ problems and positive Gluza33 are explicitly incomplete. A446 and its crossing complete at fixed kinematics; their full symbolic domains remain unresolved.
 
+All 28 unresolved problems timed out in their first one-hour slow campaign. The [benchmark](benchmark/benchmark.pdf) records those censored times and memory measurements; targeted continuations preserve completed algebra without claiming new coverage.
+
 ## Quick start
 
 Requires Git and Nix with flakes enabled. External dependencies are fetched at exact revisions; they are not included in this repository.
