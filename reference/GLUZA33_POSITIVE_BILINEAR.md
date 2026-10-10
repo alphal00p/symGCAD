@@ -178,3 +178,16 @@ Its six tests include the original endpoint identities, the admissible
 pinch, wrong guide orientation, exact source comparison and degenerate
 root-order safeguards. This is a proved reduction and a research input,
 not yet an original decomposition or a new production rule.
+
+Two cold local release trials of that constrained base also timed out:
+60.024 seconds for order `[x6,x1,x4,x0,x2,x7]`, and 60.030 seconds for its
+`x7`-anchor counterpart. Both used CPU 8, 4 GiB and the same immutable
+`dda5980` release as above. The first final active operation was a degree-12
+discriminant in `x0` of a 1,205-term polynomial; the second was a degree-17
+discriminant in `x4` of a 1,163-term polynomial. These are exact captured
+operands, independently parsed with Symbolica. Last progress snapshots had
+only 438/1,709 speculative nodes and 9/41 refinements, respectively. Thus
+these orders still suffer projection growth despite the smaller admissible
+base; increasing traversal caches would not address this measured obstacle.
+Inputs, operation captures, progress and process limits remain under
+`artifacts/research/gluza33-positive-endpoint-base-01/summary.json`.
