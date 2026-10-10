@@ -121,3 +121,23 @@ Its copied `queue-snapshot.json` has SHA-256
 the audit records all four exact ledger hashes. The refreshed benchmark uses
 this immutable snapshot rather than a live journal. The original attempts
 and earlier benchmark evidence remain unchanged.
+
+## Second one-hour wave
+
+The read-only snapshot at 08:30 UTC on 10 October 2026 also found no new
+completion. Symbolic A377, A414, A381 and Ax12-A317 timed out after
+3600.022–3600.024 seconds. Their peak resident memory was respectively
+414.8, 648.8, 438.5 and 1430.0 MiB. All four result and verification files
+were absent. These attempts remain censored; the verified inventory is
+still **303 / 331**, with all 28 slow originals unresolved. The scheduler
+had eight finished incomplete attempts, four active runs and sixteen pending.
+
+`artifacts/slow-suite-one-hour-audit-03/audit.json` has SHA-256
+`66554f6c19f5516c28d9a011daf57287b6f92c4ddf0e8e8d215f14c270e22ae6`;
+its queue snapshot has SHA-256
+`e40a19d55dc34e14a8fffdda119c4a66f85f062eb0f52c8252a70097b125c34e`.
+The audit rechecked all eight finished ledger hashes, including the unchanged
+first wave. Final ledger copies, last published progress and compact outcomes
+are retained under `artifacts/slow-suite-second-wave-diagnostic-01/`.
+Progress snapshots can be stale and do not identify the operation executing
+at timeout. The existing queue and its historical evidence were not modified.
