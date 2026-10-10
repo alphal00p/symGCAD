@@ -10,7 +10,7 @@ cargo build --release --locked
 
 The bootstrap reads [PROVENANCE.toml](../PROVENANCE.toml), fetches the exact Symbolica Git commit over public HTTPS, and checks out a detached revision. Numerica and Graphica are tracked workspace members of that same Symbolica monorepo; their exact subtree IDs are recorded too. Cargo uses all three local paths. Repeating setup verifies the existing checkout. A different revision, unrelated modified file, or untracked source file causes an error without resetting or removing it.
 
-Symbolica has its own [license terms](../DO_NOT_PUSH_REFERENCES/symbolica/License.md). Supply `SYMBOLICA_LICENSE` through your environment when required. The Nix development shell may also read the optional ignored `.symgcad-env`; do not commit a license key. Solver workers use one symbolic thread. Parallel worker limits also remain subject to the backend license.
+Symbolica has its own [license terms](https://github.com/symbolica-dev/symbolica/blob/75f8350094b90254ee71dc2a391fde0d14b0204a/License.md). Supply `SYMBOLICA_LICENSE` through your environment when required. The Nix development shell may also read the optional ignored `.symgcad-env`; do not commit a license key. Solver workers use one symbolic thread. Parallel worker limits also remain subject to the backend license.
 
 ## Optional upstream fixes
 
@@ -49,3 +49,6 @@ nix develop -c typst compile benchmark/benchmark.typ benchmark/benchmark.pdf
 ```
 
 The document's table data and source are committed separately from generated solver proofs.
+
+Historical benchmark source identifiers map to the copied public history through
+[the publication commit map](../reference/PUBLICATION_HISTORY.md).
