@@ -125,8 +125,9 @@ remaining variables, the same proof can be repeated. There is no new
 positivity theorem to assume. Each chosen axis disappears from both child
 polynomials. Discovery should retain all current degree, term, coefficient
 height and multiplication bounds, plus a **shared** total budget across
-failed attempts as well as accepted nodes. A depth-three accepted binary
-tree has at most 15 quadratic nodes, but that alone does not bound failed
+failed attempts as well as accepted nodes. With three quadratic layers, an
+accepted binary tree has at most seven quadratic nodes and eight leaf
+certificates, but that alone does not bound failed
 candidate search. A separate attempt/work counter is necessary.
 
 Replay must recompute `a,b,c,4ac-b²`, check exact signed reconstruction,
