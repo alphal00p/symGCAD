@@ -7,6 +7,7 @@ pub mod comparison;
 pub mod config;
 pub mod corpus;
 pub mod domain;
+pub mod fastsecdec;
 pub mod homogeneity;
 pub mod linear_negative;
 pub mod local_projection;

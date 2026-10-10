@@ -47,6 +47,14 @@ enum Command {
     Bench {
         input: PathBuf,
     },
+    /// Check a native fastSecDec graph bundle and prepare a U/F sign problem.
+    ImportFastsecdec {
+        input: PathBuf,
+        #[arg(long)]
+        problem: PathBuf,
+        #[arg(short, long)]
+        output: PathBuf,
+    },
     Corpus {
         #[arg(long, default_value = "DO_NOT_PUSH_REFERENCES/gcad")]
         source: PathBuf,
@@ -666,6 +674,14 @@ fn main() -> Result<()> {
             let report = benchmark::run_campaign(&input, &std::env::current_exe()?)?;
             emit(&report, None)
         }
+        Command::ImportFastsecdec {
+            input,
+            problem,
+            output,
+        } => emit(
+            &symgcad::fastsecdec::import(&input, &problem, &output)?,
+            None,
+        ),
         Command::Corpus {
             source,
             fixed,
