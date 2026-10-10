@@ -1,6 +1,6 @@
 //! Certified root unions and exact rational open-sector samples.
 use anyhow::{Result, ensure};
-use std::{cmp::Ordering, collections::BinaryHeap};
+use std::{cmp::Ordering, collections::BinaryHeap, sync::Arc};
 use symbolica::prelude::*;
 
 mod collision;
@@ -15,7 +15,9 @@ pub struct FiberRoot {
     pub polynomial: usize,
     pub index: usize,
     pub interval: (Rational, Rational),
-    pub fiber: UnivariatePolynomial<Q>,
+    /// Immutable defining polynomial, shared by roots from the same fiber.
+    /// Refinement changes only this root's interval, never the polynomial.
+    pub fiber: Arc<UnivariatePolynomial<Q>>,
 }
 
 /// Reversed interval order makes BinaryHeap expose the lowest possible root.
@@ -203,7 +205,7 @@ fn isolate_union_using(
                 polynomial: id,
                 index: 0,
                 interval: (root.clone(), root),
-                fiber: polynomial,
+                fiber: Arc::new(polynomial),
             });
             sources.push(source);
             continue;
@@ -235,7 +237,7 @@ fn isolate_union_using(
         // A positive constant rescaling of the retained fiber preserves every
         // later sign, endpoint decision and full-real ordinal. Integer fibers
         // use exact integer Horner arithmetic during repeated refinements.
-        let fiber = prepare_fiber(fiber);
+        let fiber = Arc::new(prepare_fiber(fiber));
         intervals.sort_by(|a, b| a.0.cmp(&b.0));
         for (index, (lo, hi, _)) in intervals.into_iter().enumerate() {
             let interval = open_or_exact_interval(&fiber, index, lo, hi)?;

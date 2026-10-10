@@ -204,7 +204,7 @@ fn bisection_uses_one_sided_signs_at_other_roots() {
         polynomial: 0,
         index: 1,
         interval: (q("0"), q("3")),
-        fiber: polynomial("x*(x-1)*(x-3)"),
+        fiber: polynomial("x*(x-1)*(x-3)").into(),
     };
     for _ in 0..12 {
         refine_once(&mut root);
@@ -224,7 +224,7 @@ fn simple_real_roots_refine_correctly_with_repeated_nonreal_factors() {
     let mut roots = isolate_union(vec![(0, p.clone())]).unwrap();
     assert_eq!(roots.len(), 2);
     for root in &mut roots {
-        assert_eq!(root.fiber, p);
+        assert_eq!(root.fiber.as_ref(), &p);
         for _ in 0..16 {
             refine_once(root);
             assert_eq!(

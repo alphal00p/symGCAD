@@ -266,8 +266,8 @@ mod tests {
             ]
         );
         let coincident = isolate_union(vec![
-            (0, roots[0].fiber.clone()),
-            (1, roots[0].fiber.clone()),
+            (0, roots[0].fiber.as_ref().clone()),
+            (1, roots[0].fiber.as_ref().clone()),
         ])
         .unwrap();
         let one = PositiveRayProjection {

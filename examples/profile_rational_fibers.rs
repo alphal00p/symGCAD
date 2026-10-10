@@ -230,7 +230,7 @@ fn work(args: &Args) -> Result<serde_json::Value> {
                 let mut roots = black_box(initial_roots.clone());
                 for root in &mut roots {
                     if normalize {
-                        root.fiber = integer_fiber(root.fiber.clone());
+                        root.fiber = integer_fiber(root.fiber.as_ref().clone()).into();
                     }
                     for _ in 0..32 {
                         refine_once(root);

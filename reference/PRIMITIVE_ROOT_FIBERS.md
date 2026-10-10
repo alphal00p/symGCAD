@@ -101,3 +101,38 @@ previous release. Identical capped A414 work took median 7.747562 seconds
 before and 6.916713 seconds after; all exact outputs and counters matched.
 Every run remained incomplete at the same node cap. This does not establish
 a completed-solve speedup or isolate the benefit of either shortcut.
+
+## Shared immutable defining polynomials
+
+Each `FiberRoot` now holds an `Arc` to its immutable defining polynomial.
+Roots isolated from one fiber share that allocation; their rational intervals,
+owners and full-real indices remain separate. Exact refinement, collision
+checks and root counting borrow the polynomial as before. Cloning a root no
+longer copies all of its coefficients. This applies to every input fiber,
+without a graph, degree or fixture selector.
+
+The [D32 block inventory](A377_D32_ROOT_INVENTORY.md) exposed the cost of the
+former representation: one degree-1478 block has 21,322,867 coefficient bits
+and 294 real roots. Copying its coefficients into every root represents roughly
+783,615,362 bytes of coefficient payload alone. That calculation motivates the
+change; it is not a measured reduction in peak RSS. Symbolica's native isolator
+also constructs its own interval records, and its temporary allocations are
+unchanged. No isolation algorithm, root boundary or proof schema changed.
+
+`FiberRoot::fiber` is a public Rust field whose type changes from an owned
+polynomial to `Arc<UnivariatePolynomial<Q>>`. Manual callers can construct it
+with `polynomial.into()` and explicitly obtain an owned copy with
+`root.fiber.as_ref().clone()` when needed. Existing serialized cell bounds are
+unaffected.
+
+The combined resource-policy and root change passed 222 focused tests,
+including all 169 library tests and 18 root integration tests. The latter
+cover repeated and close roots, exact collisions, endpoint refinement and
+independent intervals. Library results are preserved in
+`artifacts/base-univariate-resource-focused-02.log` (SHA-256
+`96feaae8de56eda03778cef1018d8878e038f351700787458aa505d11ec502b7`);
+that command subsequently encountered one test assertion requiring the new
+`Arc` field access. After that test-only adaptation, all remaining integration
+and helper targets passed in
+`artifacts/base-univariate-resource-focused-03.log` (SHA-256
+`6c54464c6b61e6e669665c271556141cffdfe8bd65beac8165bcdda89a8ef31f`).
