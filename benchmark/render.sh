@@ -6,8 +6,10 @@ cd "$(dirname "$0")/.."
 # Regeneration additionally needs the retained (ignored) campaign evidence.
 if [[ "${1:-}" == --regenerate ]]; then
     completion="${2:-artifacts/completion-aggregate-303.json}"
-    args=(--completion "$completion" --output benchmark/data.json)
-    if [[ -f artifacts/slow-suite-one-hour-01/queue.json ]]; then
+    args=(--completion "$completion" --output benchmark/data.json --followups benchmark/followups.json)
+    if [[ -f artifacts/slow-suite-one-hour-audit-09/queue-snapshot.json ]]; then
+        args+=(--slow-status artifacts/slow-suite-one-hour-audit-09/queue-snapshot.json)
+    elif [[ -f artifacts/slow-suite-one-hour-01/queue.json ]]; then
         args+=(--slow-status artifacts/slow-suite-one-hour-01/queue.json)
     fi
     nix develop --command cargo run --example benchmark_report -- "${args[@]}"
@@ -16,4 +18,6 @@ elif [[ $# -ne 0 ]]; then
     exit 2
 fi
 nix develop --command typst compile benchmark/benchmark.typ benchmark/benchmark.pdf
-sha256sum benchmark/data.json benchmark/benchmark.typ benchmark/benchmark.pdf
+nix develop --command typst compile benchmark/ordering-mcts.typ benchmark/ordering-mcts.pdf
+sha256sum benchmark/data.json benchmark/benchmark.typ benchmark/benchmark.pdf \
+    benchmark/ordering-mcts.typ benchmark/ordering-mcts.pdf

@@ -22,6 +22,9 @@ struct Args {
     /// Optional current slow-queue status; diagnostic outcomes never grant proof credit.
     #[arg(long)]
     slow_status: Option<PathBuf>,
+    /// Hash-pinned, audited incomplete original-problem continuations.
+    #[arg(long)]
+    followups: Option<PathBuf>,
 }
 fn hash(bytes: &[u8]) -> String {
     format!("{:x}", Sha256::digest(bytes))
@@ -267,6 +270,245 @@ fn ratio_summary(cases: &[&Value], reports: &mut Sources) -> Result<Value> {
     Ok(
         json!({"branches":cases.len(),"qualified_branches":qualified,"complete":complete,"ratio":if complete{Some(rust/native)}else{None},"rust_seconds":if complete{Some(rust)}else{None},"native_seconds":if complete{Some(native)}else{None},"status":if complete{"matched"}else if qualified==0{"native timeout"}else{"partially censored"},"aggregation":"sum of paired per-branch median phase times; separate sign branches remain a separate workload","evidence":provenance}),
     )
+}
+
+fn relative_evidence(path: &str) -> &str {
+    path.strip_prefix("/common/dev/gcad/").unwrap_or(path)
+}
+
+fn checked_evidence(record: &Value, hashes: &mut BTreeMap<String, String>) -> Result<PathBuf> {
+    use std::io::Read;
+    let path = relative_evidence(str_at(record, "path")?);
+    if !hashes.contains_key(path) {
+        let mut file = fs::File::open(path).with_context(|| format!("evidence {path}"))?;
+        let mut digest = Sha256::new();
+        let mut buffer = [0u8; 65536];
+        loop {
+            let n = file.read(&mut buffer)?;
+            if n == 0 {
+                break;
+            }
+            digest.update(&buffer[..n]);
+        }
+        hashes.insert(path.into(), format!("{:x}", digest.finalize()));
+    }
+    ensure!(
+        hashes[path] == str_at(record, "sha256")?,
+        "changed evidence: {path}"
+    );
+    if let Some(n) = record["bytes"].as_u64() {
+        ensure!(
+            fs::metadata(path)?.len() == n,
+            "changed evidence length: {path}"
+        );
+    }
+    Ok(path.into())
+}
+
+fn bounded_metadata(path: &Path) -> Result<Value> {
+    ensure!(
+        fs::metadata(path)?.len() <= 32 * 1024 * 1024,
+        "oversized metadata"
+    );
+    Ok(serde_json::from_slice(&fs::read(path)?)?)
+}
+
+fn portable_record(record: &Value) -> Result<Value> {
+    let mut record = record.clone();
+    record["path"] = json!(relative_evidence(str_at(&record, "path")?));
+    Ok(record)
+}
+
+fn record_incomplete(row: &mut Value, trial: &Value) -> Result<()> {
+    ensure!(
+        row["verified"] == false && row["measurement"].is_null(),
+        "followup cannot replace a completion"
+    );
+    ensure!(
+        trial["status"] == "timeout"
+            && trial["solve"]["status"] == "timeout"
+            && trial["verified"] == false
+            && trial["verification"].is_null()
+            && trial["result_sha256"].is_null(),
+        "followup requires ordinary completion audit"
+    );
+    let wall = trial["solve"]["wall_time_secs"]
+        .as_f64()
+        .context("followup time")?;
+    let rss = trial["solve"]["peak_rss_kib"]
+        .as_u64()
+        .context("followup RSS")?;
+    ensure!(
+        wall.is_finite() && wall > 0. && rss > 0,
+        "invalid followup measurement"
+    );
+    let longest = row["longest_incomplete_seconds"]
+        .as_f64()
+        .unwrap_or(0.)
+        .max(wall);
+    row["longest_incomplete_seconds"] = json!(longest);
+    row["incomplete_peak_rss_mib"] = json!(
+        row["incomplete_peak_rss_mib"]
+            .as_f64()
+            .unwrap_or(0.)
+            .max(rss as f64 / 1024.)
+    );
+    row["last_status"] = json!("timeout");
+    row["slow_status"] = json!("incomplete");
+    row["display"]["incomplete"] = json!(sig(Some(longest), 3));
+    Ok(())
+}
+
+fn apply_followups(data: &mut Value, path: &Path) -> Result<()> {
+    let manifest = bounded_metadata(path)?;
+    ensure!(manifest["schema_version"] == 1, "unknown followup manifest");
+    let mut hashes = BTreeMap::new();
+    let mut records = Vec::new();
+    for source in arr(&manifest, "audits")? {
+        let audit = bounded_metadata(&checked_evidence(source, &mut hashes)?)?;
+        ensure!(
+            audit["verdict"] == "incomplete"
+                && audit["completion_credit"] == false
+                && audit["original_mathematical_fields_exactly_equal"] == true
+                && audit["result_exists"] == false
+                && audit["verification_exists"] == false,
+            "not an audited incomplete original"
+        );
+        for key in [
+            "ledger",
+            "launch",
+            "input",
+            "original_input",
+            "actual_trial_input",
+            "final_cache_manifest",
+        ] {
+            checked_evidence(&audit[key], &mut hashes)?;
+        }
+        let parse_problem = |record: &Value| -> Result<Value> {
+            let path = relative_evidence(str_at(record, "path")?);
+            ensure!(fs::metadata(path)?.len() <= 1024 * 1024, "oversized input");
+            Ok(serde_json::to_value(toml::from_str::<toml::Value>(
+                &fs::read_to_string(path)?,
+            )?)?)
+        };
+        let original = parse_problem(&audit["original_input"])?;
+        let actual = parse_problem(&audit["actual_trial_input"])?;
+        let mathematics = |p: &Value| {
+            let mut p = p.clone();
+            p.as_object_mut().unwrap().remove("solver");
+            p.as_object_mut().unwrap().remove("limits");
+            p
+        };
+        ensure!(
+            mathematics(&original) == mathematics(&actual),
+            "followup changes original mathematics"
+        );
+        let order = arr(&actual["solver"], "order")?;
+        ensure!(
+            actual["solver"]["order"] == audit["order"],
+            "followup order mismatch"
+        );
+        let mut names = order
+            .iter()
+            .map(|v| v.as_str().context("order name"))
+            .collect::<Result<Vec<_>>>()?;
+        let mut variables = arr(&original, "variables")?
+            .iter()
+            .map(|v| v.as_str().context("variable name"))
+            .collect::<Result<Vec<_>>>()?;
+        names.sort_unstable();
+        variables.sort_unstable();
+        ensure!(names == variables, "not an original variable permutation");
+        if let Some(fixed) = original["solver"]["order"]
+            .as_array()
+            .filter(|o| !o.is_empty())
+        {
+            ensure!(order == fixed, "original fixed order changed");
+        }
+        if let Some(groups) = original["variable_groups"].as_array() {
+            let mut last = None;
+            for group in groups {
+                let positions = group
+                    .as_array()
+                    .context("variable group")?
+                    .iter()
+                    .map(|v| {
+                        order
+                            .iter()
+                            .position(|n| n == v)
+                            .context("group variable absent")
+                    })
+                    .collect::<Result<Vec<_>>>()?;
+                if let (Some(lo), Some(hi)) = (positions.iter().min(), positions.iter().max()) {
+                    ensure!(last.is_none_or(|end| end < *lo), "group order changed");
+                    last = Some(*hi);
+                }
+            }
+        }
+        let ledger = bounded_metadata(&checked_evidence(&audit["ledger"], &mut hashes)?)?;
+        ensure!(arr(&ledger, "runs")?.len() == 1, "ambiguous followup run");
+        let run = &ledger["runs"][0];
+        ensure!(
+            arr(run, "trials")?.len() == 1,
+            "ambiguous followup repetition"
+        );
+        let trial = &run["trials"][0];
+        ensure!(
+            trial["solve"] == audit["solve_process"]
+                && trial["input_sha256"] == audit["actual_trial_input"]["sha256"],
+            "followup trial mismatch"
+        );
+        let provenance = &ledger["provenance"];
+        checked_evidence(
+            &json!({"path":provenance["executable"],"sha256":provenance["executable_sha256"]}),
+            &mut hashes,
+        )?;
+        ensure!(
+            run["executable_sha256"] == provenance["executable_sha256"],
+            "followup executable mismatch"
+        );
+        let row = data["rows"]
+            .as_array_mut()
+            .context("rows")?
+            .iter_mut()
+            .find(|r| {
+                r["original_input"]
+                    == relative_evidence(str_at(&audit["original_input"], "path").unwrap_or(""))
+            })
+            .context("unknown followup original")?;
+        ensure!(
+            arr(run, "aliases")?.contains(&row["identifier"]),
+            "followup alias mismatch"
+        );
+        record_incomplete(row, trial)?;
+        let launch = bounded_metadata(&checked_evidence(&audit["launch"], &mut hashes)?)?;
+        let prior = launch
+            .as_object()
+            .context("launch object")?
+            .iter()
+            .filter(|(k, _)| k.starts_with("prior_"))
+            .map(|(k, v)| (k.clone(), v.clone()))
+            .collect::<serde_json::Map<_, _>>();
+        records.push(json!({"identifier":row["identifier"],"audit":source,
+            "ledger":portable_record(&audit["ledger"] )?,"original_input":portable_record(&audit["original_input"] )?,
+            "trial_input":portable_record(&audit["actual_trial_input"] )?,"launch":portable_record(&audit["launch"] )?,
+            "final_cache_manifest":portable_record(&audit["final_cache_manifest"] )?,
+            "variant":run["variant"],"status":trial["status"],"wall_time_secs":trial["solve"]["wall_time_secs"],
+            "peak_rss_kib":trial["solve"]["peak_rss_kib"],"memory_limit_mib":provenance["memory_mib"],
+            "solve_limit_secs":provenance["solve_timeout_secs"],"verify_limit_secs":provenance["verify_timeout_secs"],
+            "campaign_limit_secs":launch["campaign_time_secs"],"cache_policy":provenance["cache_policy"],
+            "initial_cache_files":audit["initial_cache_files"],"final_cache_files":audit["final_cache_files"],
+            "new_completed_operations":audit["new_completed_operations"],"prior_costs":prior,
+            "order":order,"solver_options":actual["solver"],"executable_sha256":provenance["executable_sha256"],"completion_credit":false}));
+    }
+    data["incomplete_followups"] = json!({"manifest_sha256":hash(&fs::read(path)?),
+        "scope":manifest["scope"],"records":records});
+    data["machine"]["historical_worker_limits"] =
+        json!("4–50 GiB; exact per-run ceilings retained in source ledgers");
+    for (path, sha) in hashes {
+        data["sources"][path] = json!(sha);
+    }
+    Ok(())
 }
 fn main() -> Result<()> {
     let args = Args::parse();
@@ -544,7 +786,10 @@ fn main() -> Result<()> {
         row["rank"] = json!(i + 1);
         row["display"] = json!({"solve":sig(row["measurement"]["solve_seconds"].as_f64(),3),"verify":sig(row["measurement"]["verify_seconds"].as_f64(),3),"rss":sig(row["measurement"]["peak_rss_mib"].as_f64(),3),"baseline_rust":sig(row["baseline"]["rust_seconds"].as_f64(),2),"baseline_native":sig(row["baseline"]["native_seconds"].as_f64(),2),"ratio":sig(row["baseline"]["ratio"].as_f64(),2),"incomplete":sig(row["longest_incomplete_seconds"].as_f64(),3)});
     }
-    let result = json!({"schema_version":1,"title":"symGCAD — corpus benchmark","generator_source_sha256":hash(&fs::read(file!())?),"completion_summary":completion["summary"],"baseline_summary":parity["summary"],"rows":rows,"slow_campaign":slow,"sources":sources.hashes,"policies":{"ordering":"verified original problems fastest to slowest; unresolved last","measurement":"three-run verified control preferred; otherwise fastest audited full-problem campaign run; no per-repeat minimum","solve":"fresh process wall including in-run ordering/search, preprocessing and export; separately prepared research discovery is disclosed","memory":"maximum recorded resident memory across solve and independent verification","baseline_ratio":"ratio of sums of three-repeat median projection+lifting+merging times; independent +/- branch solves when marked2; not the optimized full-split solve"},"machine":{"cpu":"AMD EPYC 9754 128-Core Processor","os":"Linux 6.18.45 x86_64","task_cpu_limit":16,"task_memory_gib":64,"worker_threads":1,"historical_worker_limits":"4–32GiB; exact per-run ceilings retained in source ledgers"}});
+    let mut result = json!({"schema_version":1,"title":"symGCAD — corpus benchmark","generator_source_sha256":hash(&fs::read(file!())?),"completion_summary":completion["summary"],"baseline_summary":parity["summary"],"rows":rows,"slow_campaign":slow,"sources":sources.hashes,"policies":{"ordering":"verified original problems fastest to slowest; unresolved last","measurement":"three-run verified control preferred; otherwise fastest audited full-problem campaign run; no per-repeat minimum","solve":"fresh process wall including in-run ordering/search, preprocessing and export; separately prepared research discovery is disclosed","memory":"maximum recorded resident memory across solve and independent verification","baseline_ratio":"ratio of sums of three-repeat median projection+lifting+merging times; independent +/- branch solves when marked2; not the optimized full-split solve"},"machine":{"cpu":"AMD EPYC 9754 128-Core Processor","os":"Linux 6.18.45 x86_64","task_cpu_limit":16,"task_memory_gib":64,"worker_threads":1,"historical_worker_limits":"4–32GiB; exact per-run ceilings retained in source ledgers"}});
+    if let Some(path) = args.followups {
+        apply_followups(&mut result, &path)?;
+    }
     fs::create_dir_all(args.output.parent().context("output parent")?)?;
     fs::write(&args.output, serde_json::to_vec_pretty(&result)?)?;
     println!(
@@ -578,5 +823,35 @@ mod tests {
         assert!(r["ratio"].is_null());
         assert_eq!(r["status"], "native timeout");
         Ok(())
+    }
+    #[test]
+    fn continuation_is_censored_and_preserves_independent_baseline() -> Result<()> {
+        let mut row = json!({"verified":false,"measurement":null,
+            "baseline":{"ratio":0.5},"display":{"ratio":"0.50","cells":"—"},
+            "longest_incomplete_seconds":3600.,"incomplete_peak_rss_mib":2000.});
+        let trial = json!({"status":"timeout","verified":false,"verification":null,
+            "result_sha256":null,"solve":{"status":"timeout","wall_time_secs":7200.04,
+            "peak_rss_kib":1024000}});
+        record_incomplete(&mut row, &trial)?;
+        assert_eq!(row["display"]["incomplete"], "7200");
+        assert_eq!(row["incomplete_peak_rss_mib"], 2000.);
+        assert_eq!(row["baseline"]["ratio"], 0.5);
+        assert_eq!(row["display"]["cells"], "—");
+        assert!(row["measurement"].is_null());
+        Ok(())
+    }
+    #[test]
+    fn continuation_cannot_grant_completion_or_replace_verified_measurement() {
+        let row = json!({"verified":false,"measurement":null,"display":{}});
+        let mut trial = json!({"status":"complete_verified","verified":true,
+            "solve":{"status":"completed","wall_time_secs":1.,"peak_rss_kib":1000}});
+        assert!(record_incomplete(&mut row.clone(), &trial).is_err());
+        trial["status"] = json!("timeout");
+        trial["verified"] = json!(false);
+        trial["solve"]["status"] = json!("timeout");
+        let mut completed = row;
+        completed["verified"] = json!(true);
+        completed["measurement"] = json!({"cells":2});
+        assert!(record_incomplete(&mut completed, &trial).is_err());
     }
 }

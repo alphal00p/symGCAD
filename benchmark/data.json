@@ -38,10 +38,834 @@
     "unresolved": 28,
     "used_supplemental_verifications": 3
   },
-  "generator_source_sha256": "8589b7a49f09b344503dbd13642b2e7430cc15916e6ea2fd4fcc068256f53af5",
+  "generator_source_sha256": "347e4246b7c9857f472e8c167b877d5c7b9c4d337681d7b433ac5079b162009c",
+  "incomplete_followups": {
+    "manifest_sha256": "2899ef694685ab3f28b51f758e9610e6f2dcf491c313f6a364319c05811adb66",
+    "records": [
+      {
+        "audit": {
+          "path": "artifacts/research/a377-segmentation-warm-hour-04/final-audit.json",
+          "sha256": "1c48d084d4fa368b0322c487d8096600af0ce73005ae93991791c3d505a83953"
+        },
+        "cache_policy": "shared",
+        "campaign_limit_secs": 3600,
+        "completion_credit": false,
+        "executable_sha256": "7bf9db11d4f8636ad09b57b52aaf6b87a3b61ab3a3cb61d70d9cef592c752657",
+        "final_cache_files": 2056,
+        "final_cache_manifest": {
+          "bytes": 447638,
+          "path": "artifacts/research/a377-segmentation-warm-hour-04/final-cache-manifest.json",
+          "sha256": "7387502aab2db9298019ef9c452761b9e627bae4dde0251db1114df1fd492c59"
+        },
+        "identifier": "finiteA_6_377_10_0__5_0_0_1_1_1_1_0_1/symbolic",
+        "initial_cache_files": 2048,
+        "launch": {
+          "bytes": 2100,
+          "path": "artifacts/research/a377-segmentation-warm-hour-04/launch.json",
+          "sha256": "2b0a62ea34ba926ea13dc2297f981552181f4a49701fa9488fd7183c576b7c4f"
+        },
+        "ledger": {
+          "bytes": 4154,
+          "path": "artifacts/research/a377-segmentation-warm-hour-04/results/ledger.json",
+          "sha256": "4a1b9700f88226146731ffbd9427a028c5ffd71eb3f56c22725c1ec352b3193b"
+        },
+        "memory_limit_mib": 4096,
+        "new_completed_operations": 8,
+        "order": [
+          "s",
+          "t",
+          "x4",
+          "x0",
+          "x3",
+          "x5",
+          "x6",
+          "x8"
+        ],
+        "original_input": {
+          "bytes": 1364,
+          "path": "artifacts/corpus/symbolic/0081_finiteA_6_377_10_0__5_0_0_1_1_1_1_0_1_symbolic.toml",
+          "sha256": "d00c3ebceebe641501c20a6dc28335f7502ee2c0e3c1e8118b388e31ba581e24"
+        },
+        "peak_rss_kib": 792584,
+        "prior_costs": {},
+        "solve_limit_secs": 3600.0,
+        "solver_options": {
+          "binary_resultants": true,
+          "cache_memory_mib": 128,
+          "checkpoint_dir": "/common/dev/gcad/artifacts/research/a377-segmentation-warm-hour-04/checkpoints",
+          "engine": "local",
+          "homogeneous_anchor": "x4",
+          "homogeneous_block": [
+            "x0",
+            "x3",
+            "x4",
+            "x5",
+            "x6",
+            "x8"
+          ],
+          "input_positivity": true,
+          "local_adjacent_pairs": true,
+          "local_base_univariate_basis": true,
+          "local_batch_siblings": false,
+          "local_descartes_intervals": true,
+          "local_descartes_witnesses": true,
+          "local_max_nodes": 200000000,
+          "local_max_refinements": 20000000,
+          "local_pair_cancellations": 1,
+          "max_rollouts": 256,
+          "merge": "none",
+          "order": [
+            "s",
+            "t",
+            "x4",
+            "x0",
+            "x3",
+            "x5",
+            "x6",
+            "x8"
+          ],
+          "ordering": "given",
+          "positivity": true,
+          "prune_operations": false,
+          "search_pruning": true,
+          "search_time_secs": 300.0,
+          "seed": 0
+        },
+        "status": "timeout",
+        "trial_input": {
+          "bytes": 1992,
+          "path": "artifacts/research/a377-segmentation-warm-hour-04/results/00000-d5b4ca4a5b567ff1-1791637317327714889-0/input.toml",
+          "sha256": "9010cf0b01d69f2896463283abb2815ad43938d14f6bfabe9614745d96f2799a"
+        },
+        "variant": "warm-continuation-with-typed-first-axis-basis",
+        "verify_limit_secs": 600.0,
+        "wall_time_secs": 3600.029137743
+      },
+      {
+        "audit": {
+          "path": "artifacts/research/a377-segmentation-warm-hour-06/final-audit.json",
+          "sha256": "a3a037775dfe478fb7498e189b13a451de53773ad11f9938bc7498ec22525279"
+        },
+        "cache_policy": "shared",
+        "campaign_limit_secs": 3600,
+        "completion_credit": false,
+        "executable_sha256": "acd80197327fb6c8dfe9454c47be6b9ecf26491d3b1755d01bf33deebd1f20b1",
+        "final_cache_files": 2086,
+        "final_cache_manifest": {
+          "bytes": 464848,
+          "path": "artifacts/research/a377-segmentation-warm-hour-06/final-cache-manifest.json",
+          "sha256": "0c465b0c3e542a6adc7f7d90a2acbb0533cd6fdc11592a2f20072bb5a0b42b61"
+        },
+        "identifier": "finiteA_6_377_10_0__5_0_0_1_1_1_1_0_1/symbolic",
+        "initial_cache_files": 2056,
+        "launch": {
+          "bytes": 3516,
+          "path": "artifacts/research/a377-segmentation-warm-hour-06/launch.json",
+          "sha256": "12bcec2a965c57c9647dbfdbbb89682d6fb6266a86a7bac8b1f1a04cf4935a48"
+        },
+        "ledger": {
+          "bytes": 4184,
+          "path": "artifacts/research/a377-segmentation-warm-hour-06/results/ledger.json",
+          "sha256": "36500a10e09c459fd38f2728db96f6b3007b48708fd8be8288f6055e554919bc"
+        },
+        "memory_limit_mib": 12288,
+        "new_completed_operations": 30,
+        "order": [
+          "s",
+          "t",
+          "x4",
+          "x0",
+          "x3",
+          "x5",
+          "x6",
+          "x8"
+        ],
+        "original_input": {
+          "bytes": 1364,
+          "path": "artifacts/corpus/symbolic/0081_finiteA_6_377_10_0__5_0_0_1_1_1_1_0_1_symbolic.toml",
+          "sha256": "d00c3ebceebe641501c20a6dc28335f7502ee2c0e3c1e8118b388e31ba581e24"
+        },
+        "peak_rss_kib": 1689592,
+        "prior_costs": {
+          "prior_warm04_solve_seconds": 3600.029137743
+        },
+        "solve_limit_secs": 3600.0,
+        "solver_options": {
+          "binary_resultants": true,
+          "cache_memory_mib": 128,
+          "checkpoint_dir": "/common/dev/gcad/artifacts/research/a377-segmentation-warm-hour-06/checkpoints",
+          "engine": "local",
+          "homogeneous_anchor": "x4",
+          "homogeneous_block": [
+            "x0",
+            "x3",
+            "x4",
+            "x5",
+            "x6",
+            "x8"
+          ],
+          "input_positivity": true,
+          "local_adjacent_pairs": true,
+          "local_base_univariate_basis": true,
+          "local_batch_siblings": false,
+          "local_descartes_intervals": true,
+          "local_descartes_witnesses": true,
+          "local_max_nodes": 200000000,
+          "local_max_refinements": 20000000,
+          "local_pair_cancellations": 1,
+          "max_rollouts": 256,
+          "merge": "none",
+          "order": [
+            "s",
+            "t",
+            "x4",
+            "x0",
+            "x3",
+            "x5",
+            "x6",
+            "x8"
+          ],
+          "ordering": "given",
+          "positivity": true,
+          "prune_operations": false,
+          "search_pruning": true,
+          "search_time_secs": 300.0,
+          "seed": 0
+        },
+        "status": "timeout",
+        "trial_input": {
+          "bytes": 1993,
+          "path": "artifacts/research/a377-segmentation-warm-hour-06/results/00000-af7702569bfdba5d-1791647163014407477-0/input.toml",
+          "sha256": "8814298e14b5bbf1e4a2e5ae8882f62fea51b93a0aa711823df580b61ed7c611"
+        },
+        "variant": "warm-original-generic-algebra-and-basis-resource-policy",
+        "verify_limit_secs": 3600.0,
+        "wall_time_secs": 3600.01137969
+      },
+      {
+        "audit": {
+          "path": "artifacts/research/a377-segmentation-warm-hour-07/final-audit.json",
+          "sha256": "f2a9c0833fb4db4bc8dd5215aca5ba97c30a0b64d8ba0789163ab568ef5c6f06"
+        },
+        "cache_policy": "shared",
+        "campaign_limit_secs": 3600,
+        "completion_credit": false,
+        "executable_sha256": "dd0c377962ad5fc615be02a11a3731c90251fa3245c0e0f9b8a97bc7d4870bc0",
+        "final_cache_files": 2086,
+        "final_cache_manifest": {
+          "bytes": 450229,
+          "path": "artifacts/research/a377-segmentation-warm-hour-07/final-cache-manifest.json",
+          "sha256": "50ee717a45c3df18aff15b7d65293223d5830573f0e8c7db51373143643c7fcd"
+        },
+        "identifier": "finiteA_6_377_10_0__5_0_0_1_1_1_1_0_1/symbolic",
+        "initial_cache_files": 2086,
+        "launch": {
+          "bytes": 3725,
+          "path": "artifacts/research/a377-segmentation-warm-hour-07/launch.json",
+          "sha256": "245bdd1247791b0c47f528d2d29e6118dd51c41a009d0e467e6c1edb70d03b2f"
+        },
+        "ledger": {
+          "bytes": 4165,
+          "path": "artifacts/research/a377-segmentation-warm-hour-07/results/ledger.json",
+          "sha256": "8fd6dbd397ee5a0b7b186d0c80a5cb47175eaf23b361f3304d49e6ef8b74e0a7"
+        },
+        "memory_limit_mib": 12288,
+        "new_completed_operations": 0,
+        "order": [
+          "s",
+          "t",
+          "x4",
+          "x0",
+          "x3",
+          "x5",
+          "x6",
+          "x8"
+        ],
+        "original_input": {
+          "bytes": 1364,
+          "path": "artifacts/corpus/symbolic/0081_finiteA_6_377_10_0__5_0_0_1_1_1_1_0_1_symbolic.toml",
+          "sha256": "d00c3ebceebe641501c20a6dc28335f7502ee2c0e3c1e8118b388e31ba581e24"
+        },
+        "peak_rss_kib": 913636,
+        "prior_costs": {
+          "prior_campaign_terminal_audit": {
+            "bytes": 9614,
+            "path": "/common/dev/gcad/artifacts/research/a377-segmentation-warm-hour-06/final-audit.json",
+            "sha256": "a3a037775dfe478fb7498e189b13a451de53773ad11f9938bc7498ec22525279"
+          },
+          "prior_warm06_solve_seconds": 3600.01137969
+        },
+        "solve_limit_secs": 3600.0,
+        "solver_options": {
+          "binary_resultants": true,
+          "cache_memory_mib": 128,
+          "checkpoint_dir": "/common/dev/gcad/artifacts/research/a377-segmentation-warm-hour-07/checkpoints",
+          "engine": "local",
+          "homogeneous_anchor": "x4",
+          "homogeneous_block": [
+            "x0",
+            "x3",
+            "x4",
+            "x5",
+            "x6",
+            "x8"
+          ],
+          "input_positivity": true,
+          "local_adjacent_pairs": true,
+          "local_base_univariate_basis": true,
+          "local_batch_siblings": false,
+          "local_descartes_intervals": true,
+          "local_descartes_witnesses": true,
+          "local_max_nodes": 200000000,
+          "local_max_refinements": 20000000,
+          "local_pair_cancellations": 1,
+          "max_rollouts": 256,
+          "merge": "none",
+          "order": [
+            "s",
+            "t",
+            "x4",
+            "x0",
+            "x3",
+            "x5",
+            "x6",
+            "x8"
+          ],
+          "ordering": "given",
+          "positivity": true,
+          "prune_operations": false,
+          "search_pruning": true,
+          "search_time_secs": 300.0,
+          "seed": 0
+        },
+        "status": "timeout",
+        "trial_input": {
+          "bytes": 1993,
+          "path": "artifacts/research/a377-segmentation-warm-hour-07/results/00000-1836384c63c548da-1791651507151418310-0/input.toml",
+          "sha256": "7bc984f1aa17663645f835f05d9ef0022b589406338965c22344a57fd1239e85"
+        },
+        "variant": "warm-original-schema2-base-registry-weighted-disabled",
+        "verify_limit_secs": 3600.0,
+        "wall_time_secs": 3600.031445605
+      },
+      {
+        "audit": {
+          "path": "artifacts/research/ax318-segmentation-warm-hour-01/final-audit.json",
+          "sha256": "31a1810a214200eb2ab5f5aa2b60bbc5909d54d89b7b83e58584e64422e87c62"
+        },
+        "cache_policy": "shared",
+        "campaign_limit_secs": 3600,
+        "completion_credit": false,
+        "executable_sha256": "7bf9db11d4f8636ad09b57b52aaf6b87a3b61ab3a3cb61d70d9cef592c752657",
+        "final_cache_files": 46551,
+        "final_cache_manifest": {
+          "bytes": 13804017,
+          "path": "artifacts/research/ax318-segmentation-warm-hour-01/final-cache-manifest.json",
+          "sha256": "0508158c0ae0613e60267deeedd1f708d7609a6e791a87608b70676fb822f9b0"
+        },
+        "identifier": "finiteAx12_6_318_7_0__0_2_1_1_1_1_0_0_1/symbolic",
+        "initial_cache_files": 38713,
+        "launch": {
+          "bytes": 1681,
+          "path": "artifacts/research/ax318-segmentation-warm-hour-01/launch.json",
+          "sha256": "355ce3cfc3e85c6b87a15b9146076893ab3fdc6b4cc6c144d87452c58b811620"
+        },
+        "ledger": {
+          "bytes": 3941,
+          "path": "artifacts/research/ax318-segmentation-warm-hour-01/results/ledger.json",
+          "sha256": "cd783c7b49e66d90654267628e0304a2ff1cd44033079913c58770fcb2507224"
+        },
+        "memory_limit_mib": 8192,
+        "new_completed_operations": 7838,
+        "order": [
+          "s",
+          "t",
+          "x8",
+          "x1",
+          "x2",
+          "x3",
+          "x4",
+          "x5"
+        ],
+        "original_input": {
+          "bytes": 1342,
+          "path": "artifacts/corpus/symbolic/0138_finiteAx12_6_318_7_0__0_2_1_1_1_1_0_0_1_symbolic.toml",
+          "sha256": "579c946143a1418fa4186fd6110f78495c363a6eef2708b603af5d2e7bc3379f"
+        },
+        "peak_rss_kib": 695368,
+        "prior_costs": {},
+        "solve_limit_secs": 3600.0,
+        "solver_options": {
+          "binary_resultants": true,
+          "cache_memory_mib": 128,
+          "checkpoint_dir": "/common/dev/gcad/artifacts/research/ax318-segmentation-warm-hour-01/checkpoints",
+          "engine": "local",
+          "homogeneous_anchor": "x8",
+          "homogeneous_block": [
+            "x1",
+            "x2",
+            "x3",
+            "x4",
+            "x5",
+            "x8"
+          ],
+          "input_positivity": false,
+          "local_adjacent_pairs": true,
+          "local_descartes_intervals": true,
+          "local_descartes_witnesses": true,
+          "local_max_nodes": 200000000,
+          "local_max_refinements": 20000000,
+          "local_positive_pair_witnesses": true,
+          "max_rollouts": 256,
+          "merge": "none",
+          "order": [
+            "s",
+            "t",
+            "x8",
+            "x1",
+            "x2",
+            "x3",
+            "x4",
+            "x5"
+          ],
+          "ordering": "given",
+          "positivity": true,
+          "prune_operations": false,
+          "search_local_progress": true,
+          "search_pruning": true,
+          "search_time_secs": 300.0,
+          "seed": 0
+        },
+        "status": "timeout",
+        "trial_input": {
+          "bytes": 1945,
+          "path": "artifacts/research/ax318-segmentation-warm-hour-01/results/00000-77292a94236506f0-1791637160858461390-0/input.toml",
+          "sha256": "46a1cbda1c480dbaf14ab03dbbb68d3548cb200191bc617935b69e1dcc12bdf0"
+        },
+        "variant": "warm-original-given-order-segmentation-only",
+        "verify_limit_secs": 600.0,
+        "wall_time_secs": 3600.02340042
+      },
+      {
+        "audit": {
+          "path": "artifacts/research/ax318-segmentation-warm-hour-02/final-audit.json",
+          "sha256": "a5cd7f4f6ec53834acebbc382a1c7800ff2c6fd64f6ea3f8cea21502bd82ddb4"
+        },
+        "cache_policy": "shared",
+        "campaign_limit_secs": 3600,
+        "completion_credit": false,
+        "executable_sha256": "9f4230ea1b6a1c5c1090237947d76f432591f2d55a98897c9e40eea2c02d71a3",
+        "final_cache_files": 47120,
+        "final_cache_manifest": {
+          "bytes": 10415510,
+          "path": "artifacts/research/ax318-segmentation-warm-hour-02/final-cache-manifest.json",
+          "sha256": "6f38a45ed7c4f353fbf7efdefb1c7557a4b6ddc493541ea0a744784fbf7e3291"
+        },
+        "identifier": "finiteAx12_6_318_7_0__0_2_1_1_1_1_0_0_1/symbolic",
+        "initial_cache_files": 46551,
+        "launch": {
+          "bytes": 2241,
+          "path": "artifacts/research/ax318-segmentation-warm-hour-02/launch.json",
+          "sha256": "6844d8e407cb0de1ece8549ad9b36cd0daf10d257d61a686e58a93f80bc7d31d"
+        },
+        "ledger": {
+          "bytes": 3983,
+          "path": "artifacts/research/ax318-segmentation-warm-hour-02/results/ledger.json",
+          "sha256": "2f5dcc2681f3f2ad12ca5e2f907f2086a093d6dd352876cc20dc8dedcb976246"
+        },
+        "memory_limit_mib": 8192,
+        "new_completed_operations": 569,
+        "order": [
+          "s",
+          "t",
+          "x8",
+          "x1",
+          "x2",
+          "x3",
+          "x4",
+          "x5"
+        ],
+        "original_input": {
+          "bytes": 1342,
+          "path": "artifacts/corpus/symbolic/0138_finiteAx12_6_318_7_0__0_2_1_1_1_1_0_0_1_symbolic.toml",
+          "sha256": "579c946143a1418fa4186fd6110f78495c363a6eef2708b603af5d2e7bc3379f"
+        },
+        "peak_rss_kib": 801892,
+        "prior_costs": {
+          "prior_warm01_solve_seconds": 3600.02340042
+        },
+        "solve_limit_secs": 3600.0,
+        "solver_options": {
+          "binary_resultants": true,
+          "cache_memory_mib": 128,
+          "checkpoint_dir": "/common/dev/gcad/artifacts/research/ax318-segmentation-warm-hour-02/checkpoints",
+          "engine": "local",
+          "homogeneous_anchor": "x8",
+          "homogeneous_block": [
+            "x1",
+            "x2",
+            "x3",
+            "x4",
+            "x5",
+            "x8"
+          ],
+          "input_positivity": false,
+          "local_adjacent_pairs": true,
+          "local_descartes_intervals": true,
+          "local_descartes_witnesses": true,
+          "local_max_nodes": 200000000,
+          "local_max_refinements": 20000000,
+          "local_positive_pair_witnesses": true,
+          "max_rollouts": 256,
+          "merge": "none",
+          "order": [
+            "s",
+            "t",
+            "x8",
+            "x1",
+            "x2",
+            "x3",
+            "x4",
+            "x5"
+          ],
+          "ordering": "given",
+          "positivity": true,
+          "prune_operations": false,
+          "search_local_progress": true,
+          "search_pruning": true,
+          "search_time_secs": 300.0,
+          "seed": 0
+        },
+        "status": "timeout",
+        "trial_input": {
+          "bytes": 1945,
+          "path": "artifacts/research/ax318-segmentation-warm-hour-02/results/00000-e478dd314e2aa34a-1791642585419270798-0/input.toml",
+          "sha256": "ebc4a86204091fe1e6ab2b6e97f17bb2b7328a0cd20ef39d4ff329b28dc8525d"
+        },
+        "variant": "warm-original-given-order-two-parameter-discriminants",
+        "verify_limit_secs": 600.0,
+        "wall_time_secs": 3600.007907528
+      },
+      {
+        "audit": {
+          "path": "artifacts/research/ax318-warm03-cachebudget/final-audit.json",
+          "sha256": "3ed015b41f504d812384e6ca138b16557a0ede84ed1a81a00db6e1908aad10b6"
+        },
+        "cache_policy": "shared",
+        "campaign_limit_secs": 3600,
+        "completion_credit": false,
+        "executable_sha256": "9f4230ea1b6a1c5c1090237947d76f432591f2d55a98897c9e40eea2c02d71a3",
+        "final_cache_files": 47120,
+        "final_cache_manifest": {
+          "bytes": 10415517,
+          "path": "artifacts/research/ax318-warm03-cachebudget/final-cache-manifest.json",
+          "sha256": "5d5772bd88b232684e50fccb8ad93908fb8ec881ea1d41b32ceddf03fc6bb362"
+        },
+        "identifier": "finiteAx12_6_318_7_0__0_2_1_1_1_1_0_0_1/symbolic",
+        "initial_cache_files": 46551,
+        "launch": {
+          "bytes": 2426,
+          "path": "artifacts/research/ax318-warm03-cachebudget/launch.json",
+          "sha256": "9ddd73f4466d0399461f2f2c3f598b947524add41f8eb27e47b129c76db4cddb"
+        },
+        "ledger": {
+          "bytes": 3928,
+          "path": "artifacts/research/ax318-warm03-cachebudget/results/ledger.json",
+          "sha256": "449b7e27675afb467383ea6777bb9af13ee626192c30a943d4b6f16a60240a39"
+        },
+        "memory_limit_mib": 8192,
+        "new_completed_operations": 569,
+        "order": [
+          "s",
+          "t",
+          "x8",
+          "x1",
+          "x2",
+          "x3",
+          "x4",
+          "x5"
+        ],
+        "original_input": {
+          "bytes": 1342,
+          "path": "artifacts/corpus/symbolic/0138_finiteAx12_6_318_7_0__0_2_1_1_1_1_0_0_1_symbolic.toml",
+          "sha256": "579c946143a1418fa4186fd6110f78495c363a6eef2708b603af5d2e7bc3379f"
+        },
+        "peak_rss_kib": 1036176,
+        "prior_costs": {
+          "prior_warm01_solve_seconds": 3600.02340042
+        },
+        "solve_limit_secs": 3600.0,
+        "solver_options": {
+          "binary_resultants": true,
+          "cache_memory_mib": 128,
+          "checkpoint_dir": "/common/dev/gcad/artifacts/research/ax318-warm03-cachebudget/checkpoints",
+          "engine": "local",
+          "homogeneous_anchor": "x8",
+          "homogeneous_block": [
+            "x1",
+            "x2",
+            "x3",
+            "x4",
+            "x5",
+            "x8"
+          ],
+          "input_positivity": false,
+          "local_adjacent_pairs": true,
+          "local_descartes_intervals": true,
+          "local_descartes_witnesses": true,
+          "local_learned_cut_cache_mib": 64,
+          "local_max_nodes": 200000000,
+          "local_max_refinements": 20000000,
+          "local_positive_pair_witnesses": true,
+          "local_subtree_cache_mib": 512,
+          "max_rollouts": 256,
+          "merge": "none",
+          "order": [
+            "s",
+            "t",
+            "x8",
+            "x1",
+            "x2",
+            "x3",
+            "x4",
+            "x5"
+          ],
+          "ordering": "given",
+          "positivity": true,
+          "prune_operations": false,
+          "search_local_progress": true,
+          "search_pruning": true,
+          "search_time_secs": 300.0,
+          "seed": 0
+        },
+        "status": "timeout",
+        "trial_input": {
+          "bytes": 2001,
+          "path": "artifacts/research/ax318-warm03-cachebudget/results/00000-fcb809d09173db03-1791643510129825853-0/input.toml",
+          "sha256": "06cc23d454164dc71e2d4a6edbcb9144a41a0dce09c80b6357c647db6ea7ecfc"
+        },
+        "variant": "warm-original-given-order-larger-conditional-caches",
+        "verify_limit_secs": 600.0,
+        "wall_time_secs": 3600.02813674
+      },
+      {
+        "audit": {
+          "path": "artifacts/research/gluza33-x5-last-warm24g-hour-03/final-audit.json",
+          "sha256": "67787f8a318e2e9bcef0ff1a22374cb8d1b03ea414c79925b0816e4fef5d8dee"
+        },
+        "cache_policy": "shared",
+        "campaign_limit_secs": 3600,
+        "completion_credit": false,
+        "executable_sha256": "9f4230ea1b6a1c5c1090237947d76f432591f2d55a98897c9e40eea2c02d71a3",
+        "final_cache_files": 4685,
+        "final_cache_manifest": {
+          "bytes": 1008557,
+          "path": "artifacts/research/gluza33-x5-last-warm24g-hour-03/final-cache-manifest.json",
+          "sha256": "0293182a1e5c2ce553cb064eae47caa6bb8d50180d9b664dd770e254ca1d5b73"
+        },
+        "identifier": "test_gluza_ex33/solve/3",
+        "initial_cache_files": 4685,
+        "launch": {
+          "bytes": 2238,
+          "path": "artifacts/research/gluza33-x5-last-warm24g-hour-03/launch.json",
+          "sha256": "2a8a41afe8cec8be1d5381d7f07cc594b256c59970ee07e307ac4eaf93d8be8d"
+        },
+        "ledger": {
+          "bytes": 3744,
+          "path": "artifacts/research/gluza33-x5-last-warm24g-hour-03/results/ledger.json",
+          "sha256": "a76248650a3557077e57e80c3b7e89d8847ab5e0da3bbe512720523fff1855c9"
+        },
+        "memory_limit_mib": 24576,
+        "new_completed_operations": 0,
+        "order": [
+          "x3",
+          "x2",
+          "x1",
+          "x7",
+          "x4",
+          "x6",
+          "x0",
+          "x5"
+        ],
+        "original_input": {
+          "bytes": 2682,
+          "path": "artifacts/corpus/symbolic/0338_test_gluza_ex33_solve_3.toml",
+          "sha256": "63247029fd6de5073d0b3b3587689e2235b987d6bfdd2ec9fe8139c5ffa20574"
+        },
+        "peak_rss_kib": 3461012,
+        "prior_costs": {
+          "prior_cold_solve_seconds": 1341.544040121
+        },
+        "solve_limit_secs": 3600.0,
+        "solver_options": {
+          "cache_memory_mib": 128,
+          "checkpoint_dir": "/common/dev/gcad/artifacts/research/gluza33-x5-last-warm24g-hour-03/checkpoints",
+          "engine": "local",
+          "homogeneous_anchor": "x3",
+          "homogeneous_block": [
+            "x0",
+            "x1",
+            "x2",
+            "x3",
+            "x4",
+            "x5",
+            "x6",
+            "x7"
+          ],
+          "input_positivity": false,
+          "local_adjacent_pairs": true,
+          "local_descartes_intervals": true,
+          "local_descartes_witnesses": true,
+          "local_max_nodes": 200000000,
+          "local_max_refinements": 20000000,
+          "local_positive_pair_witnesses": true,
+          "max_rollouts": 256,
+          "merge": "none",
+          "order": [
+            "x3",
+            "x2",
+            "x1",
+            "x7",
+            "x4",
+            "x6",
+            "x0",
+            "x5"
+          ],
+          "ordering": "given",
+          "positivity": true,
+          "prune_operations": false,
+          "search_local_progress": true,
+          "search_pruning": true,
+          "search_time_secs": 300.0,
+          "seed": 0
+        },
+        "status": "timeout",
+        "trial_input": {
+          "bytes": 3285,
+          "path": "artifacts/research/gluza33-x5-last-warm24g-hour-03/results/00000-8e27b43b58fdbde1-1791642656501917500-0/input.toml",
+          "sha256": "a59726f86c54ebe640b0d10f2004553b06d6002fb14509b73f7febdcbe889ac6"
+        },
+        "variant": "warm-original-x3-anchor-x5-last-twenty-four-gib",
+        "verify_limit_secs": 600.0,
+        "wall_time_secs": 3600.037918245
+      },
+      {
+        "audit": {
+          "path": "artifacts/research/gluza33-x5-last-warm50g-two-hour-05/final-audit.json",
+          "sha256": "5acf6d1714c0e21a7aaff51b2a6ef85c1a4703654e0192f3a228aa3229aad400"
+        },
+        "cache_policy": "shared",
+        "campaign_limit_secs": 7200,
+        "completion_credit": false,
+        "executable_sha256": "9f74385b5b78dbe17e67d3d5a25e3810a9cd93fa818f545d621c71bc631f8453",
+        "final_cache_files": 4685,
+        "final_cache_manifest": {
+          "bytes": 1008565,
+          "path": "artifacts/research/gluza33-x5-last-warm50g-two-hour-05/final-cache-manifest.json",
+          "sha256": "a86a8e883aa8665975364d26290672a7c172b0210d2fcb8fd9e845cf0a1ef55b"
+        },
+        "identifier": "test_gluza_ex33/solve/3",
+        "initial_cache_files": 4685,
+        "launch": {
+          "bytes": 3157,
+          "path": "artifacts/research/gluza33-x5-last-warm50g-two-hour-05/launch.json",
+          "sha256": "d3695fdd328c45960f3bca3caa5cb7654c54554ba827ff7c5faf7fe423013340"
+        },
+        "ledger": {
+          "bytes": 3760,
+          "path": "artifacts/research/gluza33-x5-last-warm50g-two-hour-05/results/ledger.json",
+          "sha256": "e37dbdb770cb4f8c12ad439aa7d8d6bf544ed5ae4b083e38ee51820539fadbbc"
+        },
+        "memory_limit_mib": 51200,
+        "new_completed_operations": 0,
+        "order": [
+          "x3",
+          "x2",
+          "x1",
+          "x7",
+          "x4",
+          "x6",
+          "x0",
+          "x5"
+        ],
+        "original_input": {
+          "bytes": 2682,
+          "path": "artifacts/corpus/symbolic/0338_test_gluza_ex33_solve_3.toml",
+          "sha256": "63247029fd6de5073d0b3b3587689e2235b987d6bfdd2ec9fe8139c5ffa20574"
+        },
+        "peak_rss_kib": 3995344,
+        "prior_costs": {
+          "prior_977_independent_smoke_audit": {
+            "bytes": 488,
+            "path": "/common/dev/gcad/artifacts/shared-fibers-resource-release-smoke-01/independent-audit.json",
+            "sha256": "5371fb6153cff6d14a5fa029b3bcc3fb9e19717e2577cb8da5e5673eca8ab4c4"
+          },
+          "prior_cold_solve_seconds": 1341.544040121,
+          "prior_warm24_solve_seconds": 3600.037918245,
+          "prior_workers_confirmed_exited": [
+            269025,
+            385781
+          ]
+        },
+        "solve_limit_secs": 7200.0,
+        "solver_options": {
+          "cache_memory_mib": 128,
+          "checkpoint_dir": "/common/dev/gcad/artifacts/research/gluza33-x5-last-warm50g-two-hour-05/checkpoints",
+          "engine": "local",
+          "homogeneous_anchor": "x3",
+          "homogeneous_block": [
+            "x0",
+            "x1",
+            "x2",
+            "x3",
+            "x4",
+            "x5",
+            "x6",
+            "x7"
+          ],
+          "input_positivity": false,
+          "local_adjacent_pairs": true,
+          "local_descartes_intervals": true,
+          "local_descartes_witnesses": true,
+          "local_max_nodes": 200000000,
+          "local_max_refinements": 20000000,
+          "local_positive_pair_witnesses": true,
+          "max_rollouts": 256,
+          "merge": "none",
+          "order": [
+            "x3",
+            "x2",
+            "x1",
+            "x7",
+            "x4",
+            "x6",
+            "x0",
+            "x5"
+          ],
+          "ordering": "given",
+          "positivity": true,
+          "prune_operations": false,
+          "search_local_progress": true,
+          "search_pruning": true,
+          "search_time_secs": 300.0,
+          "seed": 0
+        },
+        "status": "timeout",
+        "trial_input": {
+          "bytes": 3289,
+          "path": "artifacts/research/gluza33-x5-last-warm50g-two-hour-05/results/00000-9c61a1d22e287709-1791647462733104323-0/input.toml",
+          "sha256": "f134faf4b6d926c6e67de16166536a7ffaf2c66bb2c0202829851e69c35343ed"
+        },
+        "variant": "warm-original-x3-anchor-x5-last-fifty-gib-two-hour",
+        "verify_limit_secs": 7200.0,
+        "wall_time_secs": 7200.039706647
+      }
+    ],
+    "scope": "Audited incomplete original-problem followups only; no completion or baseline-ratio credit. Prior search and warm-cache costs remain separate."
+  },
   "machine": {
     "cpu": "AMD EPYC 9754 128-Core Processor",
-    "historical_worker_limits": "4–32GiB; exact per-run ceilings retained in source ledgers",
+    "historical_worker_limits": "4–50 GiB; exact per-run ceilings retained in source ledgers",
     "os": "Linux 6.18.45 x86_64",
     "task_cpu_limit": 16,
     "task_memory_gib": 64,
@@ -34614,9 +35438,9 @@
         "verify": "—"
       },
       "identifier": "finiteA_6_377_10_0__5_0_0_1_1_1_1_0_1/symbolic",
-      "incomplete_peak_rss_mib": 414.76953125,
+      "incomplete_peak_rss_mib": 1649.9921875,
       "last_status": "timeout",
-      "longest_incomplete_seconds": 3600.024113391,
+      "longest_incomplete_seconds": 3600.031445605,
       "mathematical_sha256": "3d7ead75ae14675b5ff72e7ee94b0039666e391b99f1260f28931a6d47572079",
       "measurement": null,
       "original_input": "artifacts/corpus/symbolic/0081_finiteA_6_377_10_0__5_0_0_1_1_1_1_0_1_symbolic.toml",
@@ -34819,7 +35643,7 @@
         "verify": "—"
       },
       "identifier": "finiteAx12_6_318_7_0__0_2_1_1_1_1_0_0_1/symbolic",
-      "incomplete_peak_rss_mib": 547.72265625,
+      "incomplete_peak_rss_mib": 1011.890625,
       "last_status": "timeout",
       "longest_incomplete_seconds": 3600.035508967,
       "mathematical_sha256": "c263740a3e85326e5c2f2b0c9afc59c0607b508928e26af82c96e2dcb1705f77",
@@ -35648,16 +36472,16 @@
       "display": {
         "baseline_native": "—",
         "baseline_rust": "—",
-        "incomplete": "3600",
+        "incomplete": "7200",
         "ratio": "—",
         "rss": "—",
         "solve": "—",
         "verify": "—"
       },
       "identifier": "test_gluza_ex33/solve/3",
-      "incomplete_peak_rss_mib": 178.55078125,
+      "incomplete_peak_rss_mib": 3901.703125,
       "last_status": "timeout",
-      "longest_incomplete_seconds": 3600.02468126,
+      "longest_incomplete_seconds": 7200.039706647,
       "mathematical_sha256": "be8c1a63492b779b00404788ffdb86963f74328ced77e9b7a3bd018398d034df",
       "measurement": null,
       "original_input": "artifacts/corpus/symbolic/0338_test_gluza_ex33_solve_3.toml",
@@ -36026,6 +36850,11 @@
     "artifacts/bench/zz-symbolic-remaining-batch1-deterministic-release/report.json": "2733412f57d29ee44ec37e621fa1d55093145e452d696b3cceb57a19daa62408",
     "artifacts/bench/zz-symbolic-remaining-batch2-deterministic-release/report.json": "83a4fa6d4473ccfe5916639dbe0499ac8dc615c570442cf29dc484bc1052b452",
     "artifacts/bench/zz-symbolic-remaining-batch3-deterministic-release/report.json": "51dde4615ed252994d13adcabc7b8eebff60891648f714a6d7f3cd8c6df539ff",
+    "artifacts/bin/symgcad-base-univariate-9b7dd56-release": "7bf9db11d4f8636ad09b57b52aaf6b87a3b61ab3a3cb61d70d9cef592c752657",
+    "artifacts/bin/symgcad-combined-299095a-release": "dd0c377962ad5fc615be02a11a3731c90251fa3245c0e0f9b8a97bc7d4870bc0",
+    "artifacts/bin/symgcad-shared-fibers-resource-9773999-release": "acd80197327fb6c8dfe9454c47be6b9ecf26491d3b1755d01bf33deebd1f20b1",
+    "artifacts/bin/symgcad-two-hour-cap-3fa5816-release": "9f74385b5b78dbe17e67d3d5a25e3810a9cd93fa818f545d621c71bc631f8453",
+    "artifacts/bin/symgcad-two-parameter-discriminant-380d014-release": "9f4230ea1b6a1c5c1090237947d76f432591f2d55a98897c9e40eea2c02d71a3",
     "artifacts/completion-aggregate-303.json": "ec2e2d5fc08902740210c7a0afc5f57ed36ca2ac5eb4eeacc95e477729cfb17d",
     "artifacts/completion-baseline-retry-02/results/ledger.json": "29868deca7b2b40d096ddf4e4281e29d5193b6e2febda779c9b320c87e51b3a9",
     "artifacts/completion-bilinear-positive-01/results/ledger.json": "b0fa88e4bf783559720c34833ac396f32d8537a7f18a610e3f6e991c2283bc63",
@@ -36034,7 +36863,58 @@
     "artifacts/completion-deterministic/symbolic/results/ledger.json": "3fb522da1c13e01bc37a2ce976b87be76d50d684e6e8cba121f0681e1af06c0a",
     "artifacts/completion-massless-structural-01/results/ledger.json": "67b297074fda0cdcec2f0231f7ebc01a876ef188e50b7ab68ccb1d880b6a9ce7",
     "artifacts/completion-unscaled-retry-01/results/ledger.json": "21d758a7bbb9ff3bb9c912a2dcf21197079bbc286a58e022108da9f2125e0375",
+    "artifacts/corpus/symbolic/0081_finiteA_6_377_10_0__5_0_0_1_1_1_1_0_1_symbolic.toml": "d00c3ebceebe641501c20a6dc28335f7502ee2c0e3c1e8118b388e31ba581e24",
+    "artifacts/corpus/symbolic/0138_finiteAx12_6_318_7_0__0_2_1_1_1_1_0_0_1_symbolic.toml": "579c946143a1418fa4186fd6110f78495c363a6eef2708b603af5d2e7bc3379f",
+    "artifacts/corpus/symbolic/0338_test_gluza_ex33_solve_3.toml": "63247029fd6de5073d0b3b3587689e2235b987d6bfdd2ec9fe8139c5ffa20574",
     "artifacts/hard-campaigns/a381-conditional-debug-01/results/ledger.json": "0f48ab3c49ef84485f319a703b5766bdfa304c1a97ec2f8a38e7549179fd2716",
+    "artifacts/research/a377-segmentation-warm-hour-04/final-audit.json": "1c48d084d4fa368b0322c487d8096600af0ce73005ae93991791c3d505a83953",
+    "artifacts/research/a377-segmentation-warm-hour-04/final-cache-manifest.json": "7387502aab2db9298019ef9c452761b9e627bae4dde0251db1114df1fd492c59",
+    "artifacts/research/a377-segmentation-warm-hour-04/input.toml": "fe8bc2cb1cfc735c9549a974504b9ef50334465ee963fc7c2bd8d3ce5d38e912",
+    "artifacts/research/a377-segmentation-warm-hour-04/launch.json": "2b0a62ea34ba926ea13dc2297f981552181f4a49701fa9488fd7183c576b7c4f",
+    "artifacts/research/a377-segmentation-warm-hour-04/results/00000-d5b4ca4a5b567ff1-1791637317327714889-0/input.toml": "9010cf0b01d69f2896463283abb2815ad43938d14f6bfabe9614745d96f2799a",
+    "artifacts/research/a377-segmentation-warm-hour-04/results/ledger.json": "4a1b9700f88226146731ffbd9427a028c5ffd71eb3f56c22725c1ec352b3193b",
+    "artifacts/research/a377-segmentation-warm-hour-06/final-audit.json": "a3a037775dfe478fb7498e189b13a451de53773ad11f9938bc7498ec22525279",
+    "artifacts/research/a377-segmentation-warm-hour-06/final-cache-manifest.json": "0c465b0c3e542a6adc7f7d90a2acbb0533cd6fdc11592a2f20072bb5a0b42b61",
+    "artifacts/research/a377-segmentation-warm-hour-06/input.toml": "fd769b64e7ee2f088f5b81159f3c1125f17f13638b6af58841ceb8d64011e8eb",
+    "artifacts/research/a377-segmentation-warm-hour-06/launch.json": "12bcec2a965c57c9647dbfdbbb89682d6fb6266a86a7bac8b1f1a04cf4935a48",
+    "artifacts/research/a377-segmentation-warm-hour-06/results/00000-af7702569bfdba5d-1791647163014407477-0/input.toml": "8814298e14b5bbf1e4a2e5ae8882f62fea51b93a0aa711823df580b61ed7c611",
+    "artifacts/research/a377-segmentation-warm-hour-06/results/ledger.json": "36500a10e09c459fd38f2728db96f6b3007b48708fd8be8288f6055e554919bc",
+    "artifacts/research/a377-segmentation-warm-hour-07/final-audit.json": "f2a9c0833fb4db4bc8dd5215aca5ba97c30a0b64d8ba0789163ab568ef5c6f06",
+    "artifacts/research/a377-segmentation-warm-hour-07/final-cache-manifest.json": "50ee717a45c3df18aff15b7d65293223d5830573f0e8c7db51373143643c7fcd",
+    "artifacts/research/a377-segmentation-warm-hour-07/input.toml": "2d3c89aea1bfc417207f41c7527a58107e503c396d6059ecf620ad8b6c9aa89b",
+    "artifacts/research/a377-segmentation-warm-hour-07/launch.json": "245bdd1247791b0c47f528d2d29e6118dd51c41a009d0e467e6c1edb70d03b2f",
+    "artifacts/research/a377-segmentation-warm-hour-07/results/00000-1836384c63c548da-1791651507151418310-0/input.toml": "7bc984f1aa17663645f835f05d9ef0022b589406338965c22344a57fd1239e85",
+    "artifacts/research/a377-segmentation-warm-hour-07/results/ledger.json": "8fd6dbd397ee5a0b7b186d0c80a5cb47175eaf23b361f3304d49e6ef8b74e0a7",
+    "artifacts/research/ax318-segmentation-warm-hour-01/final-audit.json": "31a1810a214200eb2ab5f5aa2b60bbc5909d54d89b7b83e58584e64422e87c62",
+    "artifacts/research/ax318-segmentation-warm-hour-01/final-cache-manifest.json": "0508158c0ae0613e60267deeedd1f708d7609a6e791a87608b70676fb822f9b0",
+    "artifacts/research/ax318-segmentation-warm-hour-01/input.toml": "3ef96648dffe059450004c8d1f7bf5fcf7dab3a0c44fc3c20d5b144bcb0ba6f8",
+    "artifacts/research/ax318-segmentation-warm-hour-01/launch.json": "355ce3cfc3e85c6b87a15b9146076893ab3fdc6b4cc6c144d87452c58b811620",
+    "artifacts/research/ax318-segmentation-warm-hour-01/results/00000-77292a94236506f0-1791637160858461390-0/input.toml": "46a1cbda1c480dbaf14ab03dbbb68d3548cb200191bc617935b69e1dcc12bdf0",
+    "artifacts/research/ax318-segmentation-warm-hour-01/results/ledger.json": "cd783c7b49e66d90654267628e0304a2ff1cd44033079913c58770fcb2507224",
+    "artifacts/research/ax318-segmentation-warm-hour-02/final-audit.json": "a5cd7f4f6ec53834acebbc382a1c7800ff2c6fd64f6ea3f8cea21502bd82ddb4",
+    "artifacts/research/ax318-segmentation-warm-hour-02/final-cache-manifest.json": "6f38a45ed7c4f353fbf7efdefb1c7557a4b6ddc493541ea0a744784fbf7e3291",
+    "artifacts/research/ax318-segmentation-warm-hour-02/input.toml": "b97b02237f001310e384fd9c47701db1023729397f041dec2a3ec5c71d768694",
+    "artifacts/research/ax318-segmentation-warm-hour-02/launch.json": "6844d8e407cb0de1ece8549ad9b36cd0daf10d257d61a686e58a93f80bc7d31d",
+    "artifacts/research/ax318-segmentation-warm-hour-02/results/00000-e478dd314e2aa34a-1791642585419270798-0/input.toml": "ebc4a86204091fe1e6ab2b6e97f17bb2b7328a0cd20ef39d4ff329b28dc8525d",
+    "artifacts/research/ax318-segmentation-warm-hour-02/results/ledger.json": "2f5dcc2681f3f2ad12ca5e2f907f2086a093d6dd352876cc20dc8dedcb976246",
+    "artifacts/research/ax318-warm03-cachebudget/final-audit.json": "3ed015b41f504d812384e6ca138b16557a0ede84ed1a81a00db6e1908aad10b6",
+    "artifacts/research/ax318-warm03-cachebudget/final-cache-manifest.json": "5d5772bd88b232684e50fccb8ad93908fb8ec881ea1d41b32ceddf03fc6bb362",
+    "artifacts/research/ax318-warm03-cachebudget/input.toml": "07a308674004a4d89fcdd1b417d4215162a9cfe91d5729ba21c94cba63a29fa0",
+    "artifacts/research/ax318-warm03-cachebudget/launch.json": "9ddd73f4466d0399461f2f2c3f598b947524add41f8eb27e47b129c76db4cddb",
+    "artifacts/research/ax318-warm03-cachebudget/results/00000-fcb809d09173db03-1791643510129825853-0/input.toml": "06cc23d454164dc71e2d4a6edbcb9144a41a0dce09c80b6357c647db6ea7ecfc",
+    "artifacts/research/ax318-warm03-cachebudget/results/ledger.json": "449b7e27675afb467383ea6777bb9af13ee626192c30a943d4b6f16a60240a39",
+    "artifacts/research/gluza33-x5-last-warm24g-hour-03/final-audit.json": "67787f8a318e2e9bcef0ff1a22374cb8d1b03ea414c79925b0816e4fef5d8dee",
+    "artifacts/research/gluza33-x5-last-warm24g-hour-03/final-cache-manifest.json": "0293182a1e5c2ce553cb064eae47caa6bb8d50180d9b664dd770e254ca1d5b73",
+    "artifacts/research/gluza33-x5-last-warm24g-hour-03/input.toml": "a59726f86c54ebe640b0d10f2004553b06d6002fb14509b73f7febdcbe889ac6",
+    "artifacts/research/gluza33-x5-last-warm24g-hour-03/launch.json": "2a8a41afe8cec8be1d5381d7f07cc594b256c59970ee07e307ac4eaf93d8be8d",
+    "artifacts/research/gluza33-x5-last-warm24g-hour-03/results/00000-8e27b43b58fdbde1-1791642656501917500-0/input.toml": "a59726f86c54ebe640b0d10f2004553b06d6002fb14509b73f7febdcbe889ac6",
+    "artifacts/research/gluza33-x5-last-warm24g-hour-03/results/ledger.json": "a76248650a3557077e57e80c3b7e89d8847ab5e0da3bbe512720523fff1855c9",
+    "artifacts/research/gluza33-x5-last-warm50g-two-hour-05/final-audit.json": "5acf6d1714c0e21a7aaff51b2a6ef85c1a4703654e0192f3a228aa3229aad400",
+    "artifacts/research/gluza33-x5-last-warm50g-two-hour-05/final-cache-manifest.json": "a86a8e883aa8665975364d26290672a7c172b0210d2fcb8fd9e845cf0a1ef55b",
+    "artifacts/research/gluza33-x5-last-warm50g-two-hour-05/input.toml": "f134faf4b6d926c6e67de16166536a7ffaf2c66bb2c0202829851e69c35343ed",
+    "artifacts/research/gluza33-x5-last-warm50g-two-hour-05/launch.json": "d3695fdd328c45960f3bca3caa5cb7654c54554ba827ff7c5faf7fe423013340",
+    "artifacts/research/gluza33-x5-last-warm50g-two-hour-05/results/00000-9c61a1d22e287709-1791647462733104323-0/input.toml": "f134faf4b6d926c6e67de16166536a7ffaf2c66bb2c0202829851e69c35343ed",
+    "artifacts/research/gluza33-x5-last-warm50g-two-hour-05/results/ledger.json": "e37dbdb770cb4f8c12ad439aa7d8d6bf544ed5ae4b083e38ee51820539fadbbc",
     "artifacts/research/physical-negative-target-release-14/results/ledger.json": "94eb21d24c140a81f97183cf18fdbf287570845ce9f89e1ce71a7e9466067bf9",
     "artifacts/slow-suite-one-hour-audit-09/queue-snapshot.json": "29dd4105ea946ad85d3b25367332876e2c1904c348a2d3a98f651472bc667d01",
     "artifacts/symbolic-quadratic-integer-release-01/results/ledger.json": "d099bf109c8568ff7c36c1afa0a013d2ba845079f3de774ef4cb64df8bc81f5a"

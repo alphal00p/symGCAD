@@ -1,0 +1,38 @@
+{
+  "schema_version": 1,
+  "scope": "Audited incomplete original-problem followups only; no completion or baseline-ratio credit. Prior search and warm-cache costs remain separate.",
+  "audits": [
+    {
+      "path": "artifacts/research/a377-segmentation-warm-hour-04/final-audit.json",
+      "sha256": "1c48d084d4fa368b0322c487d8096600af0ce73005ae93991791c3d505a83953"
+    },
+    {
+      "path": "artifacts/research/a377-segmentation-warm-hour-06/final-audit.json",
+      "sha256": "a3a037775dfe478fb7498e189b13a451de53773ad11f9938bc7498ec22525279"
+    },
+    {
+      "path": "artifacts/research/a377-segmentation-warm-hour-07/final-audit.json",
+      "sha256": "f2a9c0833fb4db4bc8dd5215aca5ba97c30a0b64d8ba0789163ab568ef5c6f06"
+    },
+    {
+      "path": "artifacts/research/ax318-segmentation-warm-hour-01/final-audit.json",
+      "sha256": "31a1810a214200eb2ab5f5aa2b60bbc5909d54d89b7b83e58584e64422e87c62"
+    },
+    {
+      "path": "artifacts/research/ax318-segmentation-warm-hour-02/final-audit.json",
+      "sha256": "a5cd7f4f6ec53834acebbc382a1c7800ff2c6fd64f6ea3f8cea21502bd82ddb4"
+    },
+    {
+      "path": "artifacts/research/ax318-warm03-cachebudget/final-audit.json",
+      "sha256": "3ed015b41f504d812384e6ca138b16557a0ede84ed1a81a00db6e1908aad10b6"
+    },
+    {
+      "path": "artifacts/research/gluza33-x5-last-warm24g-hour-03/final-audit.json",
+      "sha256": "67787f8a318e2e9bcef0ff1a22374cb8d1b03ea414c79925b0816e4fef5d8dee"
+    },
+    {
+      "path": "artifacts/research/gluza33-x5-last-warm50g-two-hour-05/final-audit.json",
+      "sha256": "5acf6d1714c0e21a7aaff51b2a6ef85c1a4703654e0192f3a228aa3229aad400"
+    }
+  ]
+}
