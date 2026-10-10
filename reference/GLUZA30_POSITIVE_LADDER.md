@@ -293,6 +293,27 @@ ablation. The roughly 300-second discovery cost must remain included in an
 end-to-end comparison. Fresh release measurements and the original-problem
 completion ledger are recorded separately.
 
+A cold public-CLI repeat of the same reduced search independently verified
+15,389 cells in 310.276 seconds including final verification (305.227 seconds
+for search, solve and export). Its 104 trials again contained one completed
+candidate. Separate 100-second controls for the three inexpensive seed
+orders all timed out: the declared order, Brown's reversed order and the
+sparsity order `[x5,x1,x7,x6,x2]`. Their final observed refinement counts were
+116,546, 97,286 and 91,150. All used the same immutable release and 4 GiB;
+the seed controls ran concurrently on three individually pinned CPUs, while
+the search used one CPU. This is exploratory evidence for searching beyond
+the seed orders, not a matched three-repeat runtime ablation or a finite
+speedup ratio. Summary
+`artifacts/research/gluza-positive-order-controls-01.json` has SHA-256
+`34ce9b5129f86b96a910fbdd09df72eac757b0810b84b440da5926bd2bb3331e`.
+
+The successful order first appeared at trial 9 and was promoted only at
+trial 98. Every local trial had an absent intermediate cost score: the CLI's
+historical predictor reads completed global projection checkpoints, which
+local refinement does not produce. An optional local-inventory promotion
+policy is being tested separately; this observation does not establish that
+any proposed predictor improves completion or total runtime.
+
 ## Coordinate threshold chambers
 
 A separate research preparation splits the five-coordinate base at `x6=1`
