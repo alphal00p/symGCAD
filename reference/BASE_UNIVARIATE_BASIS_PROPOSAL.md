@@ -4,7 +4,9 @@ This is a proposed, opt-in local proof extension, not an implemented exception.
 It can avoid irreducible factorization of projection guards already in
 `Q[x_0]`, where `x_0` is the **actual first normalized lifting coordinate**.
 It does not remove any real zero, change the original domain, or establish
-completion of A377. Complete root-isolation cost is still unmeasured.
+completion of A377. The captured discriminant's complete checked block union
+has now been isolated; production integration and original CAD cost remain
+unmeasured.
 
 ## Why the base case permits composites
 
@@ -145,11 +147,34 @@ in the exact original reconstruction.
 
 Residual report SHA-256:
 `dc27df111359c427066f92a8aef399636714530833c4a176fff2371ffd113da0`.
-That report binds the signed discriminant and successful reconstruction; it
-does not contain a completed root inventory. **Root isolation, resulting CAD
-size and original-problem completion remain unmeasured.** Test isolation of
-the 881-degree block and full block union before claiming this bypass resolves
-the A377 bottleneck.
+That report binds the signed discriminant and successful reconstruction. A
+subsequent [root-isolation diagnostic](A377_ROOT_ISOLATION.md) independently
+reconstructed signed D from the complete sidecar before isolating all nine
+nonconstant blocks. It completed with **84 distinct real roots: 46 below 4,
+the exact root 4, and 37 above 4**. No interval straddles 4. The degree-881
+block alone has 69 real roots, 35 above 4; it cannot be removed by a claim of
+nonvanishing on `s>4`.
+
+The complete-union process took 77.316 s and 75,300 KiB peak RSS, including
+2.698 s for signed reconstruction and 74.011 s for isolation/union separation.
+These are one development-build diagnostic's measurements after square-free
+block generation, not an end-to-end production timing or a matched speedup
+comparison. The exact interval inventory comes from the existing certified
+native/root-union path, not a second high-degree isolation implementation.
+Its worker-report SHA-256 is
+`4f61ff75242777dd35dc2b6257a8ecac8264e77d85db0ad5496961f47c91361d`;
+the completed, untruncated supervisor report is
+`7ebf07e2a3c2652956187bd14d35b742194b53e56ddfaf657236ec7d07fcc6ea`.
+**Resulting CAD size and original-problem completion remain unmeasured.**
+The subsequent ordinary full-D factorization control, with a 300-second cap,
+completed in **177.241 s**, using 74,072 KiB peak RSS and checking exact signed
+multiplicity reconstruction. Its report SHA-256 is
+`a46b124d56c52d1c57e8944406633bebae6455a7279c435de88e4606fc23fbdc`.
+Thus the earlier 60-second timeout establishes only an insufficient budget,
+not an intractable factorization barrier. This release-profile measurement
+and the development-build SQF/union stages are not a matched comparison;
+there is no speed-ratio claim. Ordinary factor-basis root isolation has not
+yet been measured in this control.
 
 Required focused regressions before production admission:
 
@@ -167,5 +192,55 @@ Required focused regressions before production admission:
   and monotone wrappers; independent replay after cache/archive deletion.
 - Bounded rejection of oversized records and incomplete status after stops
   in square-free decomposition, reconstruction or root isolation.
+
+## Conditional implementation sequence and ownership
+
+**Defer production implementation.** The proposed trigger of an incomplete
+300-second full-factor control was not met. First compare complete
+irreducible-factor-plus-union and SQF-block-plus-union pipelines in the same
+build, with the same exact source, limits and cold operation state, including
+product reconstruction and all root work. Potential savings must justify the
+additional proof format and checker complexity. The current A377 follow-up
+should use only the already qualified discriminant acceleration.
+
+If a later measured decision supports the mode, the following gives the
+smallest coherent implementation sequence and file ownership:
+
+1. **Local kernel owner:** add `src/local_projection/base_univariate.rs` for
+   the bounded typed records, native square-free discovery, canonical product
+   reconstruction, and immutable per-source registry. Use native SQF on the
+   complete source; the measurements do not justify a threshold-deflation
+   prepass. Implement pure reconstruction/tamper tests before builder wiring.
+2. **Same owner, coherent local integration:** modify `local_projection.rs`
+   and the small leading-coefficient path in `lazy_projection.rs`. Initially
+   apply the alternative only to exact first-axis **projection-generated**
+   guards; leave initial input factorization unchanged. Record the optional
+   basis in local evidence, replay raw-to-block inventories, restrict typed
+   cut use, and keep the existing root kernel. Report SQF/reconstruction time
+   and admitted sources/blocks separately. Exclude typed blocks from durable
+   hints, or explicitly disable that archive for this option in v1.
+3. **Wiring owner, coordinated after the API is fixed:** add a default-false,
+   omitted-when-false `local_base_univariate_basis` solver option in
+   `config.rs`, map it in `solver.rs`, and expose the research flag through
+   `examples/hard_probe.rs`. Require local base-point projection for the
+   alternative. Preserve disabled serialization/cache fingerprints; do not
+   alter global projection, `factor_basis`, or root-index types.
+4. **Independent test/review owner:** add `tests/local_base_univariate.rs`
+   covering the above adversarial and compatibility cases, including ordinary
+   input factors that overlap a composite guard. Check both eager and deferred
+   modes and independent replay with every discovery cache removed. Then run
+   focused tests, the normal full suite, and freeze the tested worker.
+5. **Measurement owner, only after those gates:** replay the captured
+   discriminant through the production guard-basis path and its independent
+   reconstruction/root inventory. Compare total SQF, replay and isolation
+   cost with the same-build ordinary control. Only then allocate a bounded
+   original A377 follow-up, counting preprocessing and verification cost.
+
+These ownership boundaries keep one writer on the large local module and a
+separate reviewer on the proof tests. If concurrent source work resumes,
+prepare the kernel/integration in an isolated worktree with its own target
+directory, then apply one coherent tested change after the shared source
+freeze is released. No worktree, build or production edit is started by this
+document update.
 
 No production code or default behavior is changed by this proposal.
