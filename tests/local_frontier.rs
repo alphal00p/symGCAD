@@ -209,6 +209,7 @@ fn requested_cache_budgets_are_clipped_to_process_memory_and_defaults_roundtrip(
     p.solver.local_subtree_cache_mib = 256;
     p.solver.local_learned_cut_cache_mib = 32;
     p.solver.local_descartes_witnesses = true;
+    p.solver.local_positive_pair_witnesses = true;
     p.solver.homogeneous_anchor = Some("r".into());
     p.solver.homogeneous_block = p.variables.clone();
     let restored = Problem::from_toml(&toml::to_string(&p).unwrap()).unwrap();
@@ -230,6 +231,7 @@ fn requested_cache_budgets_are_clipped_to_process_memory_and_defaults_roundtrip(
     assert_eq!(options.subtree_cache_mib, 256);
     assert_eq!(options.learned_cut_cache_mib, 32);
     assert!(options.descartes_witnesses);
+    assert!(options.positive_pair_witnesses);
     assert_eq!(report.subtree_cache_budget_bytes, 1024 * 1024);
     assert_eq!(report.learned_cut_cache_budget_bytes, 128 * 1024);
     assert!(report.subtree_cache_peak_bytes <= report.subtree_cache_budget_bytes);
@@ -238,12 +240,19 @@ fn requested_cache_budgets_are_clipped_to_process_memory_and_defaults_roundtrip(
     assert_eq!(old_options.subtree_cache_mib, 32);
     assert_eq!(old_options.learned_cut_cache_mib, 8);
     assert!(!old_options.descartes_witnesses);
+    assert!(!old_options.positive_pair_witnesses);
     let old_problem: Problem = serde_json::from_str("{}").unwrap();
     assert!(!old_problem.solver.local_descartes_witnesses);
+    assert!(!old_problem.solver.local_positive_pair_witnesses);
     assert!(
         !toml::to_string(&old_problem)
             .unwrap()
             .contains("local_descartes_witnesses")
+    );
+    assert!(
+        !toml::to_string(&old_problem)
+            .unwrap()
+            .contains("local_positive_pair_witnesses")
     );
     let mut invalid = restored;
     invalid.solver.local_subtree_cache_mib = usize::MAX;

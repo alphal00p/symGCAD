@@ -57,6 +57,10 @@ pub struct SolverOptions {
     /// strict rational-separator evaluation guards.
     #[serde(skip_serializing_if = "is_false")]
     pub local_descartes_witnesses: bool,
+    /// Separate positive roots of two delineable polynomials with exact
+    /// rational-section guards, retaining resultant fallback.
+    #[serde(skip_serializing_if = "is_false")]
+    pub local_positive_pair_witnesses: bool,
     /// Isolate the first-axis root union without constant projection algebra.
     #[serde(skip_serializing_if = "is_true")]
     pub local_base_point_projection: bool,
@@ -98,6 +102,7 @@ impl Default for SolverOptions {
             local_pair_cancellations: 2,
             local_descartes_one: true,
             local_descartes_witnesses: false,
+            local_positive_pair_witnesses: false,
             local_base_point_projection: true,
             local_adjacent_pairs: false,
             local_subtree_cache_mib: 32,

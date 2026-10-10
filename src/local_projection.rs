@@ -64,6 +64,7 @@ use symbolica::prelude::*;
 
 mod descartes;
 mod learned_cuts;
+mod pair_witnesses;
 mod subtree_cache;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -87,6 +88,10 @@ pub struct LocalOptions {
     /// Older evidence omitted this field and must replay the original pairs.
     #[serde(default)]
     pub positive_pair_separation: bool,
+    /// Separate every adjacent cross-owner positive branch by guarded rational
+    /// evaluations. A finite stock per pair prevents unbounded new templates.
+    #[serde(default)]
+    pub positive_pair_witnesses: bool,
     /// Maximum leading-term cancellations per pair, either one or two.
     /// Missing historical fields retain the original one-cancellation proof.
     #[serde(default = "one_cancellation")]
@@ -138,6 +143,7 @@ impl Default for LocalOptions {
             domain_pruning: true,
             positive_ray: true,
             positive_pair_separation: true,
+            positive_pair_witnesses: false,
             positive_pair_cancellations: 2,
             batch_sibling_discovery: true,
             reuse_completed_subtrees: true,
@@ -200,6 +206,10 @@ pub struct LocalReport {
     pub descartes_witness_budget_fallbacks: usize,
     pub pair_separation_candidates: usize,
     pub pair_resultants_omitted: usize,
+    pub pair_witness_resultants_omitted: usize,
+    pub pair_witness_templates: usize,
+    pub pair_witness_template_reuses: usize,
+    pub pair_witness_budget_fallbacks: usize,
     pub second_cancellation_pairs_omitted: usize,
     pub subtree_cache_hits: usize,
     pub subtree_cache_misses: usize,
@@ -276,6 +286,21 @@ pub struct PositiveRayProjection {
     pub rules: Vec<PositiveRayRule>,
     #[serde(default)]
     pub separations: Vec<PositivePairSeparation>,
+    #[serde(default)]
+    pub pair_witnesses: Vec<PositivePairWitness>,
+}
+
+/// The complete positive branch ordering of two individually delineable cuts.
+/// Every cross-owner edge has one strictly positive rational separator, with
+/// both polynomial evaluations retained as nonvanishing ancestor guards.
+/// Ordinals count each polynomial's distinct POSITIVE roots independently.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PositivePairWitness {
+    pub polynomials: [usize; 2],
+    pub positive_counts: [usize; 2],
+    pub branch_order: Vec<(usize, usize)>,
+    pub separators: Vec<String>,
+    pub evaluation_signs: Vec<[i8; 2]>,
 }
 
 /// For deg(p)>=deg(q), the exact identity
@@ -915,6 +940,8 @@ fn positive_projection_raw(
     coordinate: usize,
     pair_separation: bool,
     pair_cancellations: usize,
+    pair_witnesses: bool,
+    mut pair_witness_stock: Option<&mut pair_witnesses::WitnessStock>,
     descartes_one: bool,
     descartes_witnesses: bool,
     mut witness_stock: Option<&mut descartes::WitnessStock>,
@@ -1125,6 +1152,7 @@ fn positive_projection_raw(
         coordinate,
         rules,
         separations: Vec::new(),
+        pair_witnesses: Vec::new(),
     };
     if raw
         .iter()
@@ -1160,6 +1188,44 @@ fn positive_projection_raw(
             if let Some((proof, coefficients)) = attempt? {
                 raw.extend(coefficients);
                 ray.separations.push(proof);
+                continue;
+            }
+        }
+        if pair_witnesses {
+            let started = Instant::now();
+            let pair = [id.min(other), id.max(other)];
+            let attempt = if let Some(stored) = replay {
+                if let Some(proof) = stored
+                    .pair_witnesses
+                    .iter()
+                    .find(|proof| proof.polynomials == pair)
+                {
+                    Some((
+                        proof.clone(),
+                        pair_witnesses::verify_witness(
+                            algebra,
+                            polynomials,
+                            pair,
+                            variable,
+                            prefix,
+                            proof,
+                        )?,
+                    ))
+                } else {
+                    // A stored ordinary resultant is an admissible stronger
+                    // certificate even if a new rational template is available.
+                    None
+                }
+            } else {
+                pair_witness_stock
+                    .as_deref_mut()
+                    .ok_or_else(|| anyhow!("missing finite pair witness stock"))?
+                    .attempt(algebra, polynomials, pair, variable, prefix)?
+            };
+            *pair_seconds += started.elapsed().as_secs_f64();
+            if let Some((proof, guards)) = attempt {
+                raw.extend(guards);
+                ray.pair_witnesses.push(proof);
                 continue;
             }
         }
@@ -1382,6 +1448,7 @@ struct Builder<'a> {
     /// Incomplete discoveries are only hints; every seeded stack is rebuilt.
     learned_cuts: learned_cuts::LearnedCuts,
     descartes_stock: descartes::WitnessStock,
+    pair_witness_stock: pair_witnesses::WitnessStock,
 }
 #[derive(Serialize, Deserialize)]
 struct Built {
@@ -1409,6 +1476,7 @@ impl Builder<'_> {
         self.completed_subtrees.report(&mut report);
         self.learned_cuts.report(&mut report);
         self.descartes_stock.report(&mut report);
+        self.pair_witness_stock.report(&mut report);
         report
     }
     fn publish(&mut self, force: bool) -> Result<()> {
@@ -1620,6 +1688,8 @@ impl Builder<'_> {
                     coordinate,
                     self.options.positive_pair_separation,
                     self.options.positive_pair_cancellations,
+                    self.options.positive_pair_witnesses,
+                    Some(&mut self.pair_witness_stock),
                     self.options.descartes_one,
                     self.options.descartes_witnesses,
                     Some(&mut self.descartes_stock),
@@ -1650,6 +1720,7 @@ impl Builder<'_> {
                         .count();
                 }
                 self.report.positive_ray_stacks += 1;
+                self.report.pair_witness_resultants_omitted += ray.pair_witnesses.len();
                 self.report.quadratic_discriminants_omitted += ray
                     .rules
                     .iter()
@@ -2111,6 +2182,7 @@ pub fn solve_local(problem: &Problem, options: &LocalOptions) -> Result<LocalSol
                 .min(options.learned_cut_cache_mib.saturating_mul(1024 * 1024)),
         ),
         descartes_stock: descartes::WitnessStock::default(),
+        pair_witness_stock: pair_witnesses::WitnessStock::default(),
     };
     builder.report.active_phase = "input_factorization".into();
     builder.publish(true)?;
@@ -2249,6 +2321,7 @@ struct Checker<'a> {
     positive_ray: bool,
     positive_pair_separation: bool,
     positive_pair_cancellations: usize,
+    positive_pair_witnesses: bool,
     descartes_one: bool,
     descartes_witnesses: bool,
     base_point_projection: bool,
@@ -2416,6 +2489,8 @@ impl Checker<'_> {
                         ray.coordinate,
                         self.positive_pair_separation,
                         self.positive_pair_cancellations,
+                        self.positive_pair_witnesses,
+                        None,
                         self.descartes_one,
                         self.descartes_witnesses,
                         None,
@@ -2682,6 +2757,7 @@ pub fn verify_local_parts(
         positive_ray: options.positive_ray,
         positive_pair_separation: options.positive_pair_separation,
         positive_pair_cancellations: options.positive_pair_cancellations,
+        positive_pair_witnesses: options.positive_pair_witnesses,
         descartes_one: options.descartes_one,
         descartes_witnesses: options.descartes_witnesses,
         base_point_projection: options.base_point_projection,

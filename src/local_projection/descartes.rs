@@ -242,6 +242,7 @@ mod tests {
             constraint: 0,
             coordinate: 99,
             separations: vec![],
+            pair_witnesses: vec![],
             rules: vec![PositiveRayRule {
                 polynomial: 1,
                 case: PositiveRayCase::DescartesWitnesses {

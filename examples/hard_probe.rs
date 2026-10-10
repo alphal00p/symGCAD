@@ -85,6 +85,9 @@ struct Args {
     /// Experimental saturated Descartes bounds with rational root witnesses.
     #[arg(long)]
     descartes_witnesses: bool,
+    /// Experimental rational separators for delineable positive-root pairs.
+    #[arg(long)]
+    positive_pair_witnesses: bool,
     /// Replay ordinary projection over the zero-dimensional initial base.
     #[arg(long)]
     no_base_point_projection: bool,
@@ -147,6 +150,7 @@ struct Campaign {
     reuse_learned_cuts: bool,
     descartes_one: bool,
     descartes_witnesses: bool,
+    positive_pair_witnesses: bool,
     base_point_projection: bool,
     adjacent_pairs: bool,
     subtree_cache_mib: usize,
@@ -215,6 +219,7 @@ fn run_trial(campaign: &Campaign, trial: Trial) -> Result<Record> {
     problem.solver.local_reuse_learned_cuts = campaign.reuse_learned_cuts;
     problem.solver.local_descartes_one = campaign.descartes_one;
     problem.solver.local_descartes_witnesses = campaign.descartes_witnesses;
+    problem.solver.local_positive_pair_witnesses = campaign.positive_pair_witnesses;
     problem.solver.local_base_point_projection = campaign.base_point_projection;
     problem.solver.local_adjacent_pairs = campaign.adjacent_pairs;
     problem.solver.local_subtree_cache_mib = campaign.subtree_cache_mib;
@@ -494,6 +499,7 @@ fn main() -> Result<()> {
         reuse_learned_cuts: !args.no_learned_cuts,
         descartes_one: !args.no_descartes_one,
         descartes_witnesses: args.descartes_witnesses,
+        positive_pair_witnesses: args.positive_pair_witnesses,
         base_point_projection: !args.no_base_point_projection,
         adjacent_pairs: args.adjacent_pairs,
         subtree_cache_mib: args.subtree_cache_mib,

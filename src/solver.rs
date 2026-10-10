@@ -579,6 +579,7 @@ fn solve_impl(problem: &Problem) -> Result<SolveResult> {
                 positive_pair_cancellations: problem.solver.local_pair_cancellations,
                 descartes_one: problem.solver.local_descartes_one,
                 descartes_witnesses: problem.solver.local_descartes_witnesses,
+                positive_pair_witnesses: problem.solver.local_positive_pair_witnesses,
                 base_point_projection: problem.solver.local_base_point_projection,
                 adjacent_pairs: problem.solver.local_adjacent_pairs,
                 subtree_cache_mib: problem.solver.local_subtree_cache_mib,
