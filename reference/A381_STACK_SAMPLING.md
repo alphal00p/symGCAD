@@ -107,5 +107,39 @@ Test evidence is in `artifacts/profile/a381-stable-samples-01/`:
   that refinements must decrease. Coverage checks passed; the corrected test
   measures saved child visits and makes no universal performance claim.
 
-A matched full A381 on/off campaign is still required. The option remains off
-by default, and no new original-problem completion is claimed here.
+## Matched full A381 trial
+
+The frozen `a551f36` debug worker and `cfb0f03` Rust `hard_probe` harness ran the
+same full fixed A381 input sequentially on CPU 8, with 120 seconds and 4 GiB per
+trial. The only input differences were `local_stable_samples` and the checkpoint
+path. Both paths began as independent copies of the same 5,223-file checkpoint
+snapshot; the options retained Descartes witnesses and disabled pair witnesses.
+
+| Measurement | Stable samples off | Stable samples on |
+| --- | ---: | ---: |
+| Worker outcome | Timeout | Timeout |
+| Wall seconds | 120.023 | 120.025 |
+| User / system CPU seconds | 109.641 / 8.414 | 108.395 / 9.027 |
+| Peak RSS, KiB | 63,216 | 62,448 |
+| Last speculative nodes | 198,500 | 156,869 |
+| Last refinements | 13,194 | 9,737 |
+| Completed-subtree hits / misses | 15,934 / 81,863 | 16,624 / 64,362 |
+| Completed-subtree evictions | 77,303 | 59,873 |
+| Retained-sample hits | 0 | 15,316 |
+| Maximum charged sample-pool bytes | 0 | 21,782 |
+
+The retained samples changed the subsequent traversal. The lower node and
+refinement counts therefore do **not** demonstrate more coverage or a speedup.
+Neither run produced a completed proof; this experiment adds zero completed
+original problems. The option remains off by default.
+
+Evidence is under `artifacts/profile/a381-stable-samples-01/campaign/`:
+
+| Artifact | SHA256 |
+| --- | --- |
+| Frozen worker | `4ab2aecde1bad2a4ff4de2cb8bb6f4b8eac45ba7b679114c0049b85c1ab321ef` |
+| Frozen Rust harness | `97796bb4c1c67fd496acd6d2b58d13935968c8216b686d770a3eb53e1ac6cc0a` |
+| Seed checkpoint manifest | `de32cdd02673f92a8c216858344010e080a9eb31239203148e5b4279ce392366` |
+| `ablation.json` | `e3338c98b5fe0dccbefa8b14c974912f1acfa54efcec49c7f106dbe7e8a7f1ab` |
+| Off `record.json` | `0f160289c66fb443dfbe282ca8b92eed046ee018ad5b9b628405572f1eb6314e` |
+| On `record.json` | `31e1d33379a76445f3ca068f1575c571cce5ff54c72f45caab4a672b0942cf97` |
