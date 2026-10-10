@@ -198,3 +198,37 @@ and after all four runs. The compact `ablation-summary.json` SHA-256 is
 `35f3c16a3e2384a8a5b72eea525e821ce690ea5c173d788b2cac430c9e98c3f3`.
 The sixty-second enabled result SHA-256 is
 `4dbc11edac878b6517aebdf5d5dad1319be6a9cd78893e1c9dcaf66bc16ebc18`.
+
+### Bounded cache-only follow-up
+
+Read-only inspection showed that the enabled run reached cache **count** caps:
+32,767/32,768 retained subtree nodes at only 11.99/33.55 MB, and 4,096/4,096
+learned-cut entries at 3.83/8.39 MB. Counters do not record whether an evicted
+prefix is requested again. Learned-cut IDs are summed across entries, so they
+do not measure globally distinct mathematical refinements. Every refinement
+adds a cut absent from its current stack, but restarting that stack can still
+rediscover a previously evicted hint.
+
+A matched cache-only diagnostic therefore repeated the enabled ten-second
+input with default 32/8 MiB subtree/learned caches versus 128/16 MiB. The
+existing proportional count caps rise from 32,768 to 131,072 subtree nodes
+and from 4,096 to 8,192 learned entries. Both configurations keep the same
+frozen binary, 2 GiB worker limit, mathematical options, order and 10,000
+refinement cap. No production code changed.
+
+| Cache MiB, subtree/learned | Wall, s | Peak process RSS, KiB | Snapshot age, s | Refinements | Subtree evictions | Learned evictions |
+|---|---:|---:|---:|---:|---:|---:|
+| 32/8 | 10.04 | 55,420 | 8.84 | 6,609 | 4,591 | 1,558 |
+| 128/16 | 10.04 | 67,724 | 9.32 | 7,156 | 0 | 0 |
+
+Both results time out and remain incomplete. The expanded cache retains
+73,349 subtree nodes and 6,099 learned entries. Its subtree hits are 7,883
+versus 7,171, and learned hits 11 versus four, seeding 121 versus 44 cuts.
+Snapshots have different ages and the traversals are not synchronized, so
+these counts establish removal of the measured eviction pressure, not a
+completion speedup or a proof that most refinements were duplicate work.
+No larger-cap or longer repeat follows from this diagnostic alone.
+
+Artifacts and checked input/binary hashes are under
+`artifacts/research/full-f-cache-01/`. The summary SHA-256 is
+`060071d54bb70a2c4caccac96c7496e38e15de0a5ece30e56758f7a4fed53ab6`.
