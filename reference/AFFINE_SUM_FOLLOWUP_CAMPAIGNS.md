@@ -46,3 +46,29 @@ directories and SHA256 values for `initial-x5-0/record.json`:
 `affine-sum-followup-summary.json` retains compact process/phase metadata.
 Every directory also retains the actual normalized worker input, provenance,
 progress, checkpoint reference and failure status.
+
+## Quadratic/integer release retry
+
+The unchanged unrestricted symbolic A446 input was retried with release
+`3acd6aa`, SHA256
+`c22220744258a28e487543d9796e5e113d621f6f05cc32c4f68a7cbe846b60b8`.
+The original order and anchor above are retained, with interval/pair witnesses,
+adjacency, one pair cancellation and no sibling batching. Diagnostic operation
+captures are disabled. The exact pre-existing A446 checkpoint directory is
+reused; subtree and learned-cut memory budgets are 128 and 32 MiB. This is an
+exploratory warm-cache retry, not an isolated comparison with the debug run.
+
+The CPU-3 worker times out at 300.074 seconds, with 292.214 user CPU seconds,
+3.582 system CPU seconds and peak RSS 920,760 KiB, under its 8-GiB limit.
+No result or proof is produced. Its last progress snapshot, at 97.017 seconds,
+records 78,836 nodes and 16,544 refinements at level 4 and prefix
+`[17/4,-22,1/2,1]`; the published phase is `root_isolation`. Because snapshots
+can precede a subsequent algebra operation, this does not identify the exact
+operation responsible for the remaining time. No operand capture was enabled.
+The recorded phase totals at that snapshot are 53.445 seconds in resultants,
+14.034 in factor handling and 4.193 in domain certificates. The retry adds no
+completed original problem.
+
+Artifacts: `artifacts/hard-campaigns/a446-quadratic-integer-release-01/`.
+The `initial-x5-0/record.json` SHA256 is
+`d2d3b51a2c281ec40ddafce20bc30d8470aba96cc59cb9e410e829eaa8c154a8`.
