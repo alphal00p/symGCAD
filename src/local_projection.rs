@@ -68,7 +68,9 @@ pub use interval_descartes::{PositiveInterval, PositiveIntervalEndpoint, Positiv
 mod hint_archive;
 mod lazy_projection;
 mod learned_cuts;
+mod obstruction_observer;
 pub use hint_archive::HintArchiveReport;
+pub use obstruction_observer::ObstructionReport;
 mod pair_witnesses;
 mod strict_bezout;
 pub use strict_bezout::{PositiveStrictBezout, StrictBezoutHint};
@@ -128,6 +130,9 @@ pub struct LocalOptions {
     /// Requires stable samples; old evidence preserves eager construction.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub defer_projection: bool,
+    /// Read-only bounded failed-visit observations; never proof authority.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub observe_obstructions: bool,
     /// Use one Descartes sign variation to certify a simple positive root.
     /// Historical evidence retains its full discriminant obligations.
     #[serde(default)]
@@ -187,6 +192,7 @@ impl Default for LocalOptions {
             reuse_learned_cuts: true,
             stable_sector_samples: false,
             defer_projection: false,
+            observe_obstructions: false,
             descartes_one: true,
             descartes_witnesses: false,
             descartes_intervals: false,
@@ -214,6 +220,9 @@ pub struct LocalPhaseCosts {
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 #[serde(default)]
 pub struct LocalReport {
+    /// Diagnostic failed visits, including propagation; no coverage evidence.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub obstruction_observer: Option<ObstructionReport>,
     /// Optional append-only registry observations for ordering search. These
     /// diagnostic counters are never inputs to certificate verification.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -1615,6 +1624,7 @@ struct Builder<'a> {
     interval_stock: interval_descartes::WitnessStock,
     pair_witness_stock: pair_witnesses::WitnessStock,
     bezout_registry: strict_bezout::Registry,
+    obstruction_observer: Option<obstruction_observer::Observer>,
 }
 #[derive(Serialize, Deserialize)]
 struct Built {
@@ -1648,6 +1658,10 @@ impl Builder<'_> {
         self.descartes_stock.report(&mut report);
         self.interval_stock.report(&mut report);
         self.pair_witness_stock.report(&mut report);
+        report.obstruction_observer = self
+            .obstruction_observer
+            .as_ref()
+            .map(obstruction_observer::Observer::snapshot);
         report
     }
     fn publish(&mut self, force: bool) -> Result<()> {
@@ -1660,13 +1674,21 @@ impl Builder<'_> {
                 terminal,
             );
         }
-        let Some(path) = &self.progress_path else {
+        if self.progress_path.is_none() && self.obstruction_observer.is_none() {
             return Ok(());
-        };
+        }
         if !force && self.last_progress.elapsed().as_secs_f64() < 0.5 {
             return Ok(());
         }
-        write_progress(path, &self.snapshot())?;
+        if let Some(observer) = &mut self.obstruction_observer {
+            observer.publish(matches!(
+                self.report.active_phase.as_str(),
+                "incomplete" | "complete"
+            ));
+        }
+        if let Some(path) = &self.progress_path {
+            write_progress(path, &self.snapshot())?;
+        }
         // A periodic snapshot may describe a different small stack than the
         // last captured operation, so the next large operation must refresh.
         self.operations.last_captured_context = None;
@@ -2052,6 +2074,27 @@ impl Builder<'_> {
         })
     }
     fn visit(&mut self, prefix: &mut Vec<Rational>) -> Work<Built> {
+        // No key creation, hashing or diagnostic work on the disabled path.
+        if self.obstruction_observer.is_none() {
+            return self.visit_inner(prefix);
+        }
+        let result = self.visit_inner(prefix);
+        // Children restore the caller's exact prefix before returning. Observe
+        // each failed visit, including propagation, without consuming/changing
+        // the guard or attributing duplicated descendant work to that unwind.
+        if let Err(Stop::Guard(id)) = &result {
+            if let Some(polynomial) = self.polynomials.get(*id).filter(|p| !p.is_zero()) {
+                if let Some(axis) = highest(polynomial) {
+                    self.obstruction_observer
+                        .as_mut()
+                        .expect("enabled observer")
+                        .observe(prefix, *id, axis);
+                }
+            }
+        }
+        result
+    }
+    fn visit_inner(&mut self, prefix: &mut Vec<Rational>) -> Work<Built> {
         self.report.speculative_nodes += 1;
         self.check_budget()?;
         if let Some(leaf) = self.leaf(prefix)? {
@@ -2461,6 +2504,9 @@ pub fn solve_local(problem: &Problem, options: &LocalOptions) -> Result<LocalSol
             Some(report),
         ));
     }
+    let obstruction_path = std::env::var_os("SYMGCAD_OBSTRUCTION_REPORT").map(PathBuf::from);
+    let obstruction_observer = (options.observe_obstructions || obstruction_path.is_some())
+        .then(|| obstruction_observer::Observer::new(obstruction_path));
     let mut builder = Builder {
         problem,
         normalized: &normalized,
@@ -2499,13 +2545,23 @@ pub fn solve_local(problem: &Problem, options: &LocalOptions) -> Result<LocalSol
             ((problem.limits.memory_mib as usize).saturating_mul(1024 * 1024) / 128)
                 .min(options.learned_cut_cache_mib.saturating_mul(1024 * 1024)),
         ),
-        hint_archive: hint_archive::HintArchive::new(problem, &normalized, options, started),
+        hint_archive: hint_archive::HintArchive::new(
+            problem,
+            &normalized,
+            // A diagnostic flag must not alter durable hint context or reuse.
+            &LocalOptions {
+                observe_obstructions: false,
+                ..options.clone()
+            },
+            started,
+        ),
         descartes_stock: descartes::WitnessStock::default(),
         interval_stock: interval_descartes::WitnessStock::new(
             options.descartes_interval_template_limit,
         )?,
         pair_witness_stock: pair_witnesses::WitnessStock::default(),
         bezout_registry,
+        obstruction_observer,
     };
     builder.report.active_phase = "input_factorization".into();
     builder.publish(true)?;
