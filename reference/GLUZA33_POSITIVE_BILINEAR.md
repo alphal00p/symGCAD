@@ -191,3 +191,70 @@ these orders still suffer projection growth despite the smaller admissible
 base; increasing traversal caches would not address this measured obstacle.
 Inputs, operation captures, progress and process limits remain under
 `artifacts/research/gluza33-positive-endpoint-base-01/summary.json`.
+
+## Checked endpoint discriminant ladder
+
+`examples/gluza33_endpoint_structure.rs` independently reconstructs the
+endpoint from the exact original input. Set
+
+\[
+\begin{aligned}
+A&=x0+x6,&D&=x4+x7,&S&=A+D,&B&=x1+x2,\\
+K&=x6\,x4-x0\,x7,\\
+P&=ADS-10\bigl(x0\,x6\,D+x4\,x7\,A\bigr),\\
+R&=(x0+x4)^2-8(x0+x4)(x6+x7)+(x6+x7)^2.
+\end{aligned}
+\]
+
+Exact Symbolica identities give
+
+\[
+SP-10K^2=ADR,\qquad
+d=AD B^2+PB+x1\,x2(SB+R).
+\]
+
+For `alpha=x1`, this is the quadratic `d=L*x2^2+M*x2+N`, where
+
+\[
+L=AD+S\alpha>0,\quad
+M=2AD\alpha+P+S\alpha^2+R\alpha,\quad
+N=\alpha(AD\alpha+P).
+\]
+
+The endpoint topology and both discriminants satisfy the checked identities
+
+\[
+\begin{aligned}
+AD M-\alpha\bigl((AD)^2-10K^2\bigr)
+  &=(AD+S\alpha)(P+AD\alpha),\\
+\operatorname{Disc}_{x2}(d)
+  &=(S\alpha^2+R\alpha+P)^2-40K^2\alpha^2,\\
+\operatorname{Disc}_{\alpha}\bigl(\operatorname{Disc}_{x2}(d)\bigr)
+  &=25600K^4S^2P^2R^2\bigl((R-4AD)^2-160K^2\bigr).
+\end{aligned}
+\]
+
+The first relation avoids substituting a rational expression at `N=0`:
+since `AD>0`, it directly fixes the sign of `M` there from
+`(AD)^2-10K^2`. The final quartic factor has only 35 terms in the four
+coordinates `[x0,x4,x6,x7]`. The original endpoint has 50 terms, its first
+discriminant 155, and its expanded second discriminant 1,755. Native
+factorization checks the first discriminant is irreducible over the rational
+coefficient field in this calculation. The whole exact helper run took
+0.081 seconds, including 0.011 seconds for that factorization.
+
+These identities suggest placing `x1,x2` last in the base order and using
+an outer homogeneous anchor such as `x7`. They do not yet establish all
+pairwise boundary orderings for the required `a,b,c,H` cuts. The prepared
+structural trial retains those cuts, the original positive coordinates and
+the exact `d>0` constraint. It is a candidate ordering, not a completed CAD.
+
+The helper also checks the substitution `x1=rho*B`, `x2=(1-rho)*B` and
+its quadratic discriminant exactly, but no claim of cylindrical transport
+for that chart is made. Original-coordinate identities above suffice for
+the present ordering proposal. Evidence is under
+`artifacts/research/gluza33-endpoint-structure-02/x2/`; immutable helper
+SHA-256 is
+`644fb1bf481dcd3096f23d98419ff8a57d5829b63cb5c80a9a70865d1c17baa6`.
+Two tests check all identities against the original endpoint and reject
+changed target/domain assumptions.
