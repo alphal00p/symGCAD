@@ -56,7 +56,7 @@ cp -- "$package_dir/unit_shift_regression.rs" "$replay_dir/examples/unit_shift_r
     printf 'symgcad_revision=%s\nsymbolica_revision=%s\n' "$symgcad_revision" "$symbolica_revision"
     printf 'patch_order=positive_axis,unit_shift\n'
     sha256sum examples/positive_axis_probe.rs examples/unit_shift_regression.rs \
-        src/roots/integer_sign.rs Cargo.toml Cargo.lock \
+        src/roots/integer_sign.rs src/roots.rs Cargo.toml Cargo.lock \
         DO_NOT_PUSH_REFERENCES/symbolica/src/poly/univariate.rs \
         DO_NOT_PUSH_REFERENCES/symbolica/src/poly/univariate/roots.rs \
         DO_NOT_PUSH_REFERENCES/symbolica/src/poly/univariate/tests.rs

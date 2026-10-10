@@ -20,7 +20,7 @@ mod integer_sign;
 use symgcad::algebra;
 use symgcad::{
     algebra::{Algebra, rational},
-    roots::{FiberRoot, refine_once},
+    roots::{FiberRoot, refine_once, roots_in_open_interval},
 };
 
 const MAX_BYTES: u64 = 32 * 1024 * 1024;
@@ -480,11 +480,90 @@ fn same_root(a: &Root, b: &Root, p: &Arc<UnivariatePolynomial<Q>>) -> Result<(Va
     }
     unreachable!()
 }
+fn normalize_endpoints(
+    p: &UnivariatePolynomial<Q>,
+    roots: &[Root],
+    mode: Mode,
+) -> Result<(Vec<Root>, Vec<Value>)> {
+    ensure!(mode != Mode::Compare, "source inventory mode required");
+    let mut normalized = roots.to_vec();
+    let mut evidence = Vec::new();
+    let mut left_bound = None;
+    for (index, root) in normalized.iter_mut().enumerate() {
+        let lower_zero = sign(p, &root.lower) == 0;
+        if root.lower == root.upper {
+            ensure!(lower_zero, "exact source singleton is not a root");
+            continue;
+        }
+        let upper_zero = sign(p, &root.upper) == 0;
+        if !lower_zero && !upper_zero {
+            continue;
+        }
+        // Native VAS can return a target at an endpoint. Another zero endpoint
+        // may instead be a different root. Follow the shared root union's exact
+        // open-count/ordinal rule; never collapse from endpoint evaluation alone.
+        let inside = roots_in_open_interval(p, &root.lower, &root.upper);
+        ensure!(inside <= 1, "native interval has multiple interior roots");
+        let before = root.saved();
+        let origin = if mode == Mode::Positive {
+            Rational::zero()
+        } else {
+            left_bound
+                .get_or_insert_with(|| {
+                    let lc = p
+                        .coefficients()
+                        .last()
+                        .expect("nonconstant root polynomial")
+                        .abs();
+                    -(p.coefficients()
+                        .iter()
+                        .take(p.degree())
+                        .map(|c| c.abs() / &lc)
+                        .max()
+                        .unwrap_or_else(Rational::zero)
+                        + Rational::from(2))
+                })
+                .clone()
+        };
+        if inside == 1 {
+            let ordinal = roots_in_open_interval(p, &origin, &root.lower)
+                + usize::from(lower_zero && (mode == Mode::Full || root.lower > Rational::zero()));
+            ensure!(
+                ordinal == index,
+                "interior root does not have source ordinal"
+            );
+            evidence.push(json!({"index":index,"before":before,"open_root_count":1,"action":"retain_open_interval","interior_ordinal":ordinal,"ordinal_origin":origin.to_string()}));
+            continue;
+        }
+        let mut choices = Vec::new();
+        let mut counts = Vec::new();
+        for (endpoint, is_zero) in [(&root.lower, lower_zero), (&root.upper, upper_zero)] {
+            if !is_zero || (mode == Mode::Positive && endpoint <= &Rational::zero()) {
+                continue;
+            }
+            let ordinal = roots_in_open_interval(p, &origin, endpoint);
+            counts.push(json!({"endpoint":endpoint.to_string(),"ordinal":ordinal}));
+            if ordinal == index {
+                choices.push(endpoint.clone());
+            }
+        }
+        ensure!(
+            choices.len() == 1,
+            "zero endpoint does not have unique source ordinal"
+        );
+        root.lower = choices[0].clone();
+        root.upper = choices.remove(0);
+        evidence.push(json!({"index":index,"before":before,"open_root_count":0,"action":"exact_endpoint_by_ordinal","ordinal_origin":origin.to_string(),"endpoint_counts":counts,"after":root.saved()}));
+    }
+    validate(&normalized, p.degree(), mode == Mode::Positive)?;
+    Ok((normalized, evidence))
+}
 fn compare(
     p: &UnivariatePolynomial<Z>,
     left: &[Root],
     right: &[Root],
-    all_real: bool,
+    left_mode: Mode,
+    right_mode: Mode,
 ) -> Result<Value> {
     let start = Instant::now();
     let repeated = left
@@ -502,15 +581,20 @@ fn compare(
     }
     let squarefree_seconds = start.elapsed().as_secs_f64();
     let polynomial = Arc::new(polynomial);
+    let normalization_started = Instant::now();
+    let (left, left_normalization) = normalize_endpoints(&polynomial, left, left_mode)?;
+    let (right, right_normalization) = normalize_endpoints(&polynomial, right, right_mode)?;
+    let normalization_seconds = normalization_started.elapsed().as_secs_f64();
+    let all_real = left_mode == Mode::Full && right_mode == Mode::Full;
     let lp = if all_real {
-        left.to_vec()
+        left
     } else {
-        positive_part(left)?
+        positive_part(&left)?
     };
     let rp = if all_real {
-        right.to_vec()
+        right
     } else {
-        positive_part(right)?
+        positive_part(&right)?
     };
     ensure!(
         lp.len() == rp.len(),
@@ -529,7 +613,7 @@ fn compare(
         matches.push(json!({"index":index,"left":a.saved(),"right":b.saved(),"proof":proof,"refinements":refinements}));
     }
     Ok(
-        json!({"scope":if all_real { "all_real" } else { "strictly_positive" },"matched_roots":matches.len(),"multiplicities_compared":multiplicities,"squarefree_gcd_computed":repeated,"squarefree_gcd_degree":gcd_degree,"squarefree_preparation_seconds":squarefree_seconds,"matching_seconds":start.elapsed().as_secs_f64(),"matches":matches,"proof_basis":"source native unique-root isolating contracts plus exact rational root or sign-changing intersection; legacy outer block multiplicity is not a native root multiplicity"}),
+        json!({"scope":if all_real { "all_real" } else { "strictly_positive" },"matched_roots":matches.len(),"multiplicities_compared":multiplicities,"squarefree_gcd_computed":repeated,"squarefree_gcd_degree":gcd_degree,"squarefree_preparation_seconds":squarefree_seconds,"endpoint_normalization_seconds":normalization_seconds,"left_endpoint_normalization":left_normalization,"right_endpoint_normalization":right_normalization,"matching_seconds":start.elapsed().as_secs_f64(),"matches":matches,"proof_basis":"source native unique-root isolating contracts; zero endpoints normalized by shared exact open-root counts and source ordinal; exact rational root or sign-changing intersection; legacy outer block multiplicity is not a native root multiplicity"}),
     )
 }
 fn main() -> Result<()> {
@@ -597,7 +681,7 @@ fn main() -> Result<()> {
             &literal_hash,
             p.degree(),
         )?;
-        json!({"schema_version":1,"kind":"positive_axis_inventory_comparison","complete":true,"input_sha256":args.input_sha256,"literal_expression_sha256":literal_hash,"executable_sha256":executable_sha256,"integer_sign_source_sha256":integer_sign_source_sha256,"left_sha256":lh,"right_sha256":rh,"left_legacy":ll,"right_legacy":rl,"polynomial_is_zero":p.is_zero(),"comparison":compare(&p,&left,&right,lm == Mode::Full && rm == Mode::Full)?,"cad_coverage":false})
+        json!({"schema_version":1,"kind":"positive_axis_inventory_comparison","complete":true,"input_sha256":args.input_sha256,"literal_expression_sha256":literal_hash,"executable_sha256":executable_sha256,"integer_sign_source_sha256":integer_sign_source_sha256,"left_sha256":lh,"right_sha256":rh,"left_legacy":ll,"right_legacy":rl,"polynomial_is_zero":p.is_zero(),"comparison":compare(&p,&left,&right,lm,rm)?,"cad_coverage":false})
     } else {
         ensure!(
             args.left.is_none()
@@ -644,8 +728,8 @@ mod tests {
             for ring in [RingMode::Integer, RingMode::Rational] {
                 let (all, _) = isolate(&p, Mode::Full, ring)?;
                 let (positive, _) = isolate(&p, Mode::Positive, ring)?;
-                compare(&p, &all, &positive, false)?;
-                compare(&p, &all, &all, true)?;
+                compare(&p, &all, &positive, Mode::Full, Mode::Positive)?;
+                compare(&p, &all, &all, Mode::Full, Mode::Full)?;
             }
         }
         Ok(())
@@ -662,7 +746,7 @@ mod tests {
                     full.len() == 3,
                     "lost a root from distinct square-free factors"
                 );
-                compare(&p, &full, &positive, false)?;
+                compare(&p, &full, &positive, Mode::Full, Mode::Positive)?;
             }
         }
         Ok(())
@@ -673,8 +757,8 @@ mod tests {
         let (full, _) = isolate(&p, Mode::Full, RingMode::Integer)?;
         let (positive, _) = isolate(&p, Mode::Positive, RingMode::Integer)?;
         ensure!(full.len() == 3 && positive.len() == 1);
-        compare(&p, &full, &positive, false)?;
-        ensure!(compare(&p, &full, &positive, true).is_err());
+        compare(&p, &full, &positive, Mode::Full, Mode::Positive)?;
+        ensure!(compare(&p, &full, &positive, Mode::Full, Mode::Full).is_err());
         Ok(())
     }
     #[test]
@@ -691,6 +775,37 @@ mod tests {
             multiplicity: Some(1),
         };
         ensure!(same_root(&a, &b, &p).is_err(), "overlap alone accepted");
+        Ok(())
+    }
+    #[test]
+    fn owned_and_foreign_zero_endpoints_keep_their_exact_ordinals() -> Result<()> {
+        let raw = |lo: i64, hi: i64| Root {
+            lower: Rational::from(lo),
+            upper: Rational::from(hi),
+            multiplicity: Some(1),
+        };
+        let p = poly(&[0, -1, 1]);
+        let full = vec![raw(0, 0), raw(0, 1)];
+        let positive = vec![raw(0, 1)];
+        let matched = compare(&p, &full, &positive, Mode::Full, Mode::Positive)?;
+        ensure!(matched["matched_roots"] == 1);
+        ensure!(matched["matches"][0]["proof"]["root"] == "1");
+        let p = Arc::new(poly(&[0, -2, 1]).map_coeff(|c| Rational::from(c.clone()), Q));
+        let (normal, evidence) = normalize_endpoints(&p, &[raw(0, 0), raw(0, 3)], Mode::Full)?;
+        ensure!(evidence[0]["action"] == "retain_open_interval");
+        ensure!(normal[1].lower == Rational::zero() && normal[1].upper == Rational::from(3));
+        same_root(&normal[1], &raw(2, 2), &p)?;
+        ensure!(
+            same_root(&normal[1], &raw(0, 0), &p).is_err(),
+            "foreign endpoint merged"
+        );
+        ensure!(
+            normalize_endpoints(&p, &[raw(0, 3)], Mode::Full).is_err(),
+            "wrong full ordinal accepted"
+        );
+        normalize_endpoints(&p, &[raw(0, 3)], Mode::Positive)?;
+        let (normal, _) = normalize_endpoints(&p, &[raw(-1, 0), raw(2, 2)], Mode::Full)?;
+        ensure!(normal[0].lower.is_zero() && normal[0].upper.is_zero());
         Ok(())
     }
     #[test]

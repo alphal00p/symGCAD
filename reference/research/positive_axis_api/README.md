@@ -31,7 +31,7 @@ The destination must not exist, and the symGCAD checkout must be clean. Setup
 uses local `git archive` at the checked-out symGCAD `HEAD` and Symbolica
 `75f8350094b90254ee71dc2a391fde0d14b0204a`, including Symbolica's pinned
 Numerica/Graphica sources. It requires a pristine active backend and checks
-the packaged hashes plus frozen Cargo manifest/lock and integer-sign source
+the packaged hashes plus frozen Cargo manifest/lock and shared root/sign source
 hashes, then applies only these
 two research patches in the new tree, and records `REPLAY_PROVENANCE.txt`.
 It records the actual symGCAD revision, so no unpublished development commit
@@ -58,7 +58,7 @@ The inherited development profile builds dependencies at optimization level 2.
 Use the same profile and CPU for timed full/positive comparisons. Build under
 an external wall-time/memory supervisor appropriate to the machine; native
 dependency compilation is not governed by the helper's runtime supervisor.
-These commands run ten positive-axis helper/shared-sign tests and two public
+These commands run eleven positive-axis helper/shared-sign tests and two public
 unit-shift regression tests; they do not run the dependency's internal test
 suite. The tests cover integer/rational APIs, zero and constant inputs, repeated,
 irrational and close roots, negative/zero omissions, exact matching, malformed
@@ -108,7 +108,13 @@ the internal `--worker` option for measurement.
 Two full reports automatically compare **all real roots**, including zero.
 If either report is positive-only, comparison selects the strictly positive
 subset. Pair the first full report with another full report to test full-mode
-preservation. Intervals crossing zero are rejected instead of classified by a
+preservation. Before selecting that subset, comparison resolves raw native
+zero endpoints with the existing shared exact open-root counter and each
+source inventory's full or positive ordinal. An endpoint may be the selected
+rational root or a different root: endpoint evaluation alone cannot decide
+ownership. The report saves each normalization decision and its separate
+timing. Nonzero endpoints take the cheap path without a root-count computation.
+Remaining intervals crossing zero are rejected instead of classified by a
 sample. A successful match requires an exact rational root or opposite nonzero
 signs at the endpoints of the interval intersection, with bounded refinement;
 overlap alone is insufficient. This relies on each source isolator's certified
