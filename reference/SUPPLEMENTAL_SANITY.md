@@ -12,6 +12,39 @@ This is supplemental testing, **not a coverage proof**. Its approximately
 independent complete-result verifier remains the source of mathematical
 completion credit.
 
+## Fresh-clone A446 solve and check
+
+Complete the [setup and fixed-corpus regeneration](../docs/SETUP.md) first.
+The tracked [A446 recipe](a446-reproduce.toml) contains only operational
+settings; the polynomial and kinematics come from the regenerated original
+fixture. It selects `engine="monotone"`, MODS ordering, exact input/domain
+positivity, the full positive Feynman-variable homogeneous block and anchor
+`x4`. It leaves every original constraint, split and parameter unchanged.
+
+From the repository root inside `nix develop`:
+
+```sh
+cargo build --release --locked
+target/release/symgcad bench reference/a446-reproduce.toml
+jq -e '.complete_verified == 1' artifacts/a446-public-reproduction/ledger.json
+SANITY_RESULT=$(jq -er '.runs[-1].trials[-1] | select(.verified == true) | .result_file' \
+  artifacts/a446-public-reproduction/ledger.json)
+cargo run --example sanity_sample -- \
+  --original artifacts/corpus/fixed/0093_finiteA_7_446_11_0__0_5_1_1_1_1_0_1_1_fixed.toml \
+  --result "$SANITY_RESULT" \
+  --output artifacts/a446-public-reproduction/sanity.json \
+  --seed 20261010 --points-per-cell 2 --seconds 120 --memory-mib 4096
+```
+
+The completion command runs solve and independent verification in fresh workers,
+with 120 seconds for each, one symbolic worker and a 4-GiB memory cap. It records
+the actual executable/input/proof hashes and uses a fresh checkpoint namespace.
+The `jq` checks explicitly require a verified result before sampling. The
+recorded eight-cell proof remains historical evidence; a regenerated run records
+its own result and sampling report. Choose a fresh sampling output filename when
+repeating this recipe. No private proof, literature file or old artifact directory
+is needed.
+
 ## Method and reproducibility
 
 [`examples/sanity_sample.rs`](../examples/sanity_sample.rs) reads the supplied

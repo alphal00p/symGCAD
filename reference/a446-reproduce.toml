@@ -1,0 +1,26 @@
+# Operational settings only. Regenerate the original fixed corpus first.
+mode = "completion"
+cases = ["../artifacts/corpus/fixed/0093_finiteA_7_446_11_0__0_5_1_1_1_1_0_1_1_fixed.toml"]
+output_dir = "../artifacts/a446-public-reproduction"
+repeats = 1
+solve_timeout_secs = 120.0
+verify_timeout_secs = 120.0
+campaign_time_secs = 300.0
+memory_mib = 4096
+workers = 1
+resume = false
+cache_policy = "cold"
+
+[[variants]]
+name = "certified-positive-homogeneous-monotone"
+[variants.solver]
+engine = "monotone"
+ordering = "mods"
+order = []
+merge = "none"
+positivity = true
+input_positivity = true
+homogeneous_block = ["x1", "x2", "x3", "x4", "x5", "x7", "x8"]
+homogeneous_anchor = "x4"
+# The cold policy replaces this namespace with a fresh directory per attempt.
+checkpoint_dir = "artifacts/a446-public-reproduction/checkpoint-namespace"
