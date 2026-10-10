@@ -39,3 +39,26 @@ capture propagation. Warm04's 3,600.029138-second timeout and all earlier
 search, preparation and solve costs remain retained separately. This is a
 launched attempt, not a completed solution, cold benchmark or speedup claim;
 original coverage remains **303/331**.
+
+
+## Live source-count observation
+
+A later bounded progress observation reports all **128 source slots** occupied
+by **71,975 retained source coefficient bits**, with 125 blocks adding
+68,659 bits: **140,634 total bits**. Reported peaks are 42 source terms,
+422 coefficient-height bits and 2,693 source-text bytes. Recorded native
+square-free decomposition and product reconstruction sum to 0.003184 and
+0.015187 seconds respectively. There are 1,335 source-count declines, but
+no coefficient-height/storage/text or post-entry resource failures. This
+identifies count exhaustion after cheap recorded decompositions, rather than
+measured storage exhaustion. It does not show that D32 has been encountered.
+
+An exact per-source degree/term/height histogram is unavailable: this frozen
+release retains the typed registry only in memory, exposes aggregate telemetry,
+and has no persisted support proposals or partial proof. Ordinary native
+operation files do not identify which typed source IDs were admitted, so they
+were not used to invent such a histogram. The worker was left running.
+The snapshot and availability audit are retained as
+`quota-progress-02.json` and `quota-inventory-availability-01.json` under the
+campaign directory; the latter has SHA-256
+`3ae83d454bd365df6c66a7ca97c08d7657311506130723d4439334b093fcc9c6`.

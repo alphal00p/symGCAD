@@ -301,3 +301,22 @@ this frontier. Evidence under `artifacts/research/ax318-d42-production-plan-01/`
 `e44e8242795f44d525f794b577d03e25d5df7620cfa77cdf576eab4af8edf137`,
 `report.process.json`
 `a169d6ad0006a8538345a654a9962b512e1f9ba84adcca6e0129b73520ad79f1`.
+
+
+A subsequent exact inspect-only run identifies the declining gate. Native
+Symbolica derivative/norm calculations give **5,562 digits**, each **67,987
+bits**, hence **378,143,694 output bits**, above the 256-million-bit cap.
+Independent support-only accounting gives **383,854,602 total input bits**,
+below the 512-million-bit cap. The 5,646 combined terms, elimination degrees
+42/41 and one surviving parameter fit the structural gates. Thus the output
+envelope, rather than term count or total encoded inputs, explains this
+static decline. This is not a runtime or intermediate-memory estimate.
+
+That check used frozen research helper
+`44428e764331e44d295eb4b8dae17201d39fe7b1a8573a240a499b1fea95ec09`,
+CPU2, 2 GiB, 60-second maximum, and completed in **0.123044 seconds** at
+**9,752 KiB**. Input and binary hashes were checked before and after. No
+encoded integer, resultant or discriminant was calculated and no cap changed.
+The final audit is
+`artifacts/research/ax318-d42-kronecker-layout-01/final-audit.json`, SHA-256
+`7c403693b58dbab35946dfbf0757605c272897a7626d5688b63798893fae0172`.
