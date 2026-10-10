@@ -1,14 +1,16 @@
 //! Resource-bounded exploratory A446 anchor/order campaigns.
 //! This is a development experiment, not a release parity benchmark.
+//! Records prefer compact worker statistics (large certificate arrays omitted).
+//! Full proof JSON is unchanged and is checked by an independent bounded worker.
 use anyhow::{Context, Result, ensure};
 use clap::Parser;
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use std::{
     collections::{BTreeSet, VecDeque},
     fs,
-    io::{BufReader, Write},
+    io::{BufReader, Read, Write},
     path::{Path, PathBuf},
     process::Command,
     sync::{Arc, Mutex},
@@ -141,6 +143,10 @@ struct Record {
     diagnostic: Option<String>,
     cells: Option<usize>,
     statistics: Option<Value>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    summary_source: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    summary_error: Option<String>,
     progress: Option<Value>,
     verification: Option<ProcessOutcome>,
     verified: bool,
@@ -155,17 +161,207 @@ struct ResultSummary {
     diagnostic: Option<String>,
     #[serde(default)]
     statistics: Option<Value>,
+    /// Only the bounded legacy-file fallback sees an array here. Its cells
+    /// are counted without retaining geometry or decoding proof variants.
+    #[serde(default, rename = "cells", deserialize_with = "count_cells")]
+    cell_count: Option<usize>,
 }
 
 impl ResultSummary {
     fn cells(&self) -> Option<usize> {
-        self.statistics
-            .as_ref()?
-            .get("raw_cells")?
-            .as_u64()?
-            .try_into()
-            .ok()
+        self.cell_count.or_else(|| {
+            self.statistics
+                .as_ref()?
+                .get("raw_cells")?
+                .as_u64()?
+                .try_into()
+                .ok()
+        })
     }
+
+    fn validate(&self) -> Result<()> {
+        if let Some(statistics) = &self.statistics {
+            let statistics = statistics
+                .as_object()
+                .context("summary statistics is not an object")?;
+            if let Some(raw) = statistics.get("raw_cells") {
+                let raw: usize = raw.as_u64().context("invalid raw cell count")?.try_into()?;
+                if let Some(count) = self.cell_count {
+                    ensure!(count == raw, "summary cell counts disagree");
+                }
+            }
+        }
+        ensure!(
+            self.status != Status::CompleteGeneric || self.cells().is_some(),
+            "complete summary has no cell count"
+        );
+        Ok(())
+    }
+}
+
+#[derive(Deserialize)]
+struct WorkerSummary {
+    status: Status,
+    #[serde(default)]
+    diagnostic: Option<String>,
+    #[serde(default)]
+    statistics: Option<Value>,
+    #[serde(default)]
+    cells: Option<usize>,
+}
+
+fn count_cells<'de, D: serde::Deserializer<'de>>(
+    decoder: D,
+) -> std::result::Result<Option<usize>, D::Error> {
+    struct Cells;
+    impl<'de> serde::de::Visitor<'de> for Cells {
+        type Value = usize;
+        fn expecting(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            f.write_str("a cell array")
+        }
+        fn visit_seq<A: serde::de::SeqAccess<'de>>(
+            self,
+            mut cells: A,
+        ) -> std::result::Result<usize, A::Error> {
+            let mut count = 0usize;
+            while cells.next_element::<serde::de::IgnoredAny>()?.is_some() {
+                count = count
+                    .checked_add(1)
+                    .ok_or_else(|| serde::de::Error::custom("cell count overflow"))?;
+            }
+            Ok(count)
+        }
+    }
+    decoder.deserialize_seq(Cells).map(Some)
+}
+
+const MAX_FALLBACK_BYTES: u64 = 16 * 1024 * 1024;
+
+struct DeadlineReader<R> {
+    reader: R,
+    deadline: Instant,
+}
+
+impl<R: Read> Read for DeadlineReader<R> {
+    fn read(&mut self, bytes: &mut [u8]) -> std::io::Result<usize> {
+        if Instant::now() >= self.deadline {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::TimedOut,
+                "campaign deadline reached while reading summary",
+            ));
+        }
+        self.reader.read(bytes)
+    }
+}
+
+/// The old reporting path scanned multi-gigabyte proofs after the worker's
+/// time limit. Compatibility reads now have a strict byte cap and check the
+/// campaign deadline on each buffered read; verification remains a worker.
+fn read_small_json<T: DeserializeOwned>(path: &Path, deadline: Instant) -> Result<T> {
+    ensure!(
+        Instant::now() < deadline,
+        "campaign deadline reached before summary read"
+    );
+    let metadata = fs::metadata(path)?;
+    ensure!(metadata.is_file(), "summary fallback is not a regular file");
+    ensure!(
+        metadata.len() <= MAX_FALLBACK_BYTES,
+        "summary fallback exceeds 16 MiB"
+    );
+    let file = fs::File::open(path)?;
+    read_bounded_json(file, deadline)
+}
+
+fn read_bounded_json<R: Read, T: DeserializeOwned>(reader: R, deadline: Instant) -> Result<T> {
+    let mut reader =
+        BufReader::new(DeadlineReader { reader, deadline }.take(MAX_FALLBACK_BYTES + 1));
+    let value = serde_json::from_reader(&mut reader)?;
+    ensure!(
+        reader.into_inner().limit() > 0,
+        "summary fallback grew beyond 16 MiB"
+    );
+    ensure!(
+        Instant::now() < deadline,
+        "campaign deadline reached during summary read"
+    );
+    Ok(value)
+}
+
+struct SummarySelection {
+    result: Option<ResultSummary>,
+    source: Option<String>,
+    error: Option<String>,
+}
+
+fn select_summary(process: &ProcessOutcome, output: &Path, deadline: Instant) -> SummarySelection {
+    if process.status != "completed" {
+        // A killed worker can leave a prefix of a proof, or even a complete
+        // file without a successful exit. Neither receives completion credit.
+        return SummarySelection {
+            result: None,
+            source: None,
+            error: None,
+        };
+    }
+    let stdout = (|| -> Result<ResultSummary> {
+        ensure!(
+            Instant::now() < deadline,
+            "campaign deadline reached before summary parsing"
+        );
+        ensure!(
+            !process.output_truncated,
+            "captured worker output was truncated"
+        );
+        let summary: WorkerSummary = serde_json::from_str(&process.stdout)?;
+        let result = ResultSummary {
+            status: summary.status,
+            diagnostic: summary.diagnostic,
+            statistics: summary.statistics,
+            cell_count: summary.cells,
+        };
+        result.validate()?;
+        ensure!(
+            Instant::now() < deadline,
+            "campaign deadline reached during summary parsing"
+        );
+        Ok(result)
+    })();
+    match stdout {
+        Ok(result) => SummarySelection {
+            result: Some(result),
+            source: Some("worker_stdout".into()),
+            error: None,
+        },
+        Err(stdout_error) => {
+            let fallback = read_small_json::<ResultSummary>(output, deadline).and_then(|result| {
+                result.validate()?;
+                Ok(result)
+            });
+            match fallback {
+                Ok(result) => SummarySelection {
+                    result: Some(result),
+                    source: Some("bounded_result_file".into()),
+                    error: Some(format!("worker stdout summary unavailable: {stdout_error}")),
+                },
+                Err(file_error) => SummarySelection {
+                    result: None,
+                    source: None,
+                    error: Some(format!(
+                        "worker stdout summary unavailable: {stdout_error}; bounded fallback unavailable: {file_error}"
+                    )),
+                },
+            }
+        }
+    }
+}
+
+fn verified_summary_matches(summary: &ResultSummary, verification: &Value) -> bool {
+    summary.status == Status::CompleteGeneric
+        && verification["verified"] == true
+        && verification["cells"]
+            .as_u64()
+            .and_then(|count| usize::try_from(count).ok())
+            .is_some_and(|count| summary.cells().is_none_or(|expected| count == expected))
 }
 
 struct Campaign {
@@ -247,6 +443,11 @@ fn run_trial(campaign: &Campaign, trial: Trial) -> Result<Record> {
     fs::create_dir_all(&directory)?;
     let input = directory.join("input.json");
     let output = directory.join("result.json");
+    let verification_path = directory.join("verification.json");
+    ensure!(
+        !output.exists() && !verification_path.exists(),
+        "trial output already exists; use a fresh campaign output directory"
+    );
     let progress_path = directory.join("progress.json");
     let mut problem = campaign.problem.clone();
     problem.solver.engine = campaign.engine.clone();
@@ -297,9 +498,8 @@ fn run_trial(campaign: &Campaign, trial: Trial) -> Result<Record> {
         command.env("SYMGCAD_CAPTURE_DIR", &capture);
     }
     let process = run_bounded(&mut command, &problem.limits)?;
-    let result: Option<ResultSummary> = fs::File::open(&output)
-        .ok()
-        .and_then(|file| serde_json::from_reader(BufReader::new(file)).ok());
+    let selected = select_summary(&process, &output, campaign.deadline);
+    let result = selected.result;
     let progress = fs::read(&progress_path)
         .ok()
         .and_then(|bytes| serde_json::from_slice(&bytes).ok());
@@ -310,22 +510,20 @@ fn run_trial(campaign: &Campaign, trial: Trial) -> Result<Record> {
     let verification = if complete && remaining(campaign) > 0.01 {
         let mut limits = problem.limits.clone();
         limits.wall_time_secs = campaign.verification_secs.min(remaining(campaign));
-        let mut command = worker_command(
-            campaign,
-            "verify",
-            &output,
-            &directory.join("verification.json"),
-        );
+        let mut command = worker_command(campaign, "verify", &output, &verification_path);
         Some(run_bounded(&mut command, &limits)?)
     } else {
         None
     };
     let verified = verification.as_ref().is_some_and(|v| {
         v.status == "completed"
-            && fs::read(directory.join("verification.json"))
+            && read_small_json::<Value>(&verification_path, campaign.deadline)
                 .ok()
-                .and_then(|bytes| serde_json::from_slice::<Value>(&bytes).ok())
-                .is_some_and(|j| j["verified"] == true)
+                .is_some_and(|j| {
+                    result
+                        .as_ref()
+                        .is_some_and(|summary| verified_summary_matches(summary, &j))
+                })
     });
     let record = Record {
         trial,
@@ -333,6 +531,8 @@ fn run_trial(campaign: &Campaign, trial: Trial) -> Result<Record> {
         diagnostic: result.as_ref().and_then(|r| r.diagnostic.clone()),
         cells: result.as_ref().and_then(ResultSummary::cells),
         statistics: result.as_ref().and_then(|r| r.statistics.clone()),
+        summary_source: selected.source,
+        summary_error: selected.error,
         process,
         progress,
         verification,
@@ -353,7 +553,7 @@ mod summary_tests {
     fn future_proof_variants_do_not_prevent_independent_verification() {
         let r: ResultSummary = serde_json::from_reader(BufReader::new(
             br#"{
-            "status":"complete_generic","statistics":{"raw_cells":7},
+            "status":"complete_generic","statistics":{"raw_cells":1},
             "cells":[{"future_boundary":{"new_kind":true}}],
             "local":{"certificate":{"kind":"future_exact_theorem"}}
         }"#
@@ -361,7 +561,8 @@ mod summary_tests {
         ))
         .unwrap();
         assert_eq!(r.status, Status::CompleteGeneric);
-        assert_eq!(r.cells(), Some(7));
+        assert_eq!(r.cells(), Some(1));
+        r.validate().unwrap();
     }
 
     #[test]
@@ -369,7 +570,7 @@ mod summary_tests {
         let r: ResultSummary = serde_json::from_str(
             r#"{
             "status":"incomplete","diagnostic":"node limit",
-            "statistics":{},"cells":[]
+            "statistics":{}
         }"#,
         )
         .unwrap();
@@ -377,6 +578,233 @@ mod summary_tests {
         assert_eq!(r.diagnostic.as_deref(), Some("node limit"));
         assert_eq!(r.cells(), None);
         assert!(serde_json::from_str::<ResultSummary>(r#"{"status":"unknown"}"#).is_err());
+    }
+
+    fn process(stdout: &str) -> ProcessOutcome {
+        ProcessOutcome {
+            status: "completed".into(),
+            wall_time_secs: 0.1,
+            user_cpu_secs: 0.0,
+            system_cpu_secs: 0.0,
+            peak_rss_kib: 0,
+            exit_code: Some(0),
+            stdout: stdout.into(),
+            stderr: String::new(),
+            output_truncated: false,
+        }
+    }
+
+    fn deadline() -> Instant {
+        Instant::now() + std::time::Duration::from_secs(10)
+    }
+
+    struct Scratch(PathBuf);
+    impl Scratch {
+        fn new() -> Self {
+            let path = std::env::temp_dir().join(format!(
+                "symgcad-hard-probe-summary-{}-{}",
+                std::process::id(),
+                SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .unwrap()
+                    .as_nanos()
+            ));
+            fs::create_dir(&path).unwrap();
+            Self(path)
+        }
+        fn result(&self) -> PathBuf {
+            self.0.join("result.json")
+        }
+    }
+    impl Drop for Scratch {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.0);
+        }
+    }
+
+    #[test]
+    fn compact_stdout_is_preferred_without_opening_the_proof() {
+        let scratch = Scratch::new();
+        // A directory cannot be a fallback proof. Successful selection here
+        // demonstrates that a valid stdout summary does not read the path.
+        let selected = select_summary(
+            &process(r#"{"status":"complete_generic","cells":7,"statistics":{"raw_cells":7}}"#),
+            &scratch.0,
+            deadline(),
+        );
+        assert_eq!(selected.source.as_deref(), Some("worker_stdout"));
+        assert!(selected.error.is_none());
+        let summary = selected.result.unwrap();
+        assert_eq!(summary.cells(), Some(7));
+        assert_eq!(summary.status, Status::CompleteGeneric);
+        assert!(summary.diagnostic.is_none());
+        assert!(verified_summary_matches(
+            &summary,
+            &json!({"verified":true,"cells":7})
+        ));
+        assert!(!verified_summary_matches(
+            &summary,
+            &json!({"verified":true,"cells":8})
+        ));
+        assert!(!verified_summary_matches(
+            &summary,
+            &json!({"verified":false,"cells":7})
+        ));
+        assert!(!verified_summary_matches(
+            &summary,
+            &json!({"verified":true})
+        ));
+    }
+
+    #[test]
+    fn incomplete_stdout_remains_incomplete_even_with_an_older_complete_file() {
+        let scratch = Scratch::new();
+        fs::write(
+            scratch.result(),
+            r#"{"status":"complete_generic","statistics":{"raw_cells":0},"cells":[]}"#,
+        )
+        .unwrap();
+        let selected = select_summary(
+            &process(
+                r#"{"status":"incomplete","cells":0,"statistics":{"raw_cells":0},"diagnostic":"node limit"}"#,
+            ),
+            &scratch.result(),
+            deadline(),
+        );
+        assert_eq!(selected.source.as_deref(), Some("worker_stdout"));
+        let summary = selected.result.unwrap();
+        assert_eq!(summary.status, Status::Incomplete);
+        assert_eq!(summary.diagnostic.as_deref(), Some("node limit"));
+        assert!(!verified_summary_matches(
+            &summary,
+            &json!({"verified":true,"cells":0})
+        ));
+        for status in ["invalid_input", "computation_failure"] {
+            let selected = select_summary(
+                &process(&format!(r#"{{"status":"{status}","cells":0}}"#)),
+                &scratch.result(),
+                deadline(),
+            );
+            assert!(!verified_summary_matches(
+                &selected.result.unwrap(),
+                &json!({"verified":true,"cells":0})
+            ));
+        }
+    }
+
+    #[test]
+    fn malformed_or_truncated_stdout_cannot_rescue_a_partial_proof() {
+        let scratch = Scratch::new();
+        fs::write(
+            scratch.result(),
+            r#"{"status":"complete_generic","statistics":{"raw_cells":0},"cells":[]"#,
+        )
+        .unwrap();
+        for stdout in [
+            "",
+            "not JSON",
+            r#"{"status":"complete_generic","cells":0"#,
+            r#"{"status":"unknown","cells":0}"#,
+            r#"{"status":"complete_generic","cells":-1}"#,
+            r#"{"status":"complete_generic","cells":0,"statistics":{"raw_cells":1}}"#,
+            r#"{"status":"complete_generic","cells":0} trailing output"#,
+        ] {
+            assert!(
+                select_summary(&process(stdout), &scratch.result(), deadline())
+                    .result
+                    .is_none()
+            );
+        }
+        let mut truncated = process(r#"{"status":"complete_generic","cells":0}"#);
+        truncated.output_truncated = true;
+        let selected = select_summary(&truncated, &scratch.result(), deadline());
+        assert!(selected.result.is_none());
+        assert!(selected.error.unwrap().contains("truncated"));
+    }
+
+    #[test]
+    fn bounded_legacy_file_fallback_counts_cells_and_checks_statistics() {
+        let scratch = Scratch::new();
+        fs::write(scratch.result(), r#"{"status":"complete_generic","statistics":{"raw_cells":2},"cells":[{"future":true},{"future":[1,2]}]}"#).unwrap();
+        let selected = select_summary(&process(""), &scratch.result(), deadline());
+        assert_eq!(selected.source.as_deref(), Some("bounded_result_file"));
+        assert_eq!(selected.result.unwrap().cells(), Some(2));
+        // Array and statistics counts must agree; the future verifier will
+        // separately establish the mathematical validity of the full proof.
+        fs::write(
+            scratch.result(),
+            r#"{"status":"complete_generic","statistics":{"raw_cells":3},"cells":[{},{}]}"#,
+        )
+        .unwrap();
+        assert!(
+            select_summary(&process(""), &scratch.result(), deadline())
+                .result
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn fallback_rejects_large_files_non_files_and_expired_deadlines() {
+        let scratch = Scratch::new();
+        let file = fs::File::create(scratch.result()).unwrap();
+        file.set_len(MAX_FALLBACK_BYTES + 1).unwrap();
+        let selected = select_summary(&process(""), &scratch.result(), deadline());
+        assert!(selected.result.is_none());
+        assert!(selected.error.unwrap().contains("16 MiB"));
+        assert!(
+            select_summary(&process(""), &scratch.0, deadline())
+                .result
+                .is_none()
+        );
+        fs::write(
+            scratch.result(),
+            r#"{"status":"complete_generic","cells":[]}"#,
+        )
+        .unwrap();
+        let expired = Instant::now();
+        assert!(
+            select_summary(&process(""), &scratch.result(), expired)
+                .result
+                .is_none()
+        );
+        let mut reader = DeadlineReader {
+            reader: &[0u8; 1][..],
+            deadline: expired,
+        };
+        assert_eq!(
+            reader.read(&mut [0]).unwrap_err().kind(),
+            std::io::ErrorKind::TimedOut
+        );
+    }
+
+    #[test]
+    fn fallback_growth_cannot_hide_bytes_after_a_valid_json_prefix() {
+        // Model a file growing after the initial metadata check. Even when
+        // the capped prefix is valid JSON plus whitespace, reaching the byte
+        // cap must reject it rather than pretend the unread suffix is EOF.
+        let mut grown = br#"{"value":1}"#.to_vec();
+        grown.resize(MAX_FALLBACK_BYTES as usize + 2, b' ');
+        let error = read_bounded_json::<_, Value>(&grown[..], deadline()).unwrap_err();
+        assert!(error.to_string().contains("grew beyond"));
+    }
+
+    #[test]
+    fn a_failed_or_timed_out_worker_never_reuses_complete_artifacts() {
+        let scratch = Scratch::new();
+        fs::write(
+            scratch.result(),
+            r#"{"status":"complete_generic","cells":[]}"#,
+        )
+        .unwrap();
+        for status in ["failed", "timeout", "memory_limit", "pruned"] {
+            let mut failed = process(r#"{"status":"complete_generic","cells":0}"#);
+            failed.status = status.into();
+            assert!(
+                select_summary(&failed, &scratch.result(), deadline())
+                    .result
+                    .is_none()
+            );
+        }
     }
 }
 
