@@ -127,9 +127,33 @@ rejected `ax381-identity.toml` is retained in the artifact directory. All named
 `ax381-{fixed,symbolic}-identity` and `*-two-peel-identity` evidence uses the
 correct `delta=m-t`. The coefficient of `x3*x5*x8` in the Ax fixture is `2-t`.
 
-These measurements establish a cheap exact coefficient obligation, not a
-completed original A381 solve or a whole-solver speedup. General convex
+The operand measurements above establish a cheap exact coefficient obligation;
+the subsequent full-problem trial is recorded separately below. General convex
 quadratic peeling has a genuine two-positive-root branch when `c>0,b<0,D>0`;
 the existing local quadratic classifier already handles it. A446 exhibits
 that branch in an exactly checked positive-coordinate fiber (saved in
 `symbolic-identity.txt`), so the endpoint-only rule cannot be assumed there.
+
+## Full fixed-kinematics completions
+
+Both original fixed A381 and Ax381 problems subsequently completed on their
+entire positive-coordinate domains. Each result has `complete_generic` status,
+836 cells, and successful independent verification. Both use exactly the two
+conditional peels `x3`, then `x5`, with positive homogeneous scale anchor `x8`
+and lifting order `[x8,x4,x6,x0,x2,x5,x3]`. No extra domain restriction was
+introduced and no piece result was counted as an original completion.
+
+| Original problem | Cold debug public solve | Independent verification | Cells |
+| --- | ---: | ---: | ---: |
+| fixed A381 | 0.287062 s | 0.284881 s | 836 |
+| fixed Ax381 | 0.285520 s | 0.284964 s | 836 |
+
+These single-trial debug times are exploratory. They include a fresh public
+solve process and export, with verification timed separately; they are not a
+matched release/native speedup claim. The frozen worker hash is
+`99eba9fb660c95e41f3eecc1efcd03e516de51a3041d2665391b399352ef6113`.
+The exact campaign inputs, proof/result hashes and verification process records
+are in `artifacts/hard-campaigns/a381-conditional-debug-01/results/ledger.json`,
+SHA256 `0f48ab3c49ef84485f319a703b5766bdfa304c1a97ec2f8a38e7549179fd2716`.
+The unrestricted symbolic A381/Ax381 problems remain unresolved; the separate
+kinematic-piece research does not change that status.
