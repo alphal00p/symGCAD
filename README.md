@@ -73,6 +73,8 @@ The deterministic matched-baseline study covers all **331 groups / 579 sign-expa
 
 Later certified reductions complete fixed A381/Ax381 with 836 cells each, negative Gluza30/Gluza33 with one/three cells, and positive Gluza30 with 80,980 cells. Discovery costs, verification costs, failed attempts and exact original-domain checks are recorded separately.
 
+A [supplemental seeded sanity check](reference/SUPPLEMENTAL_SANITY.md) sampled two fresh interior points in each fixed A446 cell: all 8 cells, 16 exact F evaluations and 112 original-constraint checks passed. This check recomputes boundaries at each new prefix and is excluded from benchmark timings; it does not replace the coverage proof.
+
 - [Benchmark document](benchmark/benchmark.pdf) and [Typst source](benchmark/benchmark.typ): per-problem comparison and methodology.
 - [Validation record](BENCHMARKS.md): measured milestones, limits, artifact hashes and unresolved cases.
 - [Reference reproduction](reference/README.md): corpus extraction, native adapter and audit protocols.

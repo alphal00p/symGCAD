@@ -121,6 +121,13 @@ with three fresh repetitions and identical orders. *±* means two separate sign-
   are not presented as precise speedups. The pending slow campaign uses bounded process supervision,
   durable attempt records and independent proof verification.
 
+  *Supplemental sanity check.* Fixed A446 passed two fresh rational points in each of its eight
+  exported cells (seed 20261010): 16 exact original-F evaluations and 112 strict-constraint checks,
+  with zero failures or unchecked cells. Boundaries were recomputed at each fresh prefix.
+  This separate check is outside benchmark timings and supplies no coverage-proof credit;
+  full points and counterexamples from a deliberately wrong sign label are retained in
+  #text(font: "Libertinus Mono")[reference/SUPPLEMENTAL_SANITY.md].
+
   == What changed
   *Exact algebra and reuse.* Rust uses Symbolica for polynomial arithmetic, factorization,
   resultants and rational root work. Canonical factors, deterministic algorithms and bounded caches

@@ -38,7 +38,7 @@
     "unresolved": 28,
     "used_supplemental_verifications": 3
   },
-  "generator_source_sha256": "7d7d9a439787a6c67347cb7eade8788e423bd1067b6da69053f25aa11423a7cf",
+  "generator_source_sha256": "8589b7a49f09b344503dbd13642b2e7430cc15916e6ea2fd4fcc068256f53af5",
   "machine": {
     "cpu": "AMD EPYC 9754 128-Core Processor",
     "historical_worker_limits": "4–32GiB; exact per-run ceilings retained in source ledgers",

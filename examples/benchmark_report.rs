@@ -498,9 +498,22 @@ fn main() -> Result<()> {
                 if row["verified"] != true {
                     row["slow_status"] = json!("incomplete");
                     row["last_status"] = trial["status"].clone();
-                    row["longest_incomplete_seconds"] = trial["solve"]["wall_time_secs"].clone();
-                    row["incomplete_peak_rss_mib"] =
-                        json!(trial["solve"]["peak_rss_kib"].as_f64().unwrap_or(0.) / 1024.);
+                    // A newer attempt can stop early. Retain the longest
+                    // observed attempt promised by the table's heading.
+                    row["longest_incomplete_seconds"] = json!(
+                        row["longest_incomplete_seconds"]
+                            .as_f64()
+                            .into_iter()
+                            .chain(trial["solve"]["wall_time_secs"].as_f64())
+                            .reduce(f64::max)
+                    );
+                    row["incomplete_peak_rss_mib"] = json!(
+                        row["incomplete_peak_rss_mib"]
+                            .as_f64()
+                            .into_iter()
+                            .chain(trial["solve"]["peak_rss_kib"].as_f64().map(|x| x / 1024.))
+                            .reduce(f64::max)
+                    );
                     if trial["verified"] == true {
                         row["slow_status"] = json!("awaiting aggregate audit");
                     }
