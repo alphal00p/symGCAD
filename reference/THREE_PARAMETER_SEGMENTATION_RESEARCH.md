@@ -130,3 +130,45 @@ preflight uses `--capture-sha256 SHA --output FRESH_DIR --plan-only --seconds
 resource envelope requires explicit scheduling after the original campaign
 ends; no production cap escalation or performance claim follows from this
 preparation.
+
+# Separate degree-84 frontier: static rejection only
+
+The later A377 `t`-discriminant capture is outside this experiment's envelope.
+Its immutable SHA256 is
+`d5b99d48b9a9d9d1231cecfae9a3139fc23c90d7797ff88ae9b4fe6d64673c67`
+(`artifacts/research/a377-segmentation-warm-hour-06/final-capture.json`,
+byte-identical to warm07's second progress capture). The full map is
+`[s,t,x0,x3,x5,x6,x8]`, with elimination axis 1.
+
+A bounded literal/support scan, with no native algebra or public planner
+invocation, found degrees 84 and 83 for `p,p'`, 10429 and 10296 terms,
+`s`-degree 148 in both, and total degrees 168 and 167. Therefore the current
+support-derived resultant box is
+
+```
+min(83*148 + 84*148, 83*168 + 84*167 - 84*83) = 21000,
+```
+
+or 21001 digits. Both norms contain a coefficient with 222 decimal digits.
+Using only `10 > 2^3` gives a certified radix-width lower bound of 110723
+bits. The captured 737-bit maximum coefficient height gives a conservative
+upper bound of 126006 bits, including differentiation and term counts.
+Thus the **planned bound**, not an actual result size, lies between
+2325293723 and 2646252006 output bits; the encoded-input allocation estimate
+lies between 2294734175 and 2611474350 bits. Both exceed this driver's 2B-bit
+envelope. Its 20725 combined terms and degree 84 also exceed unchanged
+8192-term and degree-64 input gates. Existing prototype inspect-only code
+likewise stops at degree 64.
+
+The final elementary-bound report is
+`artifacts/research/a377-d84-static-support-01/report-03.json`, SHA256
+`01ffd0b5d2d0695c0b8bbe409c8761c90f30f9904d2f46c134462b0a9faf994e`.
+Independent read-only review checked the complete sparse spelling, derivative
+support and arithmetic. Earlier retained metadata estimates used a tighter
+decimal-log approximation; this final report needs no floating logarithms.
+
+This is a substantially different native integer-resultant degree from the
+Gluza degree-10 input. Static bit counts do not predict resultant transient
+memory or runtime. No degree/cap increase, D84 native computation, cache
+injection or original coverage claim follows. The smaller, already admitted
+Gluza three-parameter input remains the next bounded research candidate.
