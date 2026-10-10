@@ -141,3 +141,37 @@ first wave. Final ledger copies, last published progress and compact outcomes
 are retained under `artifacts/slow-suite-second-wave-diagnostic-01/`.
 Progress snapshots can be stale and do not identify the operation executing
 at timeout. The existing queue and its historical evidence were not modified.
+
+## Third one-hour wave
+
+The read-only audit at 09:30 UTC on 10 October 2026 found no new completion.
+All four symbolic crossed originals timed out, with no result or verification
+file:
+
+| Original | Bounded solve, seconds | Peak RSS, MiB |
+| --- | ---: | ---: |
+| Ax12-A318 | 3600.035509 | 547.7 |
+| Ax12-A377 | 3600.022477 | 2338.4 |
+| Ax12-A414 | 3600.038907 | 607.8 |
+| Ax12-A381 | 3600.026161 | 324.3 |
+
+These are censored attempts, not completion times. The inventory remains
+**303 / 331 verified originals**. The snapshot contains twelve finished
+incomplete attempts, four active runs and twelve still waiting. The auditor
+reports the latter sixteen together as pending evidence.
+
+`artifacts/slow-suite-one-hour-audit-04/audit.json` has SHA-256
+`20bf909f84f90fc1a79a0ff3b4117302bc1ff3af4a2f1d2eb9670763bd88efa2`;
+its immutable queue snapshot has SHA-256
+`fe3ab2129e570d409851f2e88675cbb5ed5e1dff7fe9862d751769f78233d7dc`.
+All twelve finished ledger hashes were rechecked. The four new trial-input
+and original-file hashes also match their records, and each input's complete
+mathematical TOML prefix equals its original byte for byte.
+
+Final ledger/input copies and the exact timing, RSS and outcome records are
+retained in that audit directory. `third-wave-outcomes.json` has SHA-256
+`ea18267d34dfeb75ba3dbe72856407b712519936234a53415c00c8a330272f6e`.
+The auditor executable has SHA-256
+`7b3e6eb10acdcb990f4e247612495542ad834c14779c3f834d57b16763427ec3`.
+It exited nonzero as required while originals remain unverified. No live
+runner, campaign configuration or previous evidence was changed.
