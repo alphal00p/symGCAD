@@ -156,3 +156,14 @@ maps, interpolation priority, default fallback, cache metrics, independently
 recomputed signed discriminants, and rejection of altered local cells. The
 subsequent six-test discriminant target also covers the ordinary mapless-zero
 backend result. No proof schema or exceptional-set obligation is removed.
+
+The subsequent full fast suite passed all **537 committed tests**. It also
+ran one uncommitted A381 regression from a separate workstream, which passed
+and was left outside this change. The combined 538-test run covered 39 targets
+with no failures or ignored tests; test execution took 52.80 seconds after
+3 minutes 38 seconds of compilation. Its log is
+`artifacts/discriminant-segmentation-fast-tests-02.log`, SHA-256
+`09821c0f63b4a41d45ae6541655d1f5c918f71e1aac1d789b73b28a6fb313f91`.
+The first full-suite invocation was stopped during compilation when review
+found the native-zero map regression; its interrupted log is retained as
+`discriminant-segmentation-fast-tests-01.log` and is not counted as a pass.
