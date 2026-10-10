@@ -383,3 +383,43 @@ one separator for a deduplicated polynomial pair is insufficient when its
 roots interleave. Exact sample placement, denominator/order guards, stable
 positive ordinals and finite template stock would all require replay. This
 pair rule is a research proposal, not an implemented omission.
+
+## Sum-of-squares screen for positive repeated roots
+
+For fixed rational w>0, `S(z)=p(z)^2+w*p'(z)^2` vanishes at a real point
+exactly when p and its derivative both vanish. Strict positivity of S on
+z>0 therefore excludes positive multiple roots. Together with nonzero
+leading coefficient and endpoint p(0), this can establish positive-root
+delineability while allowing negative-root collisions. A prospective output
+rule would use positive ordinals and retain those leading/endpoint guards.
+
+The standalone research helper `examples/profile_sos_discriminant.rs` screens
+coefficient nonnegativity of `(1+u)^k*S(lambda*u)` with positive rational
+lambda and k<=64. A nonzero polynomial with nonnegative coefficients is
+strictly positive on the open ray. The derivative is taken in the original
+z coordinate before substitution. Numeric specialization only chooses a
+candidate: any symbolic certificate must propagate strict positive signs of
+every nonzero symbolic coefficient through ancestor cells. A coefficient
+that vanishes only at the sample cannot be discarded. The helper checks
+the reconstructed specialization identity and caps estimated polynomial
+products before expansion; it does not change production projection.
+
+Its exact weight mode writes each coefficient as `A_i+w*B_i` and intersects
+all rational half-lines `A_i+w*B_i>=0` with w>0. This tests all positive
+weights, not just rational squares or a finite weight grid. The bounded
+scale/degree portfolio remains finite; any future adaptive symbolic rule
+also needs a lifetime stock limit to avoid generating unbounded new guards.
+
+For the captured 1,232-term, degree-eight A446 discriminant operand at
+`(s,t,x1,x2)=(13/3,-1505,1,1)`, all 81 initial scale/weight combinations
+failed through k=64 in 0.57 seconds. The stronger exact weight screen also
+failed for every one of 585 systems: nine scales
+`1,1/4,4,1/16,16,1/64,64,1/256,256` and k=0..64. It took 0.15 seconds
+wall time and 3,108 KiB peak RSS on CPU5. No symbolic square was expanded.
+This excludes this bounded certificate family for that fiber, not general
+sum-of-squares or higher-order positivity methods. Immutable binaries,
+source, input hashes, coefficients and complete trial inventories are in
+`artifacts/profile/a446-sos-discriminant-01` and
+`artifacts/profile/a446-sos-weight-interval-01`. Six helper tests cover exact
+weight intersections, positive versus negative repeated roots, and the
+symbolic scaling identity. No CAD completion follows from these profiles.
