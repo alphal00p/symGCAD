@@ -156,3 +156,44 @@ not additional original-corpus coverage.
 | `launch.json` | `245bdd1247791b0c47f528d2d29e6118dd51c41a009d0e467e6c1edb70d03b2f` |
 | `actual-worker-audit.json` | `4fb9a92c2f368034e6a1084ad4a2e7fbeffc9e576ea2d3d9a39652d0c277805b` |
 | `artifacts/combined-release-schema2-smoke-02/audit.json` | `ad10a6949923cb6822da01294179f45dcb214eff01a3e6c171bfc689a51ee073` |
+
+## Terminal schema-2 continuation
+
+Warm07 finished at **17:58:27.192 UTC** with a **3,600.031446-second
+timeout**, **913,636 KiB peak RSS**, no result and no verification. Its
+supervised processes and all known process groups had exited before releasing
+the 12 GiB allocation. No restart followed.
+
+All **2,086 inherited native operation files**, totaling **244,198,068
+bytes**, remain byte-identical; **zero new completed operations** were saved.
+The terminal audit rechecked native keys, output/multiplicity checksums,
+full map and domain/backend bindings, original mathematics, order, anchor,
+options and executable. The explicitly false weighted-square option is
+equivalent to its omitted false default in the serialized trial input.
+
+The saved **686.111803-second** progress report records **186 admitted
+sources**, **180 blocks**, and **282,687 retained coefficient bits**, with
+zero source-count, storage or post-entry failures. Thus the schema-2 registry
+passed the earlier 128-source limit. Nevertheless, the last published request
+is the same degree-84, 10,429-term discriminant as warm06, and its key has no
+completed native record. The stale report and capture do not establish an
+exact operation duration or a later root-isolation phase.
+
+The checkpoint also retains **186 production-written support proposals**,
+**184,226 bytes**, inventoried separately from native operation records.
+Their hashes preserve restart work; this metadata audit does not certify their
+products or roots. Every reuse still requires the normal exact product replay,
+and full proof verification remains independent of these proposals.
+
+| Final warm07 artifact | SHA-256 |
+| --- | --- |
+| `results/ledger.json` | `8fd6dbd397ee5a0b7b186d0c80a5cb47175eaf23b361f3304d49e6ef8b74e0a7` |
+| `final-audit.json` | `f2a9c0833fb4db4bc8dd5215aca5ba97c30a0b64d8ba0789163ab568ef5c6f06` |
+| `final-cache-manifest.json` | `50ee717a45c3df18aff15b7d65293223d5830573f0e8c7db51373143643c7fcd` |
+| `final-capture.json` | `d5b99d48b9a9d9d1231cecfae9a3139fc23c90d7797ff88ae9b4fe6d64673c67` |
+| `final-support-proposal-manifest.json` | `29e909ba4416518fad332f3d5e6dd4358e39b285e5a4831bb243a1cbac977043` |
+| `terminal-process-audit.json` | `856f5d4b72cc9442b0e317896336d54ff10b544646d5c72f4cbe998639712486` |
+
+This bounded warm comparison answers the registry-capacity question but adds
+no original completion or speed ratio. Earlier costs remain separate, and
+coverage remains **303/331 verified**.
