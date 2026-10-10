@@ -38,3 +38,21 @@ the transformed TOML SHA256 is
 `df04822152e2776bf20056b80ca13729be546ba9631a83819314341f7a14cd53`.
 `preparation/preparation.json` records all polynomial term counts and inverse
 checks; `debug-trial/` retains worker input, process status and checkpoints.
+
+## Bounded release promotion
+
+The same transformed problem also timed out after **600.082 seconds** on the
+frozen b813 release executable
+`ba0f2a3a8fea50da4d8a10020a870a48ecda64aac595ae5567b97382a7794ed0`.
+The one-CPU, 8-GiB trial reused completed transformed operation checkpoints and
+increased subtree/hint budgets to 128/32 MiB. Peak RSS was 923,408 KiB.
+Its last snapshot at 33.074 seconds reports 38,061 nodes and 3,414 refinements;
+the subsequent captured degree-6/degree-8 resultant did not return before the
+worker deadline. Separate 60-second Brown and primitive resultant trials also
+timed out, as recorded in `A446_ALGEBRA_FOLLOWUP.md`.
+
+The promotion record is
+`release-trial/initial-x5-0/record.json`, SHA256
+`3007953c66b56275d9db1370768cc4d81253b0818fd759f46349e10622751401`.
+The smaller input support did not yield a completed transformed decomposition,
+so an original-coordinate transport wrapper is not justified by this experiment.
