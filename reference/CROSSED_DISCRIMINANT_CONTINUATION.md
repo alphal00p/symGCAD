@@ -197,3 +197,48 @@ The actual worker's original fields, explicit options, order, anchor, shared
 cache, memory/CPU limits and capture environment were independently checked.
 Earlier search and warm-attempt costs remain retained separately. This launch
 has no solved-case speed ratio or original completion credit.
+
+### Controlled conditional-cache budget comparison
+
+Two fresh compact snapshots of warm02, 61.352 seconds apart, show advancing
+prefixes and 189,422 additional speculative nodes, 52,399 refinements,
+85,130 completed-subtree evictions and 46,428 learned-cut evictions.
+The subtree cache reached its 32,768-node limit despite retaining only
+about 13.5 MB against a 32 MiB byte budget; learned cuts reached 4,096
+entries at about 3.6 MB against 8 MiB. The ordinary algebra cache had no
+evictions and no newly written native operations. Stable sampling was
+disabled. These observations support cache-pressure investigation; they
+neither prove nor exclude repeated-prefix revisits. Each individual
+fixed-prefix refinement loop still strictly enlarges its cut set.
+The pinned diagnostic is
+`artifacts/research/ax318-warm02-replay-diagnostic-01/recommendation.json`,
+SHA-256 `a1e9446f20a46d391097902f89e81830d222636282ac5c381910865f4ee4d84c`.
+
+An approved comparison launched at **14:45:09 UTC**, CPU0, 8 GiB, sharing
+one hour between solve and verification. It uses the **same frozen release**,
+original mathematics, order, anchor and 46,551-record immutable warm01 cache
+as warm02. The only solver changes, besides the fresh namespace, are the
+existing `local_subtree_cache_mib=512` and
+`local_learned_cut_cache_mib=64` options. Stable sampling stays disabled;
+there is no source, algebra-envelope or proof-policy change. These generic
+budgets scale the existing node/entry limits without changing per-entry
+limits or conditional-proof obligations.
+
+The actual worker confirms effective limits of 512 MiB/524,288 subtree
+nodes and 64 MiB/32,768 learned-cut entries/524,288 cut IDs. Original fields,
+all explicit options, CPU0, 8 GiB address-space limit, shared cache and
+capture environment were independently checked. Initial preparation took
+15.102 seconds. Artifacts under `artifacts/research/ax318-warm03-cachebudget/`:
+
+| Artifact | SHA-256 |
+| --- | --- |
+| `input-audit.json` | `fd27315a15ad032163dce19d68a15b0b830cef464cf5ce06b8bf6b46a988c123` |
+| `initial-cache-manifest.json` | `d47ee3380141393845e45479d69d5bc7e9e925cb39cd989cea0f4333828b682f` |
+| `control-audit.json` | `610624d84b792a95f158e9a2dbc4aa963b43652034b1245d2a4749cbdc08dd53` |
+| `launch.json` | `9ddd73f4466d0399461f2f2c3f598b947524add41f8eb27e47b129c76db4cddb` |
+| `actual-worker-audit.json` | `7f080304f4597b10cccacf4cedaf6d343970503c908cb927fa6783a6af33ccfa` |
+| `effective-cache-audit.json` | `9c2faf77fc704fde3463e940158269b8723eb14b15dea6695a8cb9e53eb25742` |
+
+The previous search and warm-attempt costs remain retained. This is a
+single warm policy comparison, not a cold timing ratio or completed original
+solve; all interior boundaries and independent-verification obligations remain.
