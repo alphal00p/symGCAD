@@ -455,3 +455,41 @@ source, input hashes, coefficients and complete trial inventories are in
 `artifacts/profile/a446-sos-weight-interval-01`. Six helper tests cover exact
 weight intersections, positive versus negative repeated roots, and the
 symbolic scaling identity. No CAD completion follows from these profiles.
+
+## Finite coordinate charts for the Gluza30 core example
+
+The Gluza30 polynomial is multiaffine in seven positive coordinates. A finite
+atlas splits each original axis at x=1 and substitutes either `x=1+y` or
+`x=1/(1+y)`, with y>0. The 128 charts cover the original orthant away from
+the seven explicit seams `x_i=1`. After multiplication by the positive lower
+chart denominators, every numerator remains multiaffine. The research helper
+`examples/core_chart_probe.rs` verifies all cleared inverse identities using
+Symbolica; it does not infer coverage from samples.
+
+Exact coefficient screening finds eight sign-definite charts, thirteen mixed
+charts with four or five successive increasing linear peels, 58 with one or
+two, and 49 without an initial increasing peel in either global sign
+orientation. For a multiaffine polynomial on a positive orthant, coefficient
+nonnegativity is necessary for global nonnegativity: a negative monomial is
+exposed by setting its active variables to T and all others to `1/T`, then
+taking T large. Thus the mixed derivative coefficients in those 49 charts
+prove a limitation of global monotonicity, not merely a weak positivity test.
+
+The all-lower chart `0<x_i<1` completed with four peels and five full-sign
+cells; chart 61 completed with five peels and seven cells. Both transformed
+arrangements independently verified. Their release solver times were about
+eight milliseconds. A zero-peel control chart timed out at 30 seconds, as did
+two additional 30-second trials restricting it to the originally requested
+sign using local and global optimized engines. These results establish two
+transformed pieces, not an additional complete corpus problem. Exact inputs,
+identities, hashes, successful proofs and retained failures are under
+`artifacts/research/gluza30-atlas-01`, summarized in `analysis.json`.
+
+Each coordinate map is monotone and independent, so it transports a fixed
+cylindrical order; reciprocal coordinates reverse sector order. Original
+boundary export needs ordinals restricted to `0<x<1` on reciprocal charts,
+or additional certification of any stronger full-real ordinal. The current
+research helper chooses per-chart peel orders, which need not agree. A union
+of these outputs therefore also requires one common original lifting order
+or a certified common refinement, plus every chart seam. No production
+transport wrapper has been implemented.
