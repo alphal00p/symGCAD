@@ -322,19 +322,19 @@ pub fn run_campaign(config_path: &Path, executable: &Path) -> Result<CompletionR
     ensure!(
         config.campaign_time_secs.is_finite()
             && config.campaign_time_secs > 0.0
-            && config.campaign_time_secs <= 3600.0,
-        "campaign budget must be in (0,3600]"
+            && config.campaign_time_secs <= crate::config::MAX_WALL_TIME_SECS,
+        "campaign budget must be in (0,7200]"
     );
     ensure!(
         config.solve_timeout_secs.is_finite()
             && config.solve_timeout_secs > 0.0
-            && config.solve_timeout_secs <= 3600.0,
+            && config.solve_timeout_secs <= crate::config::MAX_WALL_TIME_SECS,
         "invalid solve timeout"
     );
     ensure!(
         config.verify_timeout_secs.is_finite()
             && config.verify_timeout_secs > 0.0
-            && config.verify_timeout_secs <= 3600.0,
+            && config.verify_timeout_secs <= crate::config::MAX_WALL_TIME_SECS,
         "invalid verification timeout"
     );
     ensure!(

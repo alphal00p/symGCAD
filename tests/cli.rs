@@ -152,3 +152,54 @@ fn interrupted_worker_reports_its_elapsed_wall_time() {
     assert!(symgcad::verify::verify(&result).is_err());
     fs::remove_dir_all(directory).unwrap();
 }
+
+#[test]
+fn explicit_two_hour_campaign_accepts_problem_and_verifies_result() {
+    let directory = directory();
+    let input = directory.join("input.toml");
+    let campaign = directory.join("campaign.toml");
+    let mut problem = Problem {
+        variables: vec!["x".into()],
+        constraints: vec!["x>0".into()],
+        split: vec!["x^2-2".into()],
+        limits: Limits {
+            wall_time_secs: 7200.0,
+            memory_mib: 1024,
+            ..Default::default()
+        },
+        ..Default::default()
+    };
+    problem.validate().unwrap();
+    fs::write(&input, toml::to_string(&problem).unwrap()).unwrap();
+    for invalid in [7200.1, f64::INFINITY, f64::NAN, 0.0, -1.0] {
+        problem.limits.wall_time_secs = invalid;
+        assert!(problem.validate().is_err());
+    }
+    fs::write(
+        &campaign,
+        "mode='completion'\ncases=['input.toml']\noutput_dir='results'\n\
+         campaign_time_secs=7200.0\nsolve_timeout_secs=7200.0\n\
+         verify_timeout_secs=7200.0\nmemory_mib=1024\nworkers=1\n",
+    )
+    .unwrap();
+    let mut command = Command::new(env!("CARGO_BIN_EXE_symgcad"));
+    command.arg("bench").arg(&campaign);
+    // The configured limit is tested without leaving a long-running test.
+    let process = run_bounded(
+        &mut command,
+        &Limits {
+            wall_time_secs: 15.0,
+            memory_mib: 1024,
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    assert_eq!(process.status, "completed", "{}", process.stderr);
+    assert_eq!(process.exit_code, Some(0), "{}", process.stderr);
+    let ledger: serde_json::Value =
+        serde_json::from_slice(&fs::read(directory.join("results/ledger.json")).unwrap()).unwrap();
+    assert_eq!(ledger["complete_verified"], 1);
+    assert_eq!(ledger["runs"][0]["status"], "complete_verified");
+    assert_eq!(ledger["runs"][0]["trials"][0]["verified"], true);
+    fs::remove_dir_all(directory).unwrap();
+}

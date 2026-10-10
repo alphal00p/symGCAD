@@ -3,6 +3,9 @@ use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 
+/// Explicit long-running campaigns may request two hours; defaults stay at one.
+pub(crate) const MAX_WALL_TIME_SECS: f64 = 7200.0;
+
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct Problem {
@@ -254,8 +257,8 @@ impl Problem {
         ensure!(
             self.limits.wall_time_secs.is_finite()
                 && self.limits.wall_time_secs > 0.0
-                && self.limits.wall_time_secs <= 3600.0,
-            "wall_time_secs must be in (0,3600]"
+                && self.limits.wall_time_secs <= MAX_WALL_TIME_SECS,
+            "wall_time_secs must be in (0,7200]"
         );
         ensure!(
             self.limits.memory_mib > 0 && self.limits.memory_mib <= 65536,
