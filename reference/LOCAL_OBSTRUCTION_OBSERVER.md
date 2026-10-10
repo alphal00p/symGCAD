@@ -113,4 +113,45 @@ Retained logs are `artifacts/obstruction-observer-unit-tests.log` and
 `artifacts/obstruction-observer-integration-tests.log`. The destructor can add
 one last successful-write count after the returned report was copied, so the
 final sidecar and returned snapshot need not be byte-identical. Neither grants
-completion credit. No new full-problem measurement has yet been run.
+completion credit.
+
+## A414 fixed-work observation, 10 October 2026
+
+One observer-off/on pair used the original A414 mathematical problem and the
+existing fixed order `[s,t,x8,x1,x2,x3,x4,x7]`, with homogeneous anchor `x8`,
+stable samples and deferred projection. Both arms used fresh algebra caches,
+CPU9, a 4 GiB worker limit, 90 seconds internally and a 120-second outer
+deadline. The node limit was 100,000 and the refinement limit 20 million.
+Relative to `artifacts/profile/a414-fixed-work-release-01/baseline/input.toml`,
+only the two resource limits and fresh checkpoint path changed. The observer
+environment variable was the sole algorithm-run difference between arms.
+
+The current debug CLI was copied without rebuilding to
+`artifacts/bin/symgcad-obstruction-observer-59257d0-debug`, SHA-256
+`4e672059c151d86f267659ef548b22ff7e6f302665d94dc9acc9e72791684787`.
+The source commit, complete production-source hash manifest and then-current
+corpus-parser patch are retained in
+`artifacts/profile/a414-obstruction-observer-debug-01/provenance.json`.
+The run script and exact comparison script are beside it.
+
+Both solves returned **incomplete: local projection node limit**, with exactly
+100,001 visited nodes, 24,636 refinements and 57,426 added cuts. Their entire
+saved results agree after removing only named timing fields, checkpoint paths
+and the observer report. All 212 completed operation records also agree after
+removing elapsed time. The common non-timing result SHA-256 is
+`26efc546db2a4db3964132ed668cf19f2906b8554a88061058af1f392161bbb2`.
+No complete proof or new original-problem completion resulted.
+
+The final observer report recorded **zero failed `Stop::Guard` visits**:
+zero admissions, repeats, retained keys, evictions or owner samples. It wrote
+88 snapshots successfully with no I/O failures. Thus the 24,636 refinements in
+this measured traversal prefix occurred without failed guard-return visits;
+the visitor instead accumulates obligations from successful conditional child
+proofs. This is negative evidence for the proposed obstruction-hint cache on
+this prefix. It does not characterize later, unvisited parts of the problem.
+
+Process wall times were 44.00 seconds off and 43.66 seconds on; peak RSS was
+46,140 and 49,224 KiB respectively. These are one sequential debug pair, with
+fresh algebra caches but no filesystem-page-cache reset, and support no speed
+claim. `comparison.json` retains both input/result hashes, exact comparison
+results, all diagnostic counters and the final observer-file hash.
