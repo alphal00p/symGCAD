@@ -273,3 +273,170 @@ external deadline. The worker used the frozen executable with
 Independent source/theorem review found no blocker. Further work must
 measure **both** `Disc(H)` and the complete change-of-basis contribution
 before making an algebra-cost claim.
+
+The separate independent gate audit rehashed all five inputs, the frozen
+source, binary and logs; checked the ordered ancestry binding; and compared
+the signed raw resultant and leading coefficient coefficientwise. It did
+not rerun native resultants or the `H` construction. Its artifact is
+`report.candidate.json`'s sibling `independent-audit.json`, SHA
+`1c8138252edf0cf900e15cdca23739db10c0e213f35f429d7b377220abaf16c9`.
+
+## Bounded discriminant pilot and a polynomial collision index
+
+A fresh derived capture requests the actual operation `Disc_z(H)` with the
+same full variable map. Its preparation manifest binds the exact signed
+gate candidate and `H` expression; the diagnostic key is explicitly not a
+production cache key. It neither replaces the original operand nor changes
+any solver checkpoint. The frozen research Kronecker helper
+`44428e764331e44d295eb4b8dae17201d39fe7b1a8573a240a499b1fea95ec09`
+gives a static resultant encoding of 1,576 digits of 24,205 bits:
+38,147,080 bits, below the selected 96,000,000-bit cap. This compares with
+210,179,055 bits for the original operand, but it is only an encoding bound.
+
+The raw signed `H` pilot **timed out** after 120.044060326 seconds on CPU12,
+with 314,500 KiB peak RSS and no output polynomial. The killable worker had
+4 GiB, one core and 120 seconds; its outer deadline was 135 seconds.
+Evidence is under `artifacts/research/a377-H-discriminant-01/`, including
+`preparation.json`, `layout.json` and `discriminant.process.json`. No
+discriminant identity or algebra speedup follows from this incomplete run.
+In particular, the input retained the inherited scalar content of `H`;
+content normalization has not yet been measured for this operand.
+
+There is a useful exact way to remove rational function arithmetic from
+the *definition* of the remaining collision contribution. Put
+
+```
+K(z,w) = (a(z)b(w)-b(z)a(w))/(z-w),
+E = Res_z(H,a) = delta^6*rho0,
+C = L^93 * product_{i<j} K(z_i,z_j),   H(z_i)=0.
+```
+
+Because both `a,b` have degree four, `K` is symmetric with degree at most
+three in either argument. Each of the 32 roots occurs in 31 factors, so
+the symmetric product has degree at most 93 in each root. Its expression
+in elementary symmetric functions has total coefficient degree at most
+93; consequently `L^93` clears its denominators. Thus `C` is a polynomial
+in `s`, not an assumed square root of a computed discriminant quotient.
+This definition extends polynomially through repeated roots. It supplies
+the signed change-of-basis determinant through
+
+```
+det(V) = C*L^31/E^31,
+kappa^62 * delta^372 * Disc_t(p) = C^2 * Disc_z(H).       (4)
+```
+
+The sign follows from
+`(theta(z_j)-theta(z_i))/(z_j-z_i)=K(z_i,z_j)/(a(z_i)a(z_j))`.
+Substituting `rho0=kappa*rho` into the preceding trace identity gives
+(4). Every division must still be justified by the exact identities and
+the final polynomial reconstruction. Cancellation of `L` in (4) does not
+remove any leading-coefficient or infinity guard required by the CAD.
+Nor may the square `C^2` be omitted: its zeros are precisely the additional
+collision possibility this route must preserve.
+
+An independently reviewed conservative degree bound is
+`deg_s(C) <= 93*25 + 496*5 = 4805`: `H` has parameter degree 25 and `K`
+has parameter degree at most `2+3=5`. This is not a runtime estimate.
+One possible discovery route is exact interpolation of **signed** values
+of `C`, computed from a rational 32-dimensional multiplication/Krylov
+matrix at integer parameter points with `L*E != 0`. Its final degree bound
+requires 4,806 successful images, with skipped exceptional points recorded;
+there is no authorization or demonstrated benefit for that full run.
+The appropriate next gate is a few capped exact images, including matrix
+construction, determinant, and denominator reconstruction, before choosing
+an interpolation or symbolic method.
+
+Alternatively construct the 32 columns
+`rem_H[(-b)^j*a^(31-j)]`. Their determinant is
+`Norm(a)^31*det(V)`, avoiding separate inversions of `a`; however, exact
+remainders still introduce powers of `L`. Fraction-free remainders must
+retain and reconstruct their column scalings. The cubic divided-difference
+route by nested norms can produce an inner polynomial of degree 96, so it
+is not automatically cheaper. A quotient formed from an independently
+verified `Disc(p)` and a future `Disc(H)` could diagnose the size of the
+index square, but would not discover that index independently. No route
+has yet reconstructed the complete original discriminant.
+
+## Exact coefficient content of `H`
+
+The separately bounded `--h-content` extension first replays the same
+source-bound ancestor gate, then extracts signed rational scalar content
+and computes the native exact gcd of the `z` coefficients in `Q[s]`.
+Each gcd input is bounded by degree 128, 129 terms and 4,096 coefficient
+bits; at most 33 coefficients are visited. Exact division, unchanged
+`z` degree, scalar reconstruction and the complete signed product are
+checked before any result is accepted. This is content extraction only,
+with no factorization, discriminant or root calculation.
+
+The actual result was
+
+```
+H = 688747536 * s^5 * H0,
+Disc_z(H) = 688747536^62 * s^310 * Disc_z(H0).
+```
+
+`H0` has 644 terms, degrees `(s,z)=(20,32)`, and maximum coefficient
+height 349 bits. All 32 gcd calls plus normalization and reconstruction
+took 0.009962321 seconds; the complete worker, including the original
+ancestor replay, took 1.011783458 seconds and 24,660 KiB peak RSS. The
+old and new bundles contain exactly the same signed `H`. The degree drop
+on `s=0` is explicitly retained through `s^310`; neither this factor nor
+the collision index has been omitted.
+
+Evidence under `artifacts/research/a377-H-content-01/`:
+
+* `report.json`, SHA
+  `d344f2931e3afedca9c0065e00075bdbbde82e20faa9d902e85df3e69d1dba57`.
+* Signed `report.candidate.json`, SHA
+  `d082731957cba48a1ed19f54d9bd6eb98ed3784b7a3a8dcb6b037ca978e0db3f`.
+* `H0` expression SHA
+  `0dad8c83930cb5f12504cadf644e988913c8cbabc88a24a112b8b1f4af8cb41f`.
+
+Eight helper tests pass, including nonconstant coefficient content,
+negative rational scalar, exact discriminant scaling on a small fixture,
+zero/degree loss and support rejection. The frozen helper is
+`3c3c150cca94850a9f8c26b2b3802f8f399f9f8e566f2685b40c26ef82760c6e`;
+its source, full library manifest and logs are in
+`artifacts/research/resultant-linear-content-build-01/`. The worker was
+limited to one CPU12 core, 4 GiB and 60 seconds, with a 75-second outer
+deadline. This measurement alone does not establish a discriminant or
+whole-solver improvement.
+
+The following `H0` discriminant pilot used the same frozen segmentation
+helper, 96-million-bit static cap, CPU12 and 4 GiB. Its exact layout is
+1,261 digits of 22,355 bits, or 28,189,655 bits. It also **timed out**, at
+180.034034916 seconds and 236,736 KiB peak RSS, with no candidate. Therefore
+no independent grid was prepared. The fresh capture and preparation under
+`artifacts/research/a377-H0-discriminant-01/` explicitly retain the scalar
+power and `s^310`. Its process report SHA is
+`47c86f41f5860cc5bbe48d33f4e14df8c2275c463c1babea80ae643113b30eed`.
+These differently capped incomplete runs do not measure a runtime ratio.
+
+If the collision index is also defined using `H0`, write
+`c=688747536*s^5`, `L0=LC_z(H0)`, and
+`C0=L0^93*product K(z_i,z_j)`. Then `C=c^93*C0`, so (4) becomes
+
+```
+kappa^62 * delta^372 * Disc_t(p) = c^248 * C0^2 * Disc_z(H0).
+```
+
+Retaining only `c^62` here would be wrong: it would miss the normalization
+of the collision index itself.
+
+A concrete alternative to a rational 32-by-32 image determinant is the
+following **integer** determinant. Let `W_j=a^(31-j)*(-b)^j`. Form a
+125-by-125 matrix whose rows are coefficients of `z^0,...,z^124`, whose
+first 32 columns are `W_0,...,W_31`, and whose last 93 columns are
+`H,zH,...,z^92 H`. The latter columns' high-degree block is triangular
+with diagonal `L`. Eliminating that block leaves the coefficients of
+`rem_H(W_j)`, with no row/column permutation. Therefore its determinant is
+`L^93*det(rem_H(W_j))=C`, with the sign fixed by the displayed ordering.
+Replacing `H` by `H0` gives `C0`. The corresponding degree bound becomes
+`sum_{j=0}^31(62+j)+93*20=4340` for `C0`, since the ancestors `a,b`
+remain unchanged. This construction avoids inverses and rational matrix
+entries, at the cost of a larger matrix. A small exact image comparison
+with coefficient/entry/determinant height limits is a proposed next
+diagnostic, not a measured improvement or an implemented determinant
+algorithm. A full interpolation would still require a complete exact
+degree certificate and all successful images, followed by signed product
+reconstruction. No incomplete image collection can certify the result.

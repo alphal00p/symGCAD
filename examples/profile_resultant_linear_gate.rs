@@ -33,6 +33,10 @@ struct Args {
     cpu: usize,
     #[arg(long, default_value_t = 120.0)]
     seconds: f64,
+    /// After replaying the gate, extract exact Q[s] coefficient content of H.
+    /// Retain both polynomial content and signed rational scalar; no factoring.
+    #[arg(long)]
+    h_content: bool,
     #[arg(long, hide = true)]
     worker: bool,
 }
@@ -392,6 +396,90 @@ fn payload(a: &Algebra, p: &Poly) -> Value {
     let s = a.format(p);
     json!({"expression":s,"expression_sha256":hash(s.as_bytes()),"summary":summary(a,p)})
 }
+fn content_screen(a: &Algebra, h: &Poly, z: usize, expected_degree: u32) -> Result<Value> {
+    let start = Instant::now();
+    ensure!(
+        z < h.nvars()
+            && !h.is_zero()
+            && (2..=32).contains(&expected_degree)
+            && h.degree(z) == expected_degree,
+        "content stage degree/zero gate"
+    );
+    ensure!(
+        h.nterms() <= 5000
+            && h.degree(0) <= 128
+            && (0..h.nvars()).all(|i| i == 0 || i == z || h.degree(i) == 0)
+            && h.coefficients
+                .iter()
+                .all(|c| c.numerator_ref().significant_bits() <= 4096
+                    && c.denominator_ref().significant_bits() <= 4096),
+        "content input envelope"
+    );
+    let primitive = canonical(h);
+    Budget::default().post(&primitive)?;
+    let scalar = &h.coefficients[0] / &primitive.coefficients[0];
+    ensure!(
+        !scalar.is_zero() && primitive.clone().mul_coeff(scalar.clone()) == *h,
+        "signed scalar reconstruction"
+    );
+    let scalar_seconds = start.elapsed().as_secs_f64();
+    let then = Instant::now();
+    let mut content = primitive.zero();
+    let mut gcd_calls = 0usize;
+    for k in 0..=expected_degree {
+        let c = coeff(&primitive, z, k);
+        if c.is_zero() {
+            continue;
+        }
+        ensure!(
+            c.degree(z) == 0 && c.nterms() <= 129 && bits(&c) <= 4096,
+            "coefficient gcd envelope"
+        );
+        if content.is_zero() {
+            content = canonical(&c);
+        } else {
+            content = canonical(&content.gcd(&c));
+            gcd_calls += 1;
+        }
+        ensure!(
+            !content.is_zero()
+                && content.degree(z) == 0
+                && content.degree(0) <= 128
+                && content.nterms() <= 129
+                && bits(&content) <= 4096,
+            "gcd result envelope"
+        );
+        if content.is_constant() {
+            break;
+        }
+    }
+    let gcd_seconds = then.elapsed().as_secs_f64();
+    let then = Instant::now();
+    let (quotient, remainder) = primitive.quot_rem(&content, false);
+    ensure!(
+        remainder.is_zero() && quotient.degree(z) == expected_degree,
+        "content exact quotient/degree preservation"
+    );
+    let residual = canonical(&quotient);
+    let quotient_scalar = &quotient.coefficients[0] / &residual.coefficients[0];
+    ensure!(
+        residual.clone().mul_coeff(quotient_scalar.clone()) == quotient,
+        "quotient signed scalar reconstruction"
+    );
+    let scalar = scalar * quotient_scalar;
+    let mut budget = Budget::default();
+    let reconstruction = budget.mul(&content, &residual)?.mul_coeff(scalar.clone());
+    ensure!(reconstruction == *h, "full signed content reconstruction");
+    Ok(json!({"kind":"exact_coefficient_content_not_root_omission",
+        "degree":expected_degree,"H":summary(a,h),"integer_primitive_H":payload(a,&primitive),
+        "content":payload(a,&content),"residual":payload(a,&residual),"signed_scalar":scalar.to_string(),
+        "gcd_calls":gcd_calls,"scalar_seconds":scalar_seconds,"gcd_seconds":gcd_seconds,
+        "quotient_reconstruction_seconds":then.elapsed().as_secs_f64(),"total_seconds":start.elapsed().as_secs_f64(),
+        "exact_identity":"H = signed_scalar * content * residual","identity_verified":true,
+        "discriminant_scale_power":2*expected_degree-2,
+        "discriminant_identity":"Disc(H) = signed_scalar^(2N-2) * content^(2N-2) * Disc(residual)",
+        "content_zero_loci_retained":true,"factorization_performed":false,"discriminants_computed":false}))
+}
 fn worker(args: &Args) -> Result<()> {
     let rb = read(&args.ancestry.join("report.json"))?;
     ensure!(hash(&rb) == args.ancestry_sha256, "ancestry report binding");
@@ -472,15 +560,29 @@ fn worker(args: &Args) -> Result<()> {
         "actual captured support gate"
     );
     let result = gate(&a, &p, &f, &g, 1, 2, |phase| progress(&args.output, phase))?;
+    let content = if args.h_content {
+        ensure!(
+            result.raw.is_some(),
+            "content screen requires successful gate"
+        );
+        progress(&args.output, "H signed scalar and coefficient gcd")?;
+        Some(content_screen(&a, &result.h, 2, 32)?)
+    } else {
+        None
+    };
     let bundle = json!({"schema_version":1,"kind":"research_linear_ancestor_gate","ancestry_sha256":args.ancestry_sha256,
         "capture_sha256":hash(&cb),"variables":names,"screen":result.report,
+        "content_screen":content,
         "H":payload(&a,&result.h),"delta":result.delta.as_ref().map(|p|payload(&a,p)),
         "rho0":result.rho0.as_ref().map(|p|payload(&a,p)),"raw_resultant":result.raw.as_ref().map(|p|payload(&a,p))});
     let candidate = args.output.with_extension("candidate.json");
     write_new(&candidate, &bundle)?;
     println!(
         "{}",
-        json!({"kind":"research_linear_ancestor_gate","candidate":candidate,"candidate_sha256":hash(&fs::read(&candidate)?),"screen":bundle["screen"]})
+        json!({"kind":"research_linear_ancestor_gate","candidate":candidate,"candidate_sha256":hash(&fs::read(&candidate)?),"screen":bundle["screen"],
+            "content_summary":bundle["content_screen"].as_object().map(|v| json!({"content":v["content"]["summary"],
+                "residual":v["residual"]["summary"],"signed_scalar":v["signed_scalar"],"gcd_calls":v["gcd_calls"],
+                "total_seconds":v["total_seconds"],"identity_verified":v["identity_verified"]}))})
     );
     Ok(())
 }
@@ -655,5 +757,39 @@ mod tests {
             b.mul(&a.parse("s^100").unwrap(), &a.parse("s^100").unwrap())
                 .is_err()
         );
+    }
+    #[test]
+    fn coefficient_content_retains_nonconstant_seams_and_signed_scale() {
+        let (a, _, _, _) = fixture();
+        let h = a.parse("-7/3*s*(s-4)^2*(z^2+s)").unwrap();
+        let result = content_screen(&a, &h, 2, 2).unwrap();
+        assert_eq!(result["signed_scalar"], "-7/3");
+        assert_eq!(
+            a.parse(result["content"]["expression"].as_str().unwrap())
+                .unwrap(),
+            a.parse("s*(s-4)^2").unwrap()
+        );
+        let q = a
+            .parse(result["residual"]["expression"].as_str().unwrap())
+            .unwrap();
+        assert_eq!(q, a.parse("z^2+s").unwrap());
+        let disc = |p: &Poly| {
+            let r = exact_resultant_ducos(p, &p.derivative(2), 2).unwrap();
+            let (d, rem) = r.quot_rem(&p.univariate_lcoeff(2), false);
+            assert!(rem.is_zero());
+            -d
+        };
+        let c = a.parse("-7/3*s*(s-4)^2").unwrap();
+        assert_eq!(disc(&h), &c.pow(2) * &disc(&q));
+        assert!(h.replace(0, &rational("4").unwrap()).is_zero());
+        assert!(!q.replace(0, &rational("4").unwrap()).is_zero());
+        assert_eq!(result["content_zero_loci_retained"], true);
+    }
+    #[test]
+    fn coefficient_content_rejects_degree_drop_and_zero() {
+        let (a, _, _, _) = fixture();
+        for (text, n) in [("0", 2), ("s*z+1", 2), ("z^3+s", 2), ("z^2+t", 2)] {
+            assert!(content_screen(&a, &a.parse(text).unwrap(), 2, n).is_err());
+        }
     }
 }
