@@ -101,17 +101,25 @@ fn projection_options(problem: &Problem) -> Result<OptimizedProjectionOptions> {
         binary_resultants: problem.solver.binary_resultants,
         progress_path: std::env::var_os("SYMGCAD_PROGRESS_PATH").map(std::path::PathBuf::from),
         capture_dir: std::env::var_os("SYMGCAD_CAPTURE_DIR").map(std::path::PathBuf::from),
-        domain_fingerprint: serde_json::to_string(&(
-            &problem.variables,
-            &problem.constraints,
-            &problem.parameters,
-            &problem.split,
-            problem.solver.positivity,
-            problem.solver.input_positivity,
-            problem.solver.prune_operations,
-            &problem.solver.homogeneous_block,
-            &problem.solver.homogeneous_anchor,
-        ))?,
+        domain_fingerprint: {
+            let mut fingerprint = serde_json::to_string(&(
+                &problem.variables,
+                &problem.constraints,
+                &problem.parameters,
+                &problem.split,
+                problem.solver.positivity,
+                problem.solver.input_positivity,
+                problem.solver.prune_operations,
+                &problem.solver.homogeneous_block,
+                &problem.solver.homogeneous_anchor,
+            ))?;
+            // Preserve historical default keys. Enabled experiments use their
+            // own prefix and operation cache namespace for safe ablations.
+            if problem.solver.weighted_square_positivity {
+                fingerprint.push_str("|weighted-square-positivity-v1");
+            }
+            fingerprint
+        },
         ..Default::default()
     })
 }
@@ -173,7 +181,7 @@ fn select_cached(
         .cloned()
         .collect::<std::collections::HashSet<_>>();
     let domain = crate::domain::derive_domain(&normalized.algebra, &normalized.positives, &[])?;
-    let options = crate::domain::CertificateOptions::default();
+    let options = problem.solver.certificate_options();
     Ok(choose_order_from_basis(
         &normalized.algebra,
         basis,
@@ -203,6 +211,7 @@ fn pruning_options(problem: &Problem) -> DomainPruningOptions {
     DomainPruningOptions {
         prune_input: problem.solver.input_positivity,
         prune_operations: problem.solver.prune_operations,
+        certificates: problem.solver.certificate_options(),
         ..Default::default()
     }
 }

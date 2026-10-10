@@ -74,6 +74,8 @@ graph-driven sign analysis; no-deformation numerical integration remains future 
 
 For bounded MCTS, select `ordering = "mcts"`; `search_time_secs`, `max_rollouts` and the process limits cap exploration. `checkpoint_dir` retains validated algebra work and a restart journal. Trial pruning predicts cost only: it cannot discard a mathematical region or turn a timeout into a proof. Homogeneous scale reduction is explicit and checks the original domain and order obligations.
 
+With `positivity = true`, the experimental `weighted_square_positivity = true` adds bounded, independently replayed weighted-square certificates to optimized projection, ordering, and local guards. It preserves interior zero boundaries; see the [scope and ablations](reference/WEIGHTED_SQUARE_PRODUCTION.md).
+
 A `complete_generic` result covers full-dimensional open cells outside its recorded algebraic exceptional set. Lower-dimensional sections are excluded. The verifier reconstructs exact projection/reduction identities, root bounds and exhaustive coverage; an incomplete result cannot pass. Exceptional parameter specializations require a new solve after substitution.
 
 Exact boundary evidence retains ordinary `F=0` sheets, repeated roots and same-sign interior seams. A sign-based reduction requires an exact strict-nonvanishing certificate on the relevant domain; nonnegativity or sampled signs alone are insufficient.

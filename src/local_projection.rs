@@ -41,10 +41,7 @@
 use crate::{
     Problem,
     algebra::{Algebra, Poly, canonical, factors_checked},
-    domain::{
-        CertificateOptions, Domain, DomainCertificate, certify_nonzero, derive_domain,
-        verify_certificate,
-    },
+    domain::{Domain, DomainCertificate, certify_nonzero, derive_domain, verify_certificate},
     optimized_projection::{CacheMetrics, OptimizedProjectionOptions, ProjectionCache},
     output::{Axis, Cell, RootBound, SolveResult, Statistics, Status},
     problem::{NormalizedProblem, normalize},
@@ -2121,7 +2118,7 @@ impl Builder<'_> {
             &self.normalized.algebra,
             &self.polynomials[guard],
             &context.domain,
-            &CertificateOptions::default(),
+            &self.problem.solver.certificate_options(),
         )?;
         self.operations.phases.domain_certificate_seconds += started.elapsed().as_secs_f64();
         let index = if let Some(certificate) = certificate {

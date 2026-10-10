@@ -9,6 +9,9 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 use symbolica::prelude::*;
 
+mod weighted_squares;
+pub use weighted_squares::{WeightedResidualTerm, WeightedSquareTerm};
+
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CoordinateBounds {
     pub lower: Option<String>,
@@ -112,6 +115,9 @@ pub struct CertificateOptions {
     /// Bounded binomial/affine-square attempts; zero preserves the older portfolio.
     #[serde(default)]
     pub square_residual_candidates: usize,
+    /// Opt-in bounded positive-monomial-weighted binomial squares.
+    #[serde(default, skip_serializing_if = "no_weighted_square_candidates")]
+    pub weighted_square_candidates: usize,
     /// Nonrecursive quadratic no-real-root attempts; historical proofs omit it.
     #[serde(default)]
     pub quadratic_no_real_roots_candidates: usize,
@@ -119,6 +125,10 @@ pub struct CertificateOptions {
 
 fn default_sturm_degree() -> usize {
     64
+}
+
+fn no_weighted_square_candidates(value: &usize) -> bool {
+    *value == 0
 }
 
 impl Default for CertificateOptions {
@@ -132,6 +142,7 @@ impl Default for CertificateOptions {
             work_limit: 1_000_000,
             univariate_sturm_degree: default_sturm_degree(),
             square_residual_candidates: 16,
+            weighted_square_candidates: 0,
             quadratic_no_real_roots_candidates: 4,
         }
     }
@@ -139,6 +150,10 @@ impl Default for CertificateOptions {
 
 impl CertificateOptions {
     fn validate(&self) -> Result<()> {
+        ensure!(
+            self.weighted_square_candidates <= 72,
+            "weighted square candidates are capped at 72"
+        );
         ensure!(
             self.quadratic_no_real_roots_candidates <= 16,
             "quadratic no-real-root candidates are capped at 16"
@@ -209,6 +224,13 @@ pub enum CertificateMethod {
         weight: String,
         center: String,
         residual: String,
+    },
+    /// A bounded sum of positive monomial-weighted binomial squares plus
+    /// a strictly positive residual on the original shifted domain.
+    WeightedSquaresPlusPositiveResidual {
+        upper_variables: Vec<usize>,
+        squares: Vec<WeightedSquareTerm>,
+        residual: Vec<WeightedResidualTerm>,
     },
     /// On the original box, a has the recorded sign and 4ac-b^2 is strictly
     /// positive. Hence a*z^2+b*z+c has no real roots and has the sign of a.
@@ -340,6 +362,10 @@ pub fn certify_nonzero(
         )));
     }
     if let Some((sign, method)) = square_residual(algebra, polynomial, domain, options)? {
+        return Ok(Some(make(sign, method)));
+    }
+    if let Some((sign, method)) = weighted_squares::discover(algebra, polynomial, domain, options)?
+    {
         return Ok(Some(make(sign, method)));
     }
     if let Some((sign, method)) = quadratic_no_real_roots(algebra, polynomial, domain, options)? {
@@ -515,10 +541,28 @@ pub fn verify_certificate(
         "invalid certified sign"
     );
     certificate.limits.validate()?;
-    ensure!(
-        algebra.parse(&certificate.polynomial)? == *polynomial,
-        "certificate is for a different polynomial"
-    );
+    if matches!(
+        certificate.method,
+        CertificateMethod::WeightedSquaresPlusPositiveResidual { .. }
+    ) {
+        ensure!(
+            polynomial.variables() == &algebra.variables,
+            "certificate polynomial has a different variable map"
+        );
+        ensure!(
+            weighted_squares::bounded(polynomial),
+            "weighted square polynomial budget"
+        );
+        ensure!(
+            certificate.polynomial == algebra.format(polynomial),
+            "certificate is for a different polynomial"
+        );
+    } else {
+        ensure!(
+            algebra.parse(&certificate.polynomial)? == *polynomial,
+            "certificate is for a different polynomial"
+        );
+    }
     let domain = derive_domain(algebra, original_constraints, excluded_sign_constraints)?;
     ensure!(
         certificate.domain == domain && !domain.empty,
@@ -626,6 +670,20 @@ pub fn verify_certificate(
             );
             coefficient_sign(&residual, &positive) == Some(1)
         }
+        CertificateMethod::WeightedSquaresPlusPositiveResidual {
+            upper_variables,
+            squares,
+            residual,
+        } => weighted_squares::verify(
+            algebra,
+            polynomial,
+            &domain,
+            certificate.sign,
+            upper_variables,
+            squares,
+            residual,
+            &certificate.limits,
+        )?,
         CertificateMethod::QuadraticNoRealRoots {
             variable,
             leading,

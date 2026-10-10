@@ -45,6 +45,10 @@ pub struct SolverOptions {
     pub positivity: bool,
     pub input_positivity: bool,
     pub prune_operations: bool,
+    /// Experimental weighted-square proofs in projection, ordering, and local
+    /// guards. Monotone premise discovery keeps its existing portfolio.
+    #[serde(skip_serializing_if = "is_false")]
+    pub weighted_square_positivity: bool,
     /// Engine for the exact endpoint problem after monotone peeling.
     #[serde(skip_serializing_if = "is_optimized")]
     pub monotone_base_engine: String,
@@ -145,6 +149,7 @@ impl Default for SolverOptions {
             positivity: false,
             input_positivity: false,
             prune_operations: false,
+            weighted_square_positivity: false,
             monotone_base_engine: "optimized".into(),
             monotone_negative_target: false,
             negative_linear_guide: None,
@@ -172,6 +177,20 @@ impl Default for SolverOptions {
             local_max_nodes: None,
             homogeneous_block: vec![],
             homogeneous_anchor: None,
+        }
+    }
+}
+
+impl SolverOptions {
+    /// Shared optional proof portfolio for projection, ordering, and local guards.
+    pub fn certificate_options(&self) -> crate::domain::CertificateOptions {
+        crate::domain::CertificateOptions {
+            weighted_square_candidates: if self.weighted_square_positivity {
+                72
+            } else {
+                0
+            },
+            ..Default::default()
         }
     }
 }
@@ -355,6 +374,10 @@ impl Problem {
         ensure!(
             !self.solver.prune_operations || self.solver.positivity,
             "prune_operations requires positivity"
+        );
+        ensure!(
+            !self.solver.weighted_square_positivity || self.solver.positivity,
+            "weighted_square_positivity requires positivity"
         );
         ensure!(
             self.solver
