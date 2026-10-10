@@ -239,7 +239,7 @@ Independent review rehashed the complete binding set and recounted the literal
 operand's degree, support and exact coefficient bits; its audit SHA256 is
 `ddef6f085a456efec0294dcc35f91f9ccfa75d6b349b1a6c33c1e73596f6d5b1`.
 
-The degree-1478 root inventory is incomplete. No root or CAD completion, cache
+This observer run's degree-1478 root inventory is incomplete. No root or CAD completion, cache
 injection, or production performance improvement follows. The captured height
 exceeds the Taylor helper's unchanged 20000-bit default. Comparing it requires
 a separately explicit research-policy extension with all existing encoding,
@@ -297,9 +297,9 @@ each native comparison ran afterward in the same process.
 | Recursive, leaf 256 | 0.324307 | 0.226221 | 0.770503 |
 
 The convolution variants showed no gain on this operand. Direct addition
-used about 39% less kernel time in this single comparison. This motivates a
-separate isolated native patch and complete root-inventory comparison; it
-does not establish a root-isolation or solver speedup. Earlier development
+used about 39% less kernel time in this single comparison. This motivated the
+separate isolated native patch and complete root-inventory comparison below;
+the shift comparison alone establishes no root-isolation or solver speedup. Earlier development
 and observer timings are operand-selection evidence, not controls for this
 release comparison. No native patch was applied to the active dependency.
 
@@ -332,3 +332,88 @@ Omit `--unit-add` for factorial convolution, or replace it with
 `--recursive-leaf 32`, `64`, `128` or `256`. All completed comparisons require
 exact native coefficient equality. No root inventory or original CAD
 completion is claimed by this helper.
+
+## Complete isolation follow-up in an isolated dependency copy
+
+The measured unit-addition idea was applied only in an isolated Symbolica
+checkout. For a shift of exactly `+1`, `shift_var` uses the same triangular
+recurrence with ring addition; all other shifts, including `-1`, retain the
+original fused multiply-add path. This is a generic arithmetic identity,
+with no polynomial or graph identifiers in the dispatch. Two focused Z/Q
+regressions compare the old fused recurrence with the patched method on large
+signed coefficients, zero/constant polynomials and nonunit shifts. Eleven
+isolation/comparison tests also passed. The active dependency and production
+solver were unchanged.
+
+The follow-up uses the original degree-1478 block, rather than the internal
+VAS operand used in the shift microcomparison. Its full map remains
+`[s,t,x0,x3,x5,x6,x8]`, with axis zero and literal expression SHA256
+`90fbf50d36da8ef1841eef81fbbf6973a127ac01d21650927f8250b3004a0028`.
+The exact input file SHA256 is
+`4fa804c83098bf885ff26f11a301b3645f4aa38d4c2eb901ee341e80a0d7a058`.
+
+All three fresh processes used CPU2 and a 4 GiB/1800 s worker limit. The old
+full-real control replayed the complete signed D32 product before isolating
+this block afresh; only the other three small-block inventories were
+retained. Product replay took 45.500059 s and is excluded below. The two
+patched runs used the same frozen helper, rational API and build profile,
+sequentially on that CPU. The positive-only API is additive and retains the
+native square-free and cross-factor separation steps.
+
+| Query | Distinct roots | Isolation time (s) | Worker peak RSS (KiB) |
+|---|---:|---:|---:|
+| Old full-real control, symGCAD wrapper | 294 | 1138.549871 | 821288 |
+| Isolated `+1` patch, native full-real API | 294 | 765.807915 | 832592 |
+| Same patch/helper, native strictly-positive API | 145 | 557.982649 | 431304 |
+
+The old control's timing includes symGCAD's retained-fiber and interval
+preparation around the native call; the new helper times the native API only.
+Both use development helpers with optimized native dependencies, rather than
+the release shift-microcomparison profile. Thus the full-real control shows
+a shorter measured complete-inventory path, but its exact timing difference
+cannot be attributed solely to the `+1` branch. The two patched API timings
+have matching scope: the strictly-positive query used 27.14% less isolation
+time and 48.20% less peak RSS in this one comparison. It answers a smaller
+query; these measurements are neither repeated benchmarks nor CAD timings.
+
+The fresh old control's 294 intervals exactly matched the historical inventory.
+A separate exact comparison then matched all 294 old/new roots through
+sign-changing rational intersections. The positive result similarly matched
+all 145 positive roots of the patched full inventory, including native
+multiplicities. The legacy control did not export internal root multiplicities,
+so the first comparison explicitly does not claim to verify them. Both
+comparisons completed without an additional GCD, ambiguous-endpoint correction
+or interval refinement. Their process times, 34.577002 s and 20.528488 s, are
+separate from the isolation table.
+
+The comparison helper's small tests exposed endpoint ownership assumptions:
+a native interval can place its own root at an endpoint or border a different
+root there. The helper now resolves ambiguous zero endpoints using exact open
+root counts and source ordinals before matching. Positive ordinals exclude
+zero. No native interval-refinement modification was needed or applied.
+
+The frozen patched helper SHA256 is
+`25b4872636fbdcc8e078642983ac29daa7cb1453fd0e84bc42051481b33e6e86`.
+The independently applicable unit-shift patch SHA256 is
+`245d220fb0db7a4bfd6283b04f2315af355781454778511f85812f6057d0a5e1`.
+The reports and source/build manifests are under
+`artifacts/research/positive-axis-api-01/`. Principal result hashes are:
+
+| Evidence | SHA256 |
+|---|---|
+| Fresh old full-real block | `b9e11d22bceb2b4f4bdd6208f6db5a24db8306f86e6555fc7c54fcc9fe65946a` |
+| Patched full-real inventory | `aaa79aebbdc4eb8aa4d048789373a165acaaae37189064cfdff3267904139319` |
+| Patched positive inventory | `b5889499d50d240ad35ca3a63cb78075d9fde8ec0ef6c563f99c210a19674cc0` |
+| Exact full/full comparison | `6b69261278cf8bcf443169542cd1b68b37a061f891971be454ebb96b4f31c6bc` |
+| Exact full/positive comparison | `5c30b6cdb7243af4004e0ee497d22177448078b32df887c0f59d79a18140a900` |
+
+The metadata audit separately rechecked file hashes, process completion,
+ordered source bounds, witness intersections and timing scope. Positive-mode
+metadata and comparison audit hashes are
+`c6aa12fbe0c0eea5c7377274aa7f7a925c3d7c403d7507cb5156555520e3d7f1`
+and `d71a8108d04215a37ea0c7f78feba2c1fa599bbeae9c3e634e82dff5b03567e9`.
+This establishes exact isolated root-query results for the saved block. It
+does not complete an original CAD or authorize removing negative-axis seams
+from existing proofs. Production use of the positive-only API still requires
+the domain, selector and coverage obligations in
+[the positive-axis design](POSITIVE_AXIS_ISOLATION_RESEARCH.md).
