@@ -245,3 +245,45 @@ fn source_text_decline_is_bounded_and_published_before_either_algebra_backend() 
         BaseUnivariateDecline::CoefficientStorage
     );
 }
+
+#[test]
+fn replayed_disk_blocks_still_pay_registry_cost_and_never_fall_back_on_resource_stop() {
+    let directory = Directory::new();
+    let mut problem = Problem {
+        variables: vec!["x".into(), "z".into()],
+        ..Default::default()
+    };
+    problem.solver.checkpoint_dir = Some(directory.0.clone());
+    let normalized = normalize(&problem, &problem.variables).unwrap();
+    let options = LocalOptions {
+        base_univariate_basis: true,
+        ..Default::default()
+    };
+    let source = normalized.algebra.parse("(x-1)*(x-2)").unwrap();
+    let mut cold = builder(&problem, &normalized, &options);
+    cold.guard_basis(std::slice::from_ref(&source)).unwrap();
+    assert_eq!(
+        cold.report
+            .base_univariate_basis
+            .as_ref()
+            .unwrap()
+            .proposal_cache
+            .writes,
+        1
+    );
+    drop(cold);
+    let mut warm = builder(&problem, &normalized, &options);
+    // The source alone fits; only charging its replayed blocks exceeds the
+    // current registry cap. No large live registry is allocated in this test.
+    warm.base_retained_bits =
+        base_univariate::MAX_RETAINED_BITS - base_univariate::source_cost(&source).unwrap();
+    let result = warm.guard_basis(&[source]);
+    assert!(matches!(result, Err(Stop::Resource(_))));
+    let report = warm.report.base_univariate_basis.as_ref().unwrap();
+    assert_eq!(report.proposal_cache.hits, 1);
+    assert_eq!(report.decomposition_seconds, 0.0);
+    assert_eq!(report.static_declines, 0);
+    assert_eq!(report.post_entry_resource_stops, 1);
+    assert_eq!(report.sources, 0);
+    assert_eq!(warm.operations.cache.report.cache.factor_misses, 0);
+}

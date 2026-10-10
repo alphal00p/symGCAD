@@ -478,3 +478,87 @@ fn durable_hints_decline_explicitly_and_verification_survives_deleted_checkpoint
     std::fs::remove_dir_all(&directory.0).unwrap();
     assert!(local_projection::verify_local(&result).unwrap().verified);
 }
+
+#[test]
+fn persistent_support_proposals_replay_exactly_without_root_or_proof_cache_authority() {
+    let directory = TemporaryDirectory::new();
+    let mut p = fixture();
+    p.solver.checkpoint_dir = Some(directory.0.clone());
+    let cold = solve(&p, &options());
+    let warm = solve(&p, &options());
+    let cold_json = evidence_json(&cold);
+    let warm_json = evidence_json(&warm);
+    let cold_cache = &cold_json["report"]["base_univariate_basis"]["proposal_cache"];
+    let warm_cache = &warm_json["report"]["base_univariate_basis"]["proposal_cache"];
+    assert!(cold_cache["writes"].as_u64().unwrap() > 0);
+    assert!(warm_cache["hits"].as_u64().unwrap() > 0);
+    assert_eq!(
+        warm_json["report"]["base_univariate_basis"]["decomposition_seconds"],
+        0.0
+    );
+    assert_eq!(
+        cold_json["base_univariate_basis"],
+        warm_json["base_univariate_basis"]
+    );
+    assert_eq!(cold_json["root"], warm_json["root"]);
+    assert_eq!(
+        serde_json::to_value(&cold.solution.cells).unwrap(),
+        serde_json::to_value(&warm.solution.cells).unwrap()
+    );
+    let mut negative = p.clone();
+    negative.split[0] = format!("(-7/3)*({})", negative.split[0]);
+    let negative = solve(&negative, &options());
+    assert!(
+        evidence_json(&negative)["report"]["base_univariate_basis"]["proposal_cache"]["hits"]
+            .as_u64()
+            .unwrap()
+            > 0
+    );
+    assert_eq!(basis(&negative), basis(&warm));
+    std::fs::remove_dir_all(&directory.0).unwrap();
+    assert!(local_projection::verify_local(&warm).unwrap().verified);
+    // Stored intervals/sector coverage are independently recomputed after the
+    // entire proposal directory is gone.
+    let mut forged = warm_json;
+    forged["root"]["sectors"].as_array_mut().unwrap().pop();
+    let mut altered = warm;
+    altered.evidence = serde_json::from_value(forged).unwrap();
+    assert!(local_projection::verify_local(&altered).is_err());
+}
+
+#[test]
+fn disabled_cache_and_corrupt_proposals_preserve_the_ordinary_basis_contract() {
+    let directory = TemporaryDirectory::new();
+    let mut p = fixture();
+    p.solver.checkpoint_dir = Some(directory.0.clone());
+    let disabled = solve(
+        &p,
+        &LocalOptions {
+            cache_enabled: false,
+            ..options()
+        },
+    );
+    assert!(!directory.0.join("base-support-v1").exists());
+    assert_eq!(
+        evidence_json(&disabled)["report"]["base_univariate_basis"]["proposal_cache"]["lookups"],
+        0
+    );
+    let cold = solve(&p, &options());
+    for entry in std::fs::read_dir(directory.0.join("base-support-v1")).unwrap() {
+        let path = entry.unwrap().path();
+        let mut record: Value = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+        record["binding"]["source_sha256"] = "untrusted mismatch".into();
+        std::fs::write(path, serde_json::to_vec(&record).unwrap()).unwrap();
+    }
+    let retried = solve(&p, &options());
+    assert!(
+        evidence_json(&retried)["report"]["base_univariate_basis"]["proposal_cache"]["rejected"]
+            .as_u64()
+            .unwrap()
+            > 0
+    );
+    assert_eq!(
+        evidence_json(&cold)["root"],
+        evidence_json(&retried)["root"]
+    );
+}

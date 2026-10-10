@@ -3,6 +3,8 @@
 use super::*;
 use symbolica::{domains::InternalOrdering, poly::factor::Factorize};
 
+mod proposal_cache;
+
 pub(super) const MAX_SOURCES: usize = 128;
 pub(super) const MAX_RETAINED_BITS: u64 = 512_000_000;
 const MAX_DEGREE: u32 = 4096;
@@ -59,6 +61,7 @@ pub struct BaseUnivariateReport {
     pub decomposition_seconds: f64,
     pub reconstruction_seconds: f64,
     pub root_union_seconds: f64,
+    pub proposal_cache: BaseUnivariateCacheReport,
     /// Logical coefficient costs, charged once per source record (including
     /// shared blocks again). These are not allocator or process-memory counts.
     pub retained_source_bits: u64,
@@ -76,6 +79,33 @@ pub struct BaseUnivariateReport {
     pub post_entry_failures: usize,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub last_attempt: Option<BaseUnivariateAttempt>,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(default)]
+pub struct BaseUnivariateCacheReport {
+    pub lookups: usize,
+    pub hits: usize,
+    pub misses: usize,
+    pub rejected: usize,
+    pub writes: usize,
+    pub write_failures: usize,
+    pub load_seconds: f64,
+    pub replay_seconds: f64,
+    pub save_seconds: f64,
+}
+impl BaseUnivariateCacheReport {
+    pub(super) fn accumulate(&mut self, stage: &Self) {
+        self.lookups += stage.lookups;
+        self.hits += stage.hits;
+        self.misses += stage.misses;
+        self.rejected += stage.rejected;
+        self.writes += stage.writes;
+        self.write_failures += stage.write_failures;
+        self.load_seconds += stage.load_seconds;
+        self.replay_seconds += stage.replay_seconds;
+        self.save_seconds += stage.save_seconds;
+    }
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
@@ -346,7 +376,7 @@ fn source_text_bounded(algebra: &Algebra, p: &Poly, limit: usize) -> Result<Opti
 
 /// Replays a canonical product with degree/height bounds checked before powers.
 /// The factors need not be square-free, coprime, distinct or irreducible.
-pub(super) fn check_product(
+fn product_preflight(
     source: &Poly,
     blocks: &[(Poly, u32)],
     mut budget: impl FnMut() -> Result<()>,
@@ -403,6 +433,15 @@ pub(super) fn check_product(
         (degree + 1) * bound <= 256_000_000,
         "base support product work cap",
     )?;
+    Ok(())
+}
+
+pub(super) fn check_product(
+    source: &Poly,
+    blocks: &[(Poly, u32)],
+    mut budget: impl FnMut() -> Result<()>,
+) -> Result<()> {
+    product_preflight(source, blocks, &mut budget)?;
     let mut product = source.one();
     for (p, multiplicity) in blocks {
         budget()?;
@@ -427,13 +466,71 @@ pub(super) fn discover(
 
 /// The observer receives only bounded metadata and cannot affect algebra or
 /// failure routing. In particular it does not supply a budget or a factor.
+#[cfg(test)]
 pub(super) fn discover_observed(
     source: &Poly,
+    report: &mut BaseUnivariateReport,
+    budget: impl FnMut() -> Result<()>,
+    observer: impl FnMut(&BaseUnivariateReport, Option<u64>, &'static str),
+) -> Result<Vec<(Poly, u32)>> {
+    discover_cached_observed(source, None, report, budget, observer)
+}
+
+pub(super) fn discover_cached_observed(
+    source: &Poly,
+    cache: Option<(&Algebra, &str, &std::path::Path)>,
     report: &mut BaseUnivariateReport,
     mut budget: impl FnMut() -> Result<()>,
     mut observer: impl FnMut(&BaseUnivariateReport, Option<u64>, &'static str),
 ) -> Result<Vec<(Poly, u32)>> {
     budget()?;
+    let request = cache.and_then(|(algebra, text, directory)| {
+        proposal_cache::request(directory, algebra, text)
+            .ok()
+            .flatten()
+    });
+    if let (Some(request), Some((algebra, _, _))) = (&request, cache) {
+        report.proposal_cache.lookups += 1;
+        observer(report, None, "cache_read");
+        let started = Instant::now();
+        let loaded = proposal_cache::load(request, algebra, source, &mut budget);
+        report.proposal_cache.load_seconds += started.elapsed().as_secs_f64();
+        match loaded? {
+            proposal_cache::Load::Missing => {}
+            proposal_cache::Load::Rejected => {
+                report.proposal_cache.rejected += 1;
+            }
+            proposal_cache::Load::Proposed(blocks) => {
+                let bits = blocks.iter().map(|(p, _)| cost(p).unwrap()).sum();
+                observer(report, Some(bits), "cached_reconstruction");
+                let started = Instant::now();
+                let checked = check_product(source, &blocks, &mut budget);
+                let elapsed = started.elapsed().as_secs_f64();
+                report.reconstruction_seconds += elapsed;
+                report.proposal_cache.replay_seconds += elapsed;
+                budget()?;
+                match checked {
+                    Ok(()) => {
+                        report.proposal_cache.hits += 1;
+                        observer(report, Some(bits), "cache_hit");
+                        return Ok(blocks);
+                    }
+                    Err(error)
+                        if error
+                            .downcast_ref::<crate::resultant_interpolation::Stopped>()
+                            .is_some() =>
+                    {
+                        return Err(error);
+                    }
+                    Err(_) => {
+                        report.proposal_cache.rejected += 1;
+                    }
+                }
+            }
+        }
+        report.proposal_cache.misses += 1;
+        observer(report, None, "decomposition");
+    }
     let started = Instant::now();
     let proposed = source.square_free_factorization();
     report.decomposition_seconds += started.elapsed().as_secs_f64();
@@ -478,9 +575,29 @@ pub(super) fn discover_observed(
     let block_bits = blocks
         .iter()
         .try_fold(0u64, |sum, (p, _)| sum.checked_add(cost(p)?));
+    let preparation_seconds = started.elapsed().as_secs_f64();
+    if let Some(request) = &request {
+        let save_started = Instant::now();
+        product_preflight(source, &blocks, &mut budget)?;
+        observer(report, block_bits, "proposal_save");
+        match proposal_cache::save(request, source, &blocks, &mut budget) {
+            Ok(()) => report.proposal_cache.writes += 1,
+            Err(error)
+                if error
+                    .downcast_ref::<crate::resultant_interpolation::Stopped>()
+                    .is_some() =>
+            {
+                return Err(error);
+            }
+            Err(_) => report.proposal_cache.write_failures += 1,
+        }
+        report.proposal_cache.save_seconds += save_started.elapsed().as_secs_f64();
+        budget()?;
+    }
     observer(report, block_bits, "reconstruction");
+    let replay_started = Instant::now();
     check_product(source, &blocks, &mut budget)?;
-    report.reconstruction_seconds += started.elapsed().as_secs_f64();
+    report.reconstruction_seconds += preparation_seconds + replay_started.elapsed().as_secs_f64();
     Ok(blocks)
 }
 

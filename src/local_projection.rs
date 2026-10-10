@@ -72,8 +72,8 @@ mod base_univariate_replay;
 mod base_univariate_report_tests;
 mod hint_archive;
 pub use base_univariate::{
-    BaseUnivariateAttempt, BaseUnivariateBasis, BaseUnivariateBlock, BaseUnivariateDecline,
-    BaseUnivariateDeclines, BaseUnivariateReport, BaseUnivariateSource,
+    BaseUnivariateAttempt, BaseUnivariateBasis, BaseUnivariateBlock, BaseUnivariateCacheReport,
+    BaseUnivariateDecline, BaseUnivariateDeclines, BaseUnivariateReport, BaseUnivariateSource,
 };
 mod lazy_projection;
 mod learned_cuts;
@@ -1894,8 +1894,18 @@ impl Builder<'_> {
             let previous = self.report.base_univariate_basis.as_ref().unwrap();
             let old_decomposition = previous.decomposition_seconds;
             let old_reconstruction = previous.reconstruction_seconds;
-            let blocks = base_univariate::discover_observed(
+            let old_cache = previous.proposal_cache.clone();
+            let cache_directory = self
+                .options
+                .cache_enabled
+                .then(|| self.problem.solver.checkpoint_dir.clone())
+                .flatten();
+            let normalized = self.normalized;
+            let blocks = base_univariate::discover_cached_observed(
                 &source,
+                cache_directory
+                    .as_deref()
+                    .map(|directory| (&normalized.algebra, text.as_str(), directory)),
                 &mut timings,
                 || {
                     if started.elapsed().as_secs_f64() >= limit {
@@ -1912,6 +1922,8 @@ impl Builder<'_> {
                         old_decomposition + timings.decomposition_seconds;
                     report.reconstruction_seconds =
                         old_reconstruction + timings.reconstruction_seconds;
+                    report.proposal_cache = old_cache.clone();
+                    report.proposal_cache.accumulate(&timings.proposal_cache);
                     report.phase(phase);
                     if let Some(bits) = block_bits {
                         report.proposal(bits);
@@ -1923,6 +1935,8 @@ impl Builder<'_> {
             let report = self.report.base_univariate_basis.as_mut().unwrap();
             report.decomposition_seconds = old_decomposition + timings.decomposition_seconds;
             report.reconstruction_seconds = old_reconstruction + timings.reconstruction_seconds;
+            report.proposal_cache = old_cache;
+            report.proposal_cache.accumulate(&timings.proposal_cache);
             let blocks = blocks.map_err(|error| self.observed_base_stop(base_stage_stop(error)))?;
             let retained_cost = blocks
                 .iter()
