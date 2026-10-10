@@ -1,0 +1,51 @@
+# Reproducible setup
+
+The committed `flake.lock` supplies Rust 1.96 and native GMP/MPFR dependencies on Linux. Cargo's exact crate resolution is in `Cargo.lock`. Source dependencies are fetched separately; they are never vendored into this repository.
+
+```sh
+scripts/bootstrap-deps.sh
+nix develop
+cargo build --release --locked
+```
+
+The bootstrap reads [PROVENANCE.toml](../PROVENANCE.toml), fetches the exact Symbolica Git commit over public HTTPS, and checks out a detached revision. Numerica and Graphica are tracked workspace members of that same Symbolica monorepo; their exact subtree IDs are recorded too. Cargo uses all three local paths. Repeating setup verifies the existing checkout. A different revision, unrelated modified file, or untracked source file causes an error without resetting or removing it.
+
+Symbolica has its own [license terms](../DO_NOT_PUSH_REFERENCES/symbolica/License.md). Supply `SYMBOLICA_LICENSE` through your environment when required. The Nix development shell may also read the optional ignored `.symgcad-env`; do not commit a license key. Solver workers use one symbolic thread. Parallel worker limits also remain subject to the backend license.
+
+## Optional upstream fixes
+
+Production symGCAD contains exact workarounds for the two reported defects and the measured releases used pristine upstream sources. Optional patches are available for upstream testing:
+
+```sh
+scripts/bootstrap-deps.sh --apply-patches
+scripts/bootstrap-deps.sh --check --apply-patches
+```
+
+Application is idempotent. Already-applied fixes are recognized and the complete source diff must match those fixes exactly. The bootstrap never removes applied patches; preserve a separate pristine checkout for reproducing historical measurements. [Patch descriptions and regression commands](../patches/README.md) identify the exact changes. Check the current source state without changing it with `scripts/bootstrap-deps.sh --check`.
+
+## Independent upstream GCAD comparison
+
+This additional environment is only needed for reference tests, corpus extraction and native comparisons:
+
+```sh
+scripts/bootstrap-deps.sh --reference
+nix develop .#reference -c python reference/build_reference.py
+mkdir -p artifacts/corpus
+nix develop .#reference -c python reference/adapter.py extract-core \
+  --source DO_NOT_PUSH_REFERENCES/gcad > artifacts/corpus/core-inputs.json
+nix develop -c cargo run --release --locked -- corpus --fixed --output artifacts/corpus/fixed
+nix develop -c cargo run --release --locked -- corpus --output artifacts/corpus/symbolic \
+  --core artifacts/corpus/core-inputs.json
+```
+
+The reference builder makes an isolated `.reference/gcad` copy, compiles against the locked Nix FLINT/GMP/MPFR libraries, and records source/compiler provenance. Python is confined to the independent upstream bridge and fixture extraction; solving, supervision and benchmark accounting are Rust. See [reference protocols](../reference/README.md) for paired measurements and exact completion audits. Historical large `artifacts/` trees and external literature PDFs are not shipped; reports retain hashes and the documented commands regenerate inputs and new runs.
+
+## Benchmark document
+
+The default Nix shell includes Typst and pinned Libertinus/Noto font packages. It sets `TYPST_FONT_PATHS` to their Nix store paths:
+
+```sh
+nix develop -c typst compile benchmark/benchmark.typ benchmark/benchmark.pdf
+```
+
+The document's table data and source are committed separately from generated solver proofs.

@@ -11,6 +11,20 @@ revision = "75f8350094b90254ee71dc2a391fde0d14b0204a"
 local_path = "DO_NOT_PUSH_REFERENCES/symbolica"
 version = "3.0.1"
 
+# These are tracked workspace members of the same Symbolica checkout, not
+# independently versioned repositories. The subtree IDs pin their exact sources.
+[numerica]
+source = "https://github.com/symbolica-dev/symbolica"
+revision = "75f8350094b90254ee71dc2a391fde0d14b0204a"
+local_path = "DO_NOT_PUSH_REFERENCES/symbolica/lib/numerica"
+tree = "3f040ea70e4aa5033376abe8436012bff85229fd"
+
+[graphica]
+source = "https://github.com/symbolica-dev/symbolica"
+revision = "75f8350094b90254ee71dc2a391fde0d14b0204a"
+local_path = "DO_NOT_PUSH_REFERENCES/symbolica/lib/graphica"
+tree = "751ce2fb90e40a0816ac3f9d236e59223cb6271f"
+
 [corpus]
 collected_tests = 177
 disabled_core_tests = 3
