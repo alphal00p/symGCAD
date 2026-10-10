@@ -98,3 +98,30 @@ cache. Evidence under the same campaign directory is:
 
 No research output was inserted and no original completion credit was added.
 Verified coverage remains **303 / 331**.
+
+### Static check of the pending operand
+
+A subsequent bounded inspection evaluated only the encoding layout, with no
+resultant computation. The generic exact kernel would use **32,852 digits**
+of **2,112 bits**, for a **69,383,424-bit output bound**, below its existing
+96-million-bit cap. Its total encoded input bound is **74,904,192 bits**,
+below 512 million. The derivative pair has degrees `10 × 9`, 1,134 combined
+terms, integer coefficients of at most 106/108 bits, and two surviving
+parameters, `s,t`. All other checked generic-pair admission limits fit.
+
+The frozen helper's native derivative inspection and a separately constructed,
+coefficient-checked `p,p′` capture produced identical layouts. Exact integer
+norm bounds were rechecked independently. Each inspection completed in about
+0.02 seconds on CPU11 with a 4 GiB/60-second cap. The current discriminant
+caller's one-parameter restriction is therefore the only checked static
+blocker. This motivates reviewing a bounded two-parameter applicability
+extension; it is not evidence of a computed discriminant or a speedup.
+
+The metadata audit is
+`artifacts/research/ax318-pending-discriminant-layout-01/audit.json`, SHA-256
+`7646b4d75dced2c12c457b333f58058e83d52d29f0ba33f084e310f54ac0c439`.
+The explicit derivative-pair capture has SHA-256
+`359f8e40c97be6b4a6709843d6ecb635f0d20a23ddabb27520e20e40af0c10be`
+and pair input hash
+`510e1aa47dafabf31f7c54cf0c9b7198a6d8208d8f6a4c83b192084ed7300544`.
+No production option, cache or proof was changed.
