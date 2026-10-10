@@ -115,6 +115,9 @@ struct Args {
     local_max_nodes: Option<usize>,
     #[arg(long)]
     checkpoint_dir: Option<PathBuf>,
+    /// Disable diagnostic operand snapshots; durable algebra checkpoints remain.
+    #[arg(long)]
+    no_operation_capture: bool,
     #[arg(long)]
     inspect_progress: Option<PathBuf>,
 }
@@ -167,6 +170,7 @@ struct Campaign {
     executable: PathBuf,
     output: PathBuf,
     checkpoint_dir: PathBuf,
+    operation_capture: bool,
     deadline: Instant,
     memory_mib: u64,
     verification_secs: f64,
@@ -229,7 +233,8 @@ fn worker_command(campaign: &Campaign, operation: &str, input: &Path, output: &P
         .arg("--output")
         .arg(output)
         .env("RAYON_NUM_THREADS", "1")
-        .env("OMP_NUM_THREADS", "1");
+        .env("OMP_NUM_THREADS", "1")
+        .env_remove("SYMGCAD_CAPTURE_DIR");
     command
 }
 
@@ -275,9 +280,15 @@ fn run_trial(campaign: &Campaign, trial: Trial) -> Result<Record> {
     fs::write(&input, serde_json::to_vec_pretty(&problem)?)?;
     let mut command = worker_command(campaign, "solve", &input, &output);
     command.env("SYMGCAD_PROGRESS_PATH", &progress_path);
-    let capture = directory.join("capture");
-    fs::create_dir_all(&capture)?;
-    command.env("SYMGCAD_CAPTURE_DIR", &capture);
+    command.env(
+        "SYMGCAD_LIFTING_PROGRESS_PATH",
+        directory.join("lifting-progress.json"),
+    );
+    if campaign.operation_capture {
+        let capture = directory.join("capture");
+        fs::create_dir_all(&capture)?;
+        command.env("SYMGCAD_CAPTURE_DIR", &capture);
+    }
     let process = run_bounded(&mut command, &problem.limits)?;
     let result: Option<ResultSummary> = fs::File::open(&output)
         .ok()
@@ -547,6 +558,7 @@ fn main() -> Result<()> {
         .take(args.parallel)
         .collect::<Vec<_>>();
     let campaign = Campaign {
+        operation_capture: !args.no_operation_capture,
         checkpoint_dir: args
             .checkpoint_dir
             .clone()
@@ -745,6 +757,7 @@ fn main() -> Result<()> {
         "executable_sha256":format!("{:x}",Sha256::digest(fs::read(&campaign.executable)?)),
         "cpus":cpus,"worker_memory_mib":args.memory_mib,"campaign_secs":args.campaign_secs,
         "checkpoint_dir":campaign.checkpoint_dir,
+        "operation_capture":campaign.operation_capture,
         "seed":args.seed,"permutations_per_anchor":args.permutations,"peel_tail":args.peel_tail,
         "promotion_policy":"projection depth then term count then stale-progress quartile then retained algebra bytes then refinements; heuristic only",
         "initial_trials":trials,
