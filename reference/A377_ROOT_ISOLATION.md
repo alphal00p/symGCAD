@@ -13,6 +13,13 @@ under a 300-second deadline. The earlier 60-second timeout established only
 insufficient time in that diagnostic, not factorization intractability.
 No production composite-basis exception follows from these measurements.
 
+A subsequent **matched release-build pair completed both pipelines** on
+the same raw D: square-free decomposition plus root union took 92.063 s;
+full factorization plus root union took 185.827 s. Both reconstructed the
+same signed polynomial and returned matching complete 84-root inventories.
+This single operand comparison motivates further evaluation; it is not a
+solver speedup estimate or a reason to weaken the existing factor checker.
+
 The [signed discriminant](A377_BINARY_DISCRIMINANT_DIAGNOSTIC.md) was checked
 against 2,480 independent exact resultant images. The
 [factorization diagnostic](A377_UNIVARIATE_FACTORIZATION.md) then obtained
@@ -161,9 +168,10 @@ a comparison against an unavailable full-factor root inventory.
 These are single bounded diagnostics. The development-build timeout does
 not negate the successful 177.241-second release factorization above, and
 does not establish factorization intractability. It supplies no numerical
-speedup claim. A production decision would need an optimized matched
-comparison and the independent evidence-format work described in the
-support-basis proposal. No production proof format or default changed.
+speedup claim. The optimized matched comparison below now supplies the
+next operand measurement; a production decision still requires the
+independent evidence-format work described in the support-basis proposal.
+No production proof format or default changed.
 
 Whole process wall time is the comparison metric. Named stage timers exclude
 some metadata formatting/writes; the post-parse pipeline timer and process
@@ -197,6 +205,60 @@ profile_univariate_isolation discriminant.json \
   --operand native-factor-union --output factor.json \
   --cpu 10 --seconds 300
 ```
+
+## Matched release-build follow-up
+
+The same helper source was compiled with the repository's release profile
+(`opt-level=3`, thin LTO, one codegen unit, debug information level 1).
+The warm default `target/release` library was reused: only the example was
+built, in 6 min 5 s. There were no `RUSTFLAGS` or target-directory overrides;
+the existing solver binary and Cargo manifests remained byte-identical.
+The build used CPUs 0–3, two jobs, an 8 GiB address-space cap per process,
+and a 20-minute outer limit. The source's eight focused tests had passed.
+
+Two fresh processes then ran sequentially on CPU10, each with a 4 GiB
+memory limit and a 300-second deadline. Both received the identical raw
+degree-2169 candidate and map `[s]`, without predeflation, saved factors,
+or an operation cache. Both used the same signed multiplicity-product
+check and exact full-real root-union routine.
+
+| Release pipeline | Process wall | Decomposition | Signed reconstruction | Root union | Peak RSS |
+|---|---:|---:|---:|---:|---:|
+| Native square-free decomposition | 92.063 s | 16.608 s | 2.544 s | 72.618 s | 71,724 KiB |
+| Native full factorization | 185.827 s | 172.125 s | 3.346 s | 10.104 s | 69,828 KiB |
+
+Both processes completed successfully without truncated output. Their
+84 corresponding ordered isolating intervals intersect by exact rational
+cross multiplication. Each inventory has 46 roots strictly below 4, one
+exactly at 4 and 37 strictly above 4; no interval straddles 4. The release
+square-free intervals also agree with both earlier completed square-free
+inventories. Independent read-only replay checked the hashes, limits,
+signed-reconstruction status and interval comparisons.
+
+Full factorization splits the degree-881 block into factors of degrees
+139, 250 and 492, each with multiplicity two. This explains a concrete
+tradeoff in this run: avoiding that decomposition saves work, but the
+larger square-free block costs more to isolate. The release completion
+also confirms that the development-build timeout cannot establish full
+factorization intractability. This is one sequential operand pair, not a
+repeated benchmark or whole-original completion; no numerical speedup
+claim or production policy change follows.
+
+Evidence is under `artifacts/research/a377-isolation-matched-release-01/`.
+The frozen source is the same `3e61df29…` recorded above, from commit
+`2e9b26467f4c4bc8ae20b7113ad8c6406627fcd0`. The manifest records the exact
+commands, build profile, dependency revision and input bindings.
+
+| Release artifact | SHA-256 |
+|---|---|
+| Frozen helper | `6ed81cc04132676c0c9a457a9605eefe52123c92e9b5d00ccb4ed01d86da9797` |
+| Build log | `be91493f241c0782ef250ad8d59c7b96d909f66e9bcca449168c2b255a85ca74` |
+| Build/runtime manifest | `e8846d6bdd82ed611b0a7072353af8612b56564b7d0bc1472290a2f2aa5419c7` |
+| Square-free process report | `3e34dd241d2d40a27991eee08966e2d142f3c32800d971cca70d6756e44941b8` |
+| Square-free worker report | `19c8d6feef6393e25a4abb8158351f685276bf5ba1ce3227be948dfebd1f5372` |
+| Full-factor process report | `40e8e5302bf85e0b4e1c3e3ac4cc8c006935abbace553737b548f134169687c8` |
+| Full-factor worker report | `e5046676595d1b964d3d9338e0afe26b71a343ac0556e27e73290c17d6fbac01` |
+| Exact paired comparison | `1fbc3a2a58ed472725be384b2a4de2506f1a57c97fa958ddfdaa378b282928fd` |
 
 ## Reproduction and bindings
 
