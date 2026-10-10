@@ -13,7 +13,7 @@ use std::{
     process::Command,
     time::Instant,
 };
-use symbolica::prelude::*;
+use symbolica::{domains::InternalOrdering, prelude::*};
 use symgcad::{
     algebra::{Algebra, Poly, factors_checked, rational},
     domain::{
@@ -64,6 +64,8 @@ struct KinematicMap {
     /// Explicit research-only export allowance; ordinary helper caps stay fixed.
     #[serde(default)]
     critical_resultant_term_cap: Option<usize>,
+    #[serde(default)]
+    factor_critical_resultant: bool,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -99,8 +101,17 @@ struct Evidence {
     input_sha256: String,
     polynomials: BTreeMap<String, String>,
     polynomial_statistics: BTreeMap<String, PolynomialStatistics>,
+    factorizations: BTreeMap<String, Vec<SignedFactor>>,
     certificates: Vec<NamedCertificate>,
     checked_identity_names: Vec<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct SignedFactor {
+    polynomial: String,
+    multiplicity: usize,
+    statistics: PolynomialStatistics,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -118,6 +129,76 @@ fn coefficient_bits(p: &Poly) -> u64 {
                 + c.denominator_ref().significant_bits() as u64
         })
         .sum()
+}
+
+fn statistics(p: &Poly) -> PolynomialStatistics {
+    PolynomialStatistics {
+        terms: p.nterms(),
+        degrees: (0..p.nvars()).map(|i| p.degree(i)).collect(),
+        coefficient_bits: coefficient_bits(p),
+    }
+}
+
+/// Preserve a signed scalar and every multiplicity; no factor is discarded.
+fn signed_factorization(
+    algebra: &Algebra,
+    polynomial: &Poly,
+    map: &KinematicMap,
+    budget: &mut Budget,
+) -> Result<Vec<SignedFactor>> {
+    ensure!(
+        !polynomial.is_zero(),
+        "zero resultant has no finite factor inventory"
+    );
+    map_resultant_bound(polynomial, map)?;
+    let native = polynomial.factor();
+    ensure!(native.len() <= 32, "factor inventory cap");
+    let mut unit = polynomial.one();
+    let mut factors = Vec::new();
+    for (mut factor, multiplicity) in native {
+        ensure!((1..=24).contains(&multiplicity), "factor multiplicity cap");
+        map_resultant_bound(&factor, map)?;
+        if factor.is_constant() {
+            for _ in 0..multiplicity {
+                unit = budget.multiply(&unit, &factor)?;
+            }
+            continue;
+        }
+        if factor.lcoeff().is_negative() {
+            factor = -factor;
+            if multiplicity % 2 == 1 {
+                unit = -unit;
+            }
+        }
+        factors.push((factor, multiplicity));
+    }
+    factors.sort_by(|(left, lm), (right, rm)| left.internal_cmp(right).then(lm.cmp(rm)));
+    factors.insert(0, (unit, 1));
+    let mut product = polynomial.one();
+    let mut records = Vec::new();
+    for (factor, multiplicity) in factors {
+        for _ in 0..multiplicity {
+            budget.product_work = budget
+                .product_work
+                .saturating_add(product.nterms().saturating_mul(factor.nterms()));
+            ensure!(
+                budget.product_work <= MAX_WORK,
+                "signed factor reconstruction work cap"
+            );
+            product = &product * &factor;
+            map_resultant_bound(&product, map)?;
+        }
+        records.push(SignedFactor {
+            polynomial: algebra.format(&factor),
+            multiplicity,
+            statistics: statistics(&factor),
+        });
+    }
+    ensure!(
+        &product == polynomial,
+        "signed factor product reconstruction failed"
+    );
+    Ok(records)
 }
 
 fn map_resultant_bound(p: &Poly, map: &KinematicMap) -> Result<()> {
@@ -142,16 +223,7 @@ fn polynomial_statistics(
 ) -> BTreeMap<String, PolynomialStatistics> {
     polynomials
         .iter()
-        .map(|(name, p)| {
-            (
-                name.clone(),
-                PolynomialStatistics {
-                    terms: p.nterms(),
-                    degrees: (0..p.nvars()).map(|i| p.degree(i)).collect(),
-                    coefficient_bits: coefficient_bits(p),
-                },
-            )
-        })
+        .map(|(name, p)| (name.clone(), statistics(p)))
         .collect()
 }
 
@@ -160,6 +232,7 @@ struct Extracted {
     constraints: Vec<Poly>,
     polynomials: BTreeMap<String, Poly>,
     positive: Vec<(&'static str, Poly)>,
+    factorizations: BTreeMap<String, Vec<SignedFactor>>,
 }
 
 #[derive(Default)]
@@ -517,6 +590,7 @@ fn extract(input: &Input) -> Result<Extracted> {
     }
     let mut map_polynomials = Vec::new();
     let mut map_positive = Vec::new();
+    let mut factorizations = BTreeMap::new();
     if let Some(map) = &input.kinematic_map {
         let mut parameter_axes = Vec::new();
         for name in &map.parameters {
@@ -532,6 +606,10 @@ fn extract(input: &Input) -> Result<Extracted> {
             parameter_axes.push(axis);
         }
         let (s, u) = (parameter_axes[0], parameter_axes[1]);
+        ensure!(
+            !map.factor_critical_resultant || map.critical_resultant,
+            "resultant factorization requires enabled projection"
+        );
         if let Some(cap) = map.critical_resultant_term_cap {
             ensure!(
                 map.critical_resultant && (MAX_TERMS..=16_384).contains(&cap),
@@ -617,6 +695,12 @@ fn extract(input: &Input) -> Result<Extracted> {
                         .collect::<Vec<_>>()
                 )
             })?;
+            if map.factor_critical_resultant {
+                factorizations.insert(
+                    "map_critical_resultant".into(),
+                    signed_factorization(&algebra, &projected, map, &mut budget)?,
+                );
+            }
             map_polynomials.push(("map_critical_resultant".into(), projected));
         }
         map_positive.extend([("map_H", h.clone()), ("map_T", t.clone())]);
@@ -691,6 +775,7 @@ fn extract(input: &Input) -> Result<Extracted> {
         constraints,
         polynomials,
         positive,
+        factorizations,
     })
 }
 
@@ -722,7 +807,7 @@ fn discover(input: &Input) -> Result<Evidence> {
         });
     }
     Ok(Evidence {
-        schema_version: 2,
+        schema_version: 3,
         input_sha256: semantic_hash(input)?,
         polynomials: e
             .polynomials
@@ -730,6 +815,7 @@ fn discover(input: &Input) -> Result<Evidence> {
             .map(|(name, p)| (name.clone(), e.algebra.format(p)))
             .collect(),
         polynomial_statistics: polynomial_statistics(&e.polynomials),
+        factorizations: e.factorizations,
         certificates,
         checked_identity_names: input.identities.iter().map(|i| i.name.clone()).collect(),
     })
@@ -737,7 +823,7 @@ fn discover(input: &Input) -> Result<Evidence> {
 
 fn verify(input: &Input, proof: &Evidence) -> Result<()> {
     ensure!(
-        proof.schema_version == 2 && proof.input_sha256 == semantic_hash(input)?,
+        proof.schema_version == 3 && proof.input_sha256 == semantic_hash(input)?,
         "evidence version or original input changed"
     );
     ensure!(
@@ -757,6 +843,10 @@ fn verify(input: &Input, proof: &Evidence) -> Result<()> {
     ensure!(
         proof.polynomial_statistics == polynomial_statistics(&e.polynomials),
         "polynomial statistics changed"
+    );
+    ensure!(
+        proof.factorizations == e.factorizations,
+        "signed factor inventory changed"
     );
     ensure!(
         proof.checked_identity_names
@@ -1009,6 +1099,7 @@ mod tests {
             factor_critical: true,
             critical_resultant: true,
             critical_resultant_term_cap: Some(8192),
+            factor_critical_resultant: true,
         });
         let proof = discover(&input)?;
         verify(
@@ -1017,6 +1108,13 @@ mod tests {
         )?;
         assert_eq!(proof.certificates.len(), 12);
         assert!(proof.polynomials.contains_key("map_critical_resultant"));
+        let mut wrong_multiplicity = proof.clone();
+        wrong_multiplicity
+            .factorizations
+            .get_mut("map_critical_resultant")
+            .unwrap()[0]
+            .multiplicity += 1;
+        assert!(verify(&input, &wrong_multiplicity).is_err());
         let mut altered = proof.clone();
         altered
             .polynomials
@@ -1027,6 +1125,32 @@ mod tests {
             changed.polynomial.push_str(&format!("+{expression}"));
             assert!(discover(&changed).is_err(), "{expression}");
         }
+        Ok(())
+    }
+
+    #[test]
+    fn signed_factorization_keeps_scalar_and_repeated_coordinates() -> Result<()> {
+        let algebra = Algebra::new(&["y".into(), "x".into()])?;
+        let polynomial = algebra.parse("(-3/7)*x^2*(y+1)^3*(x+y+2)")?;
+        let map = KinematicMap {
+            parameters: ["s", "u"].map(String::from),
+            factor_critical: false,
+            critical_resultant: true,
+            critical_resultant_term_cap: Some(8192),
+            factor_critical_resultant: true,
+        };
+        let factors = signed_factorization(&algebra, &polynomial, &map, &mut Budget::default())?;
+        assert_eq!(
+            algebra.parse(&factors[0].polynomial)?,
+            algebra.parse("-3/7")?
+        );
+        assert!(factors.iter().any(|factor| factor.multiplicity == 2
+            && factor.statistics.terms == 1
+            && factor.statistics.degrees == [0, 1]));
+        assert!(factors.iter().any(|factor| factor.multiplicity == 3));
+        let unit = signed_factorization(&algebra, &polynomial.one(), &map, &mut Budget::default())?;
+        assert_eq!(unit.len(), 1);
+        assert_eq!(algebra.parse(&unit[0].polynomial)?, polynomial.one());
         Ok(())
     }
 }

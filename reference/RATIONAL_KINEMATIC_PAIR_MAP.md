@@ -281,9 +281,10 @@ In order `[s,u,x1,x3,x5,x7,y,x,z]`, the exact outputs are:
 
 Shared checked factorization of `D` returned one canonical support factor,
 with the same degrees and term count. This output is not a displayed signed
-multiplicity decomposition. No factorization, positive-root classification,
-or delineability proof for `Res_x(B,D)` was attempted. Its degree eleven in
-`y` is itself a reason not to treat this projection as a completed reduction.
+multiplicity decomposition. That gate did not attempt factorization,
+positive-root classification, or a delineability proof for `Res_x(B,D)`.
+The later signed factor measurement is recorded below. Its degree eleven
+in `y` is itself a reason not to treat this projection as a completed reduction.
 
 The first resultant run reached the helper's 2,048-term export cap and
 failed explicitly in 0.122560 seconds, at 17,896 KiB peak RSS. A separate
@@ -327,3 +328,62 @@ retained inputs, binaries, reports, process records and source.
 | `identities-final-report.json` | `309fa6b5a2ce11188d8132d829132261d6e3bf88564a1d84ee177f93961ce878` |
 | `factor-final-report.json` | `df16903271cf4f94cd77634be8cdf1fba626345087aae7d198914be9f9c5b6e7` |
 | `resultant-8192-report.json` | `4f13784622f94918f431e9180418334c6bf0d66c3b758bc88fb91a7a5a880a6b` |
+
+## Signed critical-resultant factor replay
+
+A subsequent generic option, `factor_critical_resultant`, preserves the
+native factorization's signed scalar and every multiplicity. Discovery
+reconstructs the complete signed product and requires equality with the
+resultant; fresh replay regenerates the factors, statistics, identities
+and certificates. No factor is discarded. Schema 3 records this inventory.
+The existing research-only resultant allowance and external bounds remain.
+
+On the unchanged authentic conditional operand, native factorization
+returned exactly two records:
+
+| Record | Multiplicity | Terms | Coordinate degrees | Coefficient bits |
+|---|---:|---:|---|---:|
+| Scalar `-1/34012224` | 1 | 1 | all zero | 27 |
+| Integer polynomial | 1 | 5,863 | `[0,6,5,6,12,13,11,0,0]` | 195,689 |
+
+Thus this measurement exposed no repeated or coordinate factor and no
+smaller nonconstant support. Full product reconstruction does **not** prove
+that the returned nonconstant factor is irreducible. The factor remains
+an untrusted proposal for any later root classification; this result
+supplies no authority to prune parameter regions or original boundaries.
+
+The gate completed in 0.082215 seconds at 17,536 KiB peak RSS, including
+0.038065 seconds for discovery and 0.027141 seconds for separate fresh
+replay. These times cover the full gate, not an isolated factorization
+call. It ran on CPU 10 with a 2 GiB / 120-second supervisor using the
+ordinary release profile. All twelve strict certificates replayed. Every
+previous polynomial and its statistics were unchanged; the sole input
+change enabled the new generic factor option. The report is 471,544 bytes.
+
+Eight focused tests passed, including a negative rational scalar, repeated
+coordinate factors, the unit polynomial, and altered factor evidence.
+The successful standard-release test/build supervisors took 388/390
+seconds and sampled 5,680,036/5,630,260 KiB aggregate RSS under 8 GiB and
+1,200-second limits. All earlier attempts remain: two debug memory stops,
+a corrected missing trait import, an intentionally interrupted standalone
+link, and a failed command-only no-LTO shortcut against the cached release
+library. The final binary uses the unchanged ordinary release settings.
+The preceding table used an earlier debug executable, so the runtime
+figures are not a controlled performance comparison.
+
+Evidence remains outside commits in
+`artifacts/research/rational-kinematic-map-factor-01/`.
+`build-provenance.json` records the exact commands and retained attempts;
+`preparation.json` retains the original input bindings;
+`runtime-before.sha256` was checked unchanged afterward; and
+`final-manifest.json` binds all retained inputs, source, binaries and reports.
+The production executable remained unchanged.
+
+| Artifact | SHA-256 |
+|---|---|
+| Generic helper source | `b57d2251695c955d691f4bee82849d817765b4e18aa3d538842be7c2aec7f31d` |
+| Frozen `helper-final` | `181f3602dc5b66c590b4753325ebaee75d71449938a56670fa9dd48286c5b859` |
+| `authentic-input.json` | `addb7cda2d6a0c8bb28e67a73dd94bafe366643ead5e94d590d346d5373d48e9` |
+| `authentic-report.json` | `ac228fc94b5432b1df9fc8747e911db09d27eab832be1598c4780429569fb313` |
+| `final-manifest.json` | `af3c89aab09182a4676de5848d002e6ffa4e341190de953615d4bc0b1f822226` |
+| Independent evidence audit | `8499f65518cd2534ed84ae4ede1ef8892174bb47bc05e95ce5ffe610b160cf5a` |
