@@ -119,29 +119,62 @@ an earlier snapshot retained that phase name. This experiment establishes
 no completion and no general impossibility; it gives no reason yet to add a
 new production wrapper around this particular full base arrangement.
 
-## Conditional guide alternative
+## Exact positive endpoint projection
 
-The original guide still supplies `C0,D0,C4,D4>0` and nonnegative square
-comparisons `W0,W4`, although the comparisons need not be strict. This can
-reduce the required base arrangement on some sign chambers. In particular,
-on `d<0`, take the limit `y -> 0+` in
-
-\[
-(c y+d)C_0(y)-(a y+b)D_0(y)\geq0.
-\]
-
-Since `C0(0)=D4>0` and `D0(0)>=0` by continuity, this forces `D0(0)>0`
-and `b<0`. Then `b*C4-a*D4>=0` forces `a<0`. Hence `A(y)<0` for every
-`y>0`, and the only positive fibers are
+A stronger endpoint-guide calculation eliminates the entire `d<=0` region.
+For a positive coordinate `z`, write `q=A*z+B` and `g=C*z+D`, with
+`C,D>0` and `B*C-A*D>=0` over the other positive coordinates. If `B<=0`,
+then `A<=B*C/D<=0`, and consequently `q<=0` for every `z>0`. Conversely,
+`B>0` gives `q>0` for sufficiently small positive `z`. Therefore
 
 \[
-c>0,\qquad y>-d/c,\qquad 0<x<-(c y+d)/(a y+b).
+\exists z>0:q>0\quad\Longleftrightarrow\quad B>0.
 \]
 
-The `d<0,c<=0` region has no admissible positive fiber. Thus this branch
-needs only a base for the strict inequalities `d<0,c>0`, without any
-`H` root-order cut. For `d>0`, a coincident `rA=rB` can still occur in the
-`a<0,b>0,c<0` case and must be handled explicitly. Separate completed branch
-CADs also need common ancestor refinement before their union is globally
-cylindrical. This conditional route is a mathematical proposal, not a new
-implemented rule or a credited completion.
+Apply this rule first to `F,U` in `x3`, then to their **endpoints**
+`F|x3=0,U|x3=0` in `x5`. These are different from the leading-derivative
+guides in the negative-domain chain. Exact Symbolica factor reconstruction
+proves both comparisons are `10` times a square, and all `C,D` coefficients
+are strictly positive. The second square has a six-term, strictly positive
+coefficient polynomial; the first square can vanish. The reverse endpoint
+order passes the same exact checks. Thus, on all six remaining positive
+coordinates,
+
+\[
+\exists x3,x5>0:F>0\quad\Longleftrightarrow\quad d>0.
+\]
+
+This supersedes the earlier, weaker conditional proposal to solve a
+`d<0,c>0` branch: the second endpoint comparison proves that branch empty.
+No original positive point is lost by adding `d>0` to the reduced base.
+The new research inputs use four splits `a,b,c,H` and the strict constraint
+`d>0`. Both the constraints and splits are checked for exact homogeneity
+before an anchored variant is emitted.
+
+Neither `c` nor `d` has a global sign on the original positive orthant.
+For final coordinate `x3`, all coordinates one give `c=-66,d=-48`;
+changing only `x0` to `32` gives `c=1174`, while changing it to `15` gives
+`d=400`. The reverse orientation also has checked witnesses of both signs.
+These are exact rational counterexamples, not failed positivity searches.
+
+The `H=0` seam is still essential. At `x0=15` and all other coordinates
+one, for last coordinate `x3` the exact coefficients are
+
+\[
+(a,b,c,d)=(-110,200,-220,400),\qquad
+r_A=r_B=20/11,\qquad F=270>0.
+\]
+
+Hence a middle fiber can pinch inside `d>0`, even above an admissible
+original positive point. Reversing the massless order has the same
+counterexample with `x6=15` instead. The middle interval cannot be exported
+as a nonempty cylindrical cell over a parent containing that seam.
+
+Evidence is retained at
+`artifacts/research/bilinear-premises-03/gluza33/report.json` (0.173 seconds
+for exact preparation). The immutable helper SHA-256 is
+`b4e5463df522fa351b117a6090b5a72b52cf219068cc7a1cd174158c01d835e6`.
+Its six tests include the original endpoint identities, the admissible
+pinch, wrong guide orientation, exact source comparison and degenerate
+root-order safeguards. This is a proved reduction and a research input,
+not yet an original decomposition or a new production rule.

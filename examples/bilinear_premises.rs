@@ -27,6 +27,9 @@ struct Args {
     /// Factor the exact root-order polynomial and export research base inputs.
     #[arg(long)]
     prepare_generic_base: bool,
+    /// Prove both positive endpoint projections and restrict the base to d>0.
+    #[arg(long, requires = "prepare_generic_base")]
+    positive_endpoint_domain: bool,
     #[arg(long, hide = true)]
     worker: bool,
 }
@@ -139,7 +142,18 @@ fn prepare_generic_base(
         legal.solver.order.extend([y.clone(), x.clone()]);
         legal.validate()?;
         base.constraints = base.variables.iter().map(|v| format!("{v}>0")).collect();
+        if row.get("positive_endpoint_projection").is_some() {
+            base.constraints.push(format!(
+                "({})>0",
+                row["coefficients"]["d"]
+                    .as_str()
+                    .context("endpoint missing")?
+            ));
+        }
         for label in ["a", "b", "c", "d"] {
+            if label == "d" && row.get("positive_endpoint_projection").is_some() {
+                continue;
+            }
             let expression = row["coefficients"][label]
                 .as_str()
                 .context("coefficient missing")?;
@@ -186,8 +200,21 @@ fn prepare_generic_base(
                 )
             })
             .collect();
+        let constraint_degrees: Vec<_> = normalized
+            .positives
+            .iter()
+            .map(|p| {
+                symgcad::domain::homogeneous_degree(
+                    p,
+                    &(0..base.variables.len()).collect::<Vec<_>>(),
+                )
+            })
+            .collect();
         let mut anchor = None;
-        if !base.variables.is_empty() && degrees.iter().all(Option::is_some) {
+        if !base.variables.is_empty()
+            && degrees.iter().all(Option::is_some)
+            && constraint_degrees.iter().all(Option::is_some)
+        {
             let mut anchored = base.clone();
             anchored.solver.homogeneous_block = base.variables.clone();
             anchored.solver.homogeneous_anchor = base.variables.last().cloned();
@@ -198,7 +225,126 @@ fn prepare_generic_base(
             )?;
             anchor = anchored.solver.homogeneous_anchor;
         }
-        row["generic_base"] = json!({"variables":base.variables,"splits":base.split,"split_homogeneous_degrees":degrees,"delta_zero_factors_remain_explicit_splits":true,"unanchored_input":format!("generic-base-{index}.toml"),"anchored_input":anchor.as_ref().map(|_|format!("generic-base-{index}-anchor.toml")),"anchor":anchor,"original_completion":false});
+        row["generic_base"] = json!({"variables":base.variables,"constraints":base.constraints,"splits":base.split,"split_homogeneous_degrees":degrees,"constraint_homogeneous_degrees":constraint_degrees,"delta_zero_factors_remain_explicit_splits":true,"unanchored_input":format!("generic-base-{index}.toml"),"anchored_input":anchor.as_ref().map(|_|format!("generic-base-{index}-anchor.toml")),"anchor":anchor,"original_completion":false});
+    }
+    Ok(())
+}
+
+fn positive_endpoint_domain(problem: &Problem, screen: &mut Value) -> Result<()> {
+    let n = normalize(problem, &problem.variables)?;
+    let a = &n.algebra;
+    let f = a.parse(screen["target"].as_str().context("target missing")?)?;
+    let u = a.parse(screen["guide"].as_str().context("guide missing")?)?;
+    let positive = |p: &Poly| !p.is_zero() && p.coefficients.iter().all(|c| c > &Rational::zero());
+    for row in screen["candidate_pairs"]
+        .as_array_mut()
+        .context("candidate list missing")?
+    {
+        let names = [
+            row["last"]
+                .as_str()
+                .context("last axis missing")?
+                .to_owned(),
+            row["preceding"]
+                .as_str()
+                .context("preceding axis missing")?
+                .to_owned(),
+        ];
+        let mut q = f.clone();
+        let mut g = u.clone();
+        let mut steps = Vec::new();
+        for name in &names {
+            let axis = a
+                .names
+                .iter()
+                .position(|v| v == name)
+                .context("unknown axis")?;
+            ensure!(
+                q.degree(axis) == 1 && g.degree(axis) == 1,
+                "endpoint step not affine"
+            );
+            let leading = q.derivative(axis);
+            let endpoint = q.replace(axis, &Rational::zero());
+            let c = g.derivative(axis);
+            let d = g.replace(axis, &Rational::zero());
+            ensure!(
+                positive(&c) && positive(&d),
+                "endpoint guide does not have strict positive coefficients"
+            );
+            let w = &endpoint * &c - &leading * &d;
+            let factors = w.factor();
+            let rebuilt = factors
+                .iter()
+                .fold(w.one(), |acc, (p, m)| &acc * &p.pow(*m));
+            ensure!(rebuilt == w, "endpoint comparison factor identity failed");
+            ensure!(
+                !w.is_zero() && factors.iter().all(|(p, m)| m % 2 == 0 || positive(p)),
+                "nonnegative endpoint comparison not proved"
+            );
+            steps.push(json!({"axis":name,"target":a.format(&q),"guide":a.format(&g),"leading":a.format(&leading),"endpoint":a.format(&endpoint),"C":a.format(&c),"D":a.format(&d),"C_D_strict_positive_coefficients":true,"comparison":a.format(&w),"comparison_factors":factors.iter().map(|(p,m)|json!({"polynomial":a.format(p),"multiplicity":m})).collect::<Vec<_>>(),"factor_identity_verified":true,"comparison_nonnegative":true}));
+            q = endpoint;
+            g = d;
+        }
+        ensure!(
+            q == a.parse(row["coefficients"]["d"].as_str().context("d missing")?)?,
+            "endpoint chain differs from bilinear d"
+        );
+        let coefficients: [Poly; 4] = ["a", "b", "c", "d"].map(|label| {
+            a.parse(row["coefficients"][label].as_str().unwrap())
+                .unwrap()
+        });
+        let mut signs = vec![
+            json!({"label":"c","positive":null,"negative":null}),
+            json!({"label":"d","positive":null,"negative":null}),
+        ];
+        let delta = a.parse(row["delta_bc_minus_ad"].as_str().context("delta missing")?)?;
+        let mut pinch = None;
+        for axis in 0..a.names.len() {
+            for value in [
+                Rational::one(),
+                Rational::from(2),
+                Rational::from(4),
+                Rational::from(8),
+                Rational::from(15),
+                Rational::from(16),
+                Rational::from(32),
+                Rational::from(64),
+                Rational::one() / Rational::from(16),
+            ] {
+                let mut sample = vec![Rational::one(); a.names.len()];
+                sample[axis] = value;
+                for (index, p) in [(&coefficients[2]), (&coefficients[3])]
+                    .into_iter()
+                    .enumerate()
+                {
+                    let value = evaluate(p, &sample);
+                    let side = if value > Rational::zero() {
+                        "positive"
+                    } else {
+                        "negative"
+                    };
+                    if !value.is_zero() && signs[index][side].is_null() {
+                        signs[index][side] = json!({"sample":sample.iter().map(ToString::to_string).collect::<Vec<_>>(),"value":value.to_string(),"all_coordinates_positive":sample.iter().all(|v|v>&Rational::zero())});
+                    }
+                }
+                let values: Vec<_> = coefficients.iter().map(|p| evaluate(p, &sample)).collect();
+                if pinch.is_none()
+                    && evaluate(&delta, &sample).is_zero()
+                    && values[0] < Rational::zero()
+                    && values[1] > Rational::zero()
+                    && values[2] < Rational::zero()
+                    && values[3] > Rational::zero()
+                {
+                    let ra = -values[1].clone() / &values[0];
+                    let rb = -values[3].clone() / &values[2];
+                    ensure!(ra == rb && ra > Rational::zero());
+                    pinch = Some(
+                        json!({"sample":sample.iter().map(ToString::to_string).collect::<Vec<_>>(),"coefficients_a_b_c_d":values.iter().map(ToString::to_string).collect::<Vec<_>>(),"delta":"0","rA":ra.to_string(),"rB":rb.to_string(),"original_F":evaluate(&f,&sample).to_string(),"all_coordinates_positive":true}),
+                    );
+                }
+            }
+        }
+        row["positive_endpoint_projection"] = json!({"steps":steps,"endpoint":a.format(&q),"projection_equivalence":"there exist positive x,y with F>0 iff d>0","proof":"C,D>0 and BC-AD>=0 imply B<=0 => A<=0 => Az+B<=0. Conversely B>0 gives a positive sufficiently small z. Apply twice with endpoint guides.","global_coefficient_sign_witnesses":signs,"pinched_middle_interval":pinch});
     }
     Ok(())
 }
@@ -336,6 +482,9 @@ fn main() -> Result<()> {
         if args.prepare_generic_base {
             command.arg("--prepare-generic-base");
         }
+        if args.positive_endpoint_domain {
+            command.arg("--positive-endpoint-domain");
+        }
         let process = symgcad::benchmark::run_bounded(
             &mut command,
             &Limits {
@@ -375,6 +524,9 @@ fn main() -> Result<()> {
         args.output.join("premises.json"),
         serde_json::to_vec_pretty(&result)?,
     )?;
+    if args.positive_endpoint_domain {
+        positive_endpoint_domain(&problem, &mut result)?;
+    }
     if args.prepare_generic_base {
         prepare_generic_base(&problem, &mut result, &args.output)?;
     }
@@ -484,6 +636,62 @@ mod tests {
                     .iter()
                     .any(|v| v["multiplicity"] == 2)
             );
+        }
+        Ok(())
+    }
+    #[test]
+    fn endpoint_guides_prove_projection_and_reject_wrong_orientation() -> Result<()> {
+        let mut p = Problem::default();
+        p.variables = vec!["y".into(), "x".into()];
+        p.constraints = vec!["2-x-y-x*y>0".into(), "x>0".into(), "y>0".into()];
+        let mut report = inspect(&p, "x*y+x+y+1")?;
+        positive_endpoint_domain(&p, &mut report)?;
+        assert!(
+            report["candidate_pairs"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .all(|row| row["positive_endpoint_projection"]["steps"]
+                    .as_array()
+                    .unwrap()
+                    .len()
+                    == 2)
+        );
+        p.constraints[0] = "x*y+x+y-1>0".into();
+        let mut wrong = inspect(&p, "x*y+x+y+1")?;
+        assert!(positive_endpoint_domain(&p, &mut wrong).is_err());
+        Ok(())
+    }
+    #[test]
+    fn original_gluza33_has_positive_endpoint_projection_and_real_pinched_fiber() -> Result<()> {
+        let mut p = Problem::from_toml(include_str!("../tests/fixtures/gluza33_negative.toml"))?;
+        ensure!(p.constraints[0].contains("< 0"));
+        p.constraints[0] = p.constraints[0].replacen("< 0", "> 0", 1);
+        let guide: Value =
+            serde_json::from_str(include_str!("../reference/gluza33_rayleigh_guide.json"))?;
+        let mut report = inspect(&p, guide["guide"].as_str().unwrap())?;
+        positive_endpoint_domain(&p, &mut report)?;
+        let row = report["candidate_pairs"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|row| row["last"] == "x3")
+            .unwrap();
+        let pinch = &row["positive_endpoint_projection"]["pinched_middle_interval"];
+        assert_eq!(
+            pinch["coefficients_a_b_c_d"],
+            json!(["-110", "200", "-220", "400"])
+        );
+        assert_eq!(pinch["rA"], "20/11");
+        assert_eq!(pinch["rB"], "20/11");
+        assert_eq!(pinch["original_F"], "270");
+        for row in report["candidate_pairs"].as_array().unwrap() {
+            for sign in row["positive_endpoint_projection"]["global_coefficient_sign_witnesses"]
+                .as_array()
+                .unwrap()
+            {
+                assert!(!sign["positive"].is_null() && !sign["negative"].is_null());
+            }
         }
         Ok(())
     }
