@@ -2,6 +2,8 @@
 
 This is research evidence, not a production projection rule or an original-problem completion. The full original A446 and Ax446 problems retain `s>4`, unrestricted original `t`, and their mandatory parameter-first variable groups. Definitions of `A,B,R,u` are in [the quadratic ladder](A446_KINEMATIC_QUADRATIC_LADDER.md) and [the corrected resultant geometry](A446_COMPLEMENT_ROOT_GEOMETRY.md). The independent [projection audit](A446_FILTERED_PROJECTION_AUDIT.md) lists the remaining proof and selector obligations.
 
+**The final exact cubic construction below disproves universal Jacobian nonvanishing on positive common roots, even with `s>4,u>4,C0<0`.** Earlier finite screens and unsuccessful certificate searches are retained as research history, not evidence for that disproved statement. No production projection rule used it.
+
 ## Exact critical-point elimination
 
 Write `p=x1,q=x3,r=x5,w=x7,x=x2,y=x4`, `m=5/18`, and
@@ -104,3 +106,51 @@ The next diagnostic found an exact obstruction to this particular portfolio: **a
 Here `V<0` and `Q*V-4*x*y*T<0`. Therefore this point does **not** refute the desired conditional Jacobian inequality on `s>4`. It does prove that none of these fixed residuals can have a globally nonnegative square/coefficient decomposition, even after multiplication by a strictly positive polynomial. A useful next certificate must change the conditional multipliers or use the kinematic inequality more directly.
 
 The second report retains all exact rational values and input-identity checks: `artifacts/research/a446-jacobian-sos-01/report-v2.json`, SHA-256 `93c84c409018654b12b132f24dfded766e38a0d1bf98b7411ceb53fbbc3480af`; process record SHA-256 `35fb14836a9b5d2373eb799517cc47fab1c0027c310bb43d9dc2f3b410d715a2`. Its Rust-supervised run completed in 10.63 seconds with about 24 MiB RSS. The frozen helper SHA-256 is `4461862b7dbbb4042619469a6d25f1d6e6dd8f3037beab6a1e3274fd3d4d1293`; four exact tests pass. No production rule or original-problem completion follows from these experiments.
+
+## A positive critical point: refutation of universal nonvanishing
+
+The research helper `examples/a446_jacobian_cubic.rs` removes the exactly reconstructed positive factor `h^4*b^2` from `-Jnum`, leaving a cubic `C(h)` with 1104 terms and 33 negative coefficients. Write
+
+```text
+b=r+w+t+v+z, D=(r+v)(w+z),
+A=v*(b^2-m*(w+z)*(r+t+v+z))-m*r*z*(w+z),
+B=v*(b^2-m*w*(r+t+v+z))-m*r*w*z,
+A4=z*A-4*t*(t+v+z)*D,
+B4=z*B-4*t*(t+v+z)*r*w.
+```
+
+Symbolica checks `V=h*(h*A+B)`, `G=Q*V-4*x*y*T=h^2*b*(h*A4+B4)`, and the strictly positive coefficient expansion of `B4-A4`. Thus the region `s>4` is either all `h>0` when `A4>=0`, or the bounded interval `0<h<B4/(-A4)` when `A4<0<B4`. The helper also reconstructs the full denominator-cleared Möbius substitution for the bounded interval.
+
+The unbounded case supplies a counterexample to the proposed theorem. Fix
+
+```text
+(r,w,t,v,z)=(1/100,10,1/100,3,100).
+A4=648739417501/225000 > 0,
+B4=842833784291/225000 > 0.
+```
+
+After multiplying `C(h)` by the positive constant `253125000000`, its exact cubic is
+
+```text
+246482922013046330125393
++412544870199872500653992284*h
++317543526023029208134644139*h^2
+-1200636308364242347752*h^3.
+```
+
+Its coefficients have one sign variation, and exact Sturm computation finds exactly one positive root in `(1,524288)`. The direct, independently differentiated original `A_x*B_y-A_y*B_x` is negative at the first endpoint and positive at the second. Both original equations `A=B=0` are checked at the reconstructed exact rational kinematics; three further rational `h` values check the cubic against the original derivatives.
+
+The whole connecting family stays strictly inside the proposed complementary domain. The positive denominator is `ud=h*(r+v)*(w+z)+r*w`. Exact numerators are
+
+```text
+(u-4)*ud = 70239271/5625 + (128799167/11250)*h,
+
+(-C0)*ud = [1114846327 + 321733012951*h
+            +3404446760921*h^2 + 582494297*h^3]/900000.
+```
+
+Every coefficient is positive, and independent Sturm checks also confirm no guard roots in the bracket. Together with positive `A4,B4`, this proves `s>4,u>4,C0<0` throughout. Continuity of the directly checked original Jacobian therefore proves an interior positive-common critical point. The full original parameter domains are respected: original `t=5/9-s-u` for A446 and `t=u` for Ax446 are unrestricted. No variable-group obligation is changed by this existential witness.
+
+This is a **projection critical point**, not a proved physical Landau singularity, and a nondegenerate fold has not yet been established. It rules out simply omitting all relevant critical cuts using universal Jacobian nonvanishing. Further work must stratify the critical locus or use a different decomposition; repeating global sign-certificate searches for this false statement is inappropriate.
+
+Final evidence: `artifacts/research/a446-jacobian-cubic-01/counterexample-v4.json`, SHA-256 `f885c73d46bf5aa7eec596afd24946daf35c781cb03930c29b554ad80542999b`; process record `115101dff31e797b1317af16a0a515017d007691b3c378ca69c7c0b2050009aa`. Frozen helper SHA-256 `5d3d65d75a1f6b30088a49853d756c446f8cb992b54e31610f034f6aaed34d65`. Four exact helper tests pass, including the strict-domain critical-point regression. The final Rust-supervised run completed in 6.45 seconds under the 120-second/8-GiB cap, with about 30 MiB RSS. The earlier bounded Möbius threshold factorization also completed, retaining signed scalar and multiplicities; its mixed factors do not supply a sign certificate.
