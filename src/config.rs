@@ -53,6 +53,10 @@ pub struct SolverOptions {
     /// Use a positive-root ordinal for Descartes-one local cuts.
     #[serde(skip_serializing_if = "is_true")]
     pub local_descartes_one: bool,
+    /// Certify several positive roots using saturated Descartes bounds and
+    /// strict rational-separator evaluation guards.
+    #[serde(skip_serializing_if = "is_false")]
+    pub local_descartes_witnesses: bool,
     /// Isolate the first-axis root union without constant projection algebra.
     #[serde(skip_serializing_if = "is_true")]
     pub local_base_point_projection: bool,
@@ -93,6 +97,7 @@ impl Default for SolverOptions {
             local_reuse_learned_cuts: true,
             local_pair_cancellations: 2,
             local_descartes_one: true,
+            local_descartes_witnesses: false,
             local_base_point_projection: true,
             local_adjacent_pairs: false,
             local_subtree_cache_mib: 32,

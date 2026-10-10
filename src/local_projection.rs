@@ -62,6 +62,7 @@ use std::{
 };
 use symbolica::prelude::*;
 
+mod descartes;
 mod learned_cuts;
 mod subtree_cache;
 
@@ -106,6 +107,10 @@ pub struct LocalOptions {
     /// Historical evidence retains its full discriminant obligations.
     #[serde(default)]
     pub descartes_one: bool,
+    /// Saturate a bounded Descartes upper bound with exact separator signs.
+    /// Disabled by default; historical evidence retains discriminants.
+    #[serde(default)]
+    pub descartes_witnesses: bool,
     /// At level zero isolate the complete univariate root union directly.
     /// Missing historical evidence retains ordinary local projection replay.
     #[serde(default)]
@@ -138,6 +143,7 @@ impl Default for LocalOptions {
             reuse_completed_subtrees: true,
             reuse_learned_cuts: true,
             descartes_one: true,
+            descartes_witnesses: false,
             base_point_projection: true,
             adjacent_pairs: false,
             subtree_cache_mib: 32,
@@ -188,6 +194,10 @@ pub struct LocalReport {
     pub quadratic_discriminants_omitted: usize,
     pub descartes_discriminants_omitted: usize,
     pub descartes_one_discriminants_omitted: usize,
+    pub descartes_witness_discriminants_omitted: usize,
+    pub descartes_witness_templates: usize,
+    pub descartes_witness_template_reuses: usize,
+    pub descartes_witness_budget_fallbacks: usize,
     pub pair_separation_candidates: usize,
     pub pair_resultants_omitted: usize,
     pub second_cancellation_pairs_omitted: usize,
@@ -324,6 +334,15 @@ pub enum PositiveRayCase {
     /// Its exported index counts positive roots, not all real roots.
     DescartesOne {
         coefficient_signs: Vec<i8>,
+    },
+    /// K alternating intervals saturate the Descartes multiplicity bound K.
+    /// Thus exactly K simple positive branches persist, regardless of negative
+    /// collisions. All coefficient and separator signs are ancestor guards.
+    DescartesWitnesses {
+        coefficient_signs: Vec<i8>,
+        separators: Vec<String>,
+        /// Includes p(0), every p(separator), and the leading coefficient.
+        evaluation_signs: Vec<i8>,
     },
     /// Higher degrees retain ordinary lc/discriminant guards plus p(0).
     FullReal,
@@ -835,30 +854,46 @@ fn local_bounds(
     roots: &[FiberRoot],
     ray: Option<&PositiveRayProjection>,
 ) -> Result<Vec<RootBound>> {
-    let positive_ids: BTreeSet<_> = ray
+    let positive_ids: HashMap<_, _> = ray
         .into_iter()
         .flat_map(|r| &r.rules)
-        .filter_map(|r| {
-            matches!(r.case, PositiveRayCase::DescartesOne { .. }).then_some(r.polynomial)
+        .filter_map(|r| match &r.case {
+            PositiveRayCase::DescartesOne { .. } => Some((r.polynomial, 1)),
+            PositiveRayCase::DescartesWitnesses { separators, .. } => {
+                Some((r.polynomial, separators.len() + 1))
+            }
+            _ => None,
         })
         .collect();
-    for id in &positive_ids {
-        ensure!(
-            roots.iter().filter(|r| r.polynomial == *id).count() == 1,
-            "Descartes-one cut does not have exactly one positive root"
-        );
-    }
     roots
         .iter()
         .map(|root| {
             let mut output = bound(root);
-            if positive_ids.contains(&root.polynomial) {
+            if let Some(&count) = positive_ids.get(&root.polynomial) {
                 ensure!(
                     root.interval.0 > Rational::zero(),
                     "positive root index requires a strictly positive root"
                 );
                 output.index_domain = crate::output::RootIndexDomain::Positive;
-                output.index = 0;
+                // Other polynomials can own coincident union roots. Counting
+                // only this polynomial's surviving representatives would then
+                // give the wrong ordinal for its later roots.
+                output.index = if count == 1 {
+                    0
+                } else {
+                    crate::roots::roots_in_open_interval(
+                        &root.fiber,
+                        &Rational::zero(),
+                        &root.interval.0,
+                    ) + usize::from(
+                        root.interval.0 != root.interval.1
+                            && root.fiber.evaluate(&root.interval.0).is_zero(),
+                    )
+                };
+                ensure!(
+                    output.index < count,
+                    "positive ordinal exceeds Descartes witness"
+                );
             }
             Ok(output)
         })
@@ -881,6 +916,9 @@ fn positive_projection_raw(
     pair_separation: bool,
     pair_cancellations: usize,
     descartes_one: bool,
+    descartes_witnesses: bool,
+    mut witness_stock: Option<&mut descartes::WitnessStock>,
+    replay: Option<&PositiveRayProjection>,
     adjacent_pairs: bool,
     selection: &mut Option<AdjacentPairProjection>,
     pair_seconds: &mut f64,
@@ -979,6 +1017,11 @@ fn positive_projection_raw(
                 }
             }
             _ => {
+                let supplied = replay
+                    .and_then(|ray| ray.rules.iter().find(|rule| rule.polynomial == id))
+                    .map(|rule| &rule.case);
+                let force_full =
+                    descartes_witnesses && matches!(supplied, Some(PositiveRayCase::FullReal));
                 let coefficients = p.to_univariate_polynomial_list(variable);
                 let values = coefficients
                     .iter()
@@ -988,7 +1031,7 @@ fn positive_projection_raw(
                     raw.extend(coefficients.into_iter().map(|(coefficient, _)| coefficient));
                     break;
                 }
-                if values.iter().all(|v| sign(v) == leading_sign) {
+                if !force_full && values.iter().all(|v| sign(v) == leading_sign) {
                     raw.extend(coefficients.into_iter().map(|(coefficient, _)| coefficient));
                     rules.push(PositiveRayRule {
                         polynomial: id,
@@ -999,7 +1042,10 @@ fn positive_projection_raw(
                     continue;
                 }
                 let signs: Vec<_> = values.iter().map(sign).collect();
-                if descartes_one && signs.windows(2).filter(|w| w[0] != w[1]).count() == 1 {
+                if !force_full
+                    && descartes_one
+                    && signs.windows(2).filter(|w| w[0] != w[1]).count() == 1
+                {
                     raw.extend(coefficients.into_iter().map(|(coefficient, _)| coefficient));
                     bearing.push(id);
                     rules.push(PositiveRayRule {
@@ -1009,6 +1055,37 @@ fn positive_projection_raw(
                         },
                     });
                     continue;
+                }
+                if descartes_witnesses {
+                    let started = Instant::now();
+                    let attempt = if replay.is_some() {
+                        if let Some(case @ PositiveRayCase::DescartesWitnesses { .. }) = supplied {
+                            Some((
+                                case.clone(),
+                                descartes::verify_witness(p, variable, prefix, &signs, case)?,
+                            ))
+                        } else {
+                            // A stronger full-real certificate is allowed even
+                            // when a new separator could have been discovered.
+                            None
+                        }
+                    } else {
+                        witness_stock
+                            .as_deref_mut()
+                            .ok_or_else(|| anyhow!("missing finite Descartes witness stock"))?
+                            .attempt(id, algebra, p, variable, prefix, &signs)?
+                    };
+                    root_seconds += started.elapsed().as_secs_f64();
+                    if let Some((case, guards)) = attempt {
+                        raw.extend(coefficients.into_iter().map(|(coefficient, _)| coefficient));
+                        raw.extend(guards);
+                        bearing.push(id);
+                        rules.push(PositiveRayRule {
+                            polynomial: id,
+                            case,
+                        });
+                        continue;
+                    }
                 }
                 let d = operations.discriminant(p, variable)?;
                 ensure!(!d.is_zero(), "local cut is not square-free");
@@ -1304,6 +1381,7 @@ struct Builder<'a> {
     completed_subtrees: subtree_cache::CompletedSubtrees,
     /// Incomplete discoveries are only hints; every seeded stack is rebuilt.
     learned_cuts: learned_cuts::LearnedCuts,
+    descartes_stock: descartes::WitnessStock,
 }
 #[derive(Serialize, Deserialize)]
 struct Built {
@@ -1330,6 +1408,7 @@ impl Builder<'_> {
         report.elapsed_seconds = self.started.elapsed().as_secs_f64();
         self.completed_subtrees.report(&mut report);
         self.learned_cuts.report(&mut report);
+        self.descartes_stock.report(&mut report);
         report
     }
     fn publish(&mut self, force: bool) -> Result<()> {
@@ -1542,6 +1621,9 @@ impl Builder<'_> {
                     self.options.positive_pair_separation,
                     self.options.positive_pair_cancellations,
                     self.options.descartes_one,
+                    self.options.descartes_witnesses,
+                    Some(&mut self.descartes_stock),
+                    None,
                     self.options.adjacent_pairs,
                     &mut adjacent_pairs,
                     &mut pair_seconds,
@@ -1588,6 +1670,11 @@ impl Builder<'_> {
                     .rules
                     .iter()
                     .filter(|r| matches!(r.case, PositiveRayCase::DescartesOne { .. }))
+                    .count();
+                self.report.descartes_witness_discriminants_omitted += ray
+                    .rules
+                    .iter()
+                    .filter(|r| matches!(r.case, PositiveRayCase::DescartesWitnesses { .. }))
                     .count();
                 (bearing, raw, pairs, omitted, seconds, Some(ray))
             } else {
@@ -2023,6 +2110,7 @@ pub fn solve_local(problem: &Problem, options: &LocalOptions) -> Result<LocalSol
             ((problem.limits.memory_mib as usize).saturating_mul(1024 * 1024) / 128)
                 .min(options.learned_cut_cache_mib.saturating_mul(1024 * 1024)),
         ),
+        descartes_stock: descartes::WitnessStock::default(),
     };
     builder.report.active_phase = "input_factorization".into();
     builder.publish(true)?;
@@ -2162,6 +2250,7 @@ struct Checker<'a> {
     positive_pair_separation: bool,
     positive_pair_cancellations: usize,
     descartes_one: bool,
+    descartes_witnesses: bool,
     base_point_projection: bool,
     adjacent_pairs: bool,
 }
@@ -2328,6 +2417,9 @@ impl Checker<'_> {
                         self.positive_pair_separation,
                         self.positive_pair_cancellations,
                         self.descartes_one,
+                        self.descartes_witnesses,
+                        None,
+                        Some(ray),
                         self.adjacent_pairs,
                         &mut adjacent_pairs,
                         &mut 0.0,
@@ -2591,6 +2683,7 @@ pub fn verify_local_parts(
         positive_pair_separation: options.positive_pair_separation,
         positive_pair_cancellations: options.positive_pair_cancellations,
         descartes_one: options.descartes_one,
+        descartes_witnesses: options.descartes_witnesses,
         base_point_projection: options.base_point_projection,
         adjacent_pairs: options.adjacent_pairs,
     };
