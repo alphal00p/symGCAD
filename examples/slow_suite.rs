@@ -31,6 +31,9 @@ use symgcad::{
 struct Args {
     #[arg(long, default_value = "tests/corpus_classification.json")]
     classification: PathBuf,
+    /// Read-only evidence audit of an existing queue; --output must be fresh.
+    #[arg(long)]
+    audit_queue: Option<PathBuf>,
     /// Optional additional audit against the private completion aggregate.
     #[arg(long)]
     aggregate: Option<PathBuf>,
@@ -99,7 +102,9 @@ struct Prepared {
     aliases: Vec<String>,
     original_input: PathBuf,
     original_input_sha256: String,
+    #[serde(default)]
     historical_original_input_sha256: String,
+    #[serde(default)]
     source_serialization_changed: bool,
     mathematical_sha256: String,
     prepared_input: PathBuf,
@@ -778,8 +783,109 @@ fn audit_verdict(prepared: &Prepared, entry: &Entry, executable_hash: &str) -> R
     Ok("incomplete".into())
 }
 
+fn audit_saved_queue(args: &Args, path: &Path) -> Result<()> {
+    ensure!(
+        !args.output.exists(),
+        "read-only audit requires a fresh --output directory"
+    );
+    let queue_bytes = fs::read(path)?;
+    let journal: Journal = serde_json::from_slice(&queue_bytes)?;
+    ensure!(journal.schema_version == 1, "unsupported queue schema");
+    let prepared_path = path
+        .parent()
+        .context("queue path has no parent")?
+        .join("prepared.json");
+    let prepared_bytes = fs::read(&prepared_path)?;
+    ensure!(
+        format!("{:x}", Sha256::digest(&prepared_bytes)) == journal.prepared_sha256,
+        "saved prepared manifest hash mismatch"
+    );
+    let prepared: Vec<Prepared> = serde_json::from_slice(&prepared_bytes)?;
+    let classification_bytes = fs::read(&args.classification)?;
+    ensure!(
+        format!("{:x}", Sha256::digest(&classification_bytes)) == journal.classification_sha256,
+        "use the exact classification snapshot from the audited queue"
+    );
+    let classification: Classification = serde_json::from_slice(&classification_bytes)?;
+    let rows = selected(&classification, None)?;
+    ensure!(
+        rows.len() == prepared.len() && prepared.len() == journal.entries.len(),
+        "saved queue inventory length mismatch"
+    );
+    ensure!(
+        hash(&journal.executable)? == journal.executable_sha256,
+        "saved executable has changed"
+    );
+    let mut seen = BTreeSet::new();
+    let mut counts = BTreeMap::<String, usize>::new();
+    let mut entries = Vec::new();
+    for (p, e) in prepared.iter().zip(&journal.entries) {
+        ensure!(
+            seen.insert(p.identifier.clone())
+                && p.identifier == e.identifier
+                && p.ledger == e.ledger,
+            "saved queue identity/order mismatch"
+        );
+        let c = rows
+            .iter()
+            .find(|c| c.identifier == p.identifier)
+            .context("unclassified saved case")?;
+        let historical = if p.historical_original_input_sha256.is_empty() {
+            &p.original_input_sha256
+        } else {
+            &p.historical_original_input_sha256
+        };
+        ensure!(
+            p.mathematical_sha256 == c.mathematical_sha256
+                && historical == &c.original_input_sha256,
+            "saved case differs from the original classification"
+        );
+        let (verdict, error) = if e.status == "pending" || e.status == "running" {
+            ("pending".to_owned(), None)
+        } else {
+            match audit_verdict(p, e, &journal.executable_sha256) {
+                Ok(v) => (v, None),
+                Err(error) => ("infrastructure_failed".into(), Some(format!("{error:#}"))),
+            }
+        };
+        *counts.entry(verdict.clone()).or_default() += 1;
+        entries.push(
+            json!({"identifier":p.identifier,"scheduler_status":e.status,
+            "verdict":verdict,"error":error,"ledger":e.ledger,"ledger_sha256":e.ledger_sha256,
+            "supplemental":e.supplemental}),
+        );
+    }
+    fs::create_dir_all(&args.output)?;
+    fs::write(args.output.join("queue-snapshot.json"), &queue_bytes)?;
+    fs::write(
+        args.output.join("classification.json"),
+        &classification_bytes,
+    )?;
+    fs::write(args.output.join("prepared.json"), &prepared_bytes)?;
+    let verified = counts.get("verified").copied().unwrap_or(0);
+    atomic(
+        &args.output.join("audit.json"),
+        &json!({"schema_version":1,"read_only":true,
+        "source_queue":path.canonicalize()?,"source_queue_sha256":format!("{:x}",Sha256::digest(&queue_bytes)),
+        "executable_sha256":journal.executable_sha256,"counts":counts,"entries":entries}),
+    )?;
+    println!(
+        "read-only slow-suite audit: {verified}/{} verified; evidence saved to {}",
+        prepared.len(),
+        args.output.display()
+    );
+    ensure!(
+        verified == prepared.len(),
+        "slow suite still has pending or unverified original problems"
+    );
+    Ok(())
+}
+
 fn main() -> Result<()> {
     let args = Args::parse();
+    if let Some(path) = &args.audit_queue {
+        return audit_saved_queue(&args, path);
+    }
     validate_resources(&args)?;
     ensure!(
         args.write_options.is_none() || args.prepare_only,
@@ -1311,6 +1417,27 @@ mod tests {
             wall_time_secs: Some(3600.),
         };
         assert_eq!(audit_verdict(&p, &e, "exe")?, "incomplete");
+        // Frozen first-wave helpers predate verdict and serialization fields.
+        // Their evidence remains auditable without rewriting their files.
+        let mut old_entry = serde_json::to_value(&e)?;
+        old_entry.as_object_mut().unwrap().remove("verdict");
+        let mut old_prepared = serde_json::to_value(&p)?;
+        old_prepared
+            .as_object_mut()
+            .unwrap()
+            .remove("historical_original_input_sha256");
+        old_prepared
+            .as_object_mut()
+            .unwrap()
+            .remove("source_serialization_changed");
+        let old_entry: Entry = serde_json::from_value(old_entry)?;
+        let old_prepared: Prepared = serde_json::from_value(old_prepared)?;
+        let before = hash(&ledger)?;
+        assert_eq!(
+            audit_verdict(&old_prepared, &old_entry, "exe")?,
+            "incomplete"
+        );
+        assert_eq!(before, hash(&ledger)?);
         report["runs"][0]["trials"][0]["verified"] = json!(true);
         atomic(&ledger, &report)?;
         e.ledger_sha256 = Some(hash(&ledger)?);

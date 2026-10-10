@@ -64,6 +64,24 @@ A lock prevents two queue processes from owning the same directory.
 The output also snapshots the classification, so later metadata updates do
 not erase the campaign's original inventory.
 
+An existing queue, including the first frozen helper's older manifest, can
+be audited without modifying any running or saved campaign:
+
+```sh
+cargo run --release --example slow_suite -- \
+  --audit-queue artifacts/slow-suite-one-hour-01/queue.json \
+  --classification tests/corpus_classification.json \
+  --output artifacts/slow-suite-one-hour-audit-02
+```
+
+The audit output must be new. It saves the queue/classification/preparation
+snapshots and `audit.json`; pending/running entries stay pending. Its exit
+status is nonzero until every original is verified. If the tracked
+classification has changed, pass the exact `classification.json` copied
+by an earlier audit or preparation of that queue. The live first queue's
+initial read-only audit is retained under
+`artifacts/slow-suite-one-hour-audit-01/`.
+
 The first queue was started with the frozen helper
 `70805881104c404157cd629d114bf351d826162217f32afa8a2c3dab29b5709c`
 and release solver
