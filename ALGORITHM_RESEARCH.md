@@ -591,3 +591,68 @@ time was 0.164 seconds. Full independently checked child certificates and source
 checkpoint paths are in `artifacts/research/physical-quadratic-guards-01/report.json`.
 These are prospective nonvanishing removals, not a completed original CAD or a
 runtime benchmark.
+
+## Persistent local search state: research proposal, not implemented
+
+The durable operation cache does not preserve local cut discovery or completed
+conditional subtrees across worker deadlines. This distinction is visible in
+two recent unfinished runs. The physical x6 local trial
+`physical-quadratic-x6-local-09` recorded 74,842 completed-subtree hits and
+241,155 evictions, plus 37,884 learned-cut hits and 33,807 evictions. The
+300-second `a446-quadratic-integer-release-01` trial recorded 31,971 subtree
+hits and 11,357 evictions; its larger hint budget had 624 hits, no evictions
+and about 13.9 MB retained. These counters establish repeated work within a
+run; they do not yet measure the benefit of persistence across runs.
+
+The first experiment should persist **hints only**. Store exact rational
+prefixes and canonical polynomial expressions, never process-local numeric
+IDs. Key an archive by the ordered variable map, exact normalized constraints
+and splits, parameter substitution, projection/proof options and an explicit
+format/algorithm version. Bound archive bytes, entries, prefix bit sizes,
+polynomial terms/heights and load time before admitting data. Re-intern the
+polynomials into the fresh registry, verify their axis support, and factor them
+through the ordinary exact path. Every seeded stack must still recompute its
+projection, all sectors and every ancestor obligation. Imported hints may add
+cuts but cannot remove original cuts or supply a proof. A truncated or invalid
+archive is a cache miss, never a successful or incomplete CAD certificate.
+
+Snapshot shallow active ancestor cut inventories as well as retained hints:
+FIFO caches can have already evicted the root or other early prefixes while
+their current recursive stack still holds those cuts. Persisting only the
+final FIFO tail may therefore miss the discoveries needed to reach the saved
+frontier on a restart. Use bounded atomic replacement, coarse time/byte
+thresholds and a final best-effort soft-stop snapshot; hard worker termination
+must leave the previous completed snapshot usable. Include serialization and
+loading in campaign time. A dictionary's actual polynomial bytes must count
+toward the disk budget; the in-memory hint cache currently charges IDs because
+its registry is already resident.
+
+Completed-subtree persistence requires more work. Existing `Built` payloads
+are trusted only within one immutable `Builder`. A disk entry needs a
+self-contained polynomial dictionary and guard-removal registry, remapping
+both polynomial IDs and removal-record IDs throughout cuts, roots, pair
+witnesses, domain sources and returned obligations. Before reuse, independently
+replay the conditional subtree at its exact prefix, verify the complete input
+factor inventory and domain premises, recompute its cell count and require its
+returned obligation set to agree exactly. Return all those obligations to the
+new ancestors, whose intervals may differ. A content hash prevents accidental
+mixups; it does not replace mathematical replay. Current per-entry limits
+(128 nodes, depth 16, at most 1 MiB) should remain.
+
+There is also a termination consideration separate from proof validity.
+Descartes and pair-separator template stocks admit at most two templates per
+canonical polynomial or pair during one builder lifetime. Restarting with old
+hints but an empty template stock can admit another pair of templates each
+campaign. Each completed proof remains valid, but the existing finite-stock
+argument then applies per run rather than to the entire resumed search. A
+persistent search epoch should retain the admission ledger without resetting
+slots on eviction, or first benchmark hints with these optional discoveries
+disabled. If a bounded persistent ledger fills, disable further admissions
+instead of silently granting fresh slots.
+
+Before implementing disk subtree proofs, measure a controlled interrupted
+restart with hints disabled/enabled, identical order/options and equal total
+wall budget. Report loaded and actually used prefixes/cuts, preprocessing and
+I/O cost, newly reached prefixes, algebra cache hits, refinements, and complete
+independent verification if achieved. The current evidence favors this small
+hint experiment before a trusted-looking but unverified serialized tree cache.
