@@ -31,6 +31,22 @@ resource bounds/fresh output rejection, and rejection of a completion
 string from a killed worker. A direct local CLI smoke test solved and
 independently verified two cells for `x>0` split by `x-1`.
 
+An additional `--public-solve` mode runs the public CLI, so a configured MCTS
+ordering search and its final solve share the same outer process-group
+budget. Five percent of that budget is reserved outside the inner CLI limit
+for final export. A completed public process is summarized by streaming only
+its status, raw-cell count, and selected search statistics from the result;
+cell arrays and proof variants are skipped. Completion still requires the
+fresh bounded verifier and matching unchanged proof hashes. Public mode may
+use the CLI's own temporary projection progress files, so the external local
+snapshot path is not guaranteed to contain all individual search trials;
+the returned search report and durable search journal retain those trials.
+A fourth test checks public command construction, forward-compatible streamed
+summary parsing, and rejection of output from killed or failed processes.
+The first frozen helper with this mode is
+`artifacts/research/prepared-probe-02/bin/probe_prepared`, SHA-256
+`3f254f3f05fbfce0a789151cb259a945a25d8f2215ed5c278f021814735b5a8d`.
+
 ## Positive Gluza30: persistent traversal rather than one hard resultant
 
 The prepared original positive Gluza30 input comes from

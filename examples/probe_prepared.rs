@@ -41,6 +41,9 @@ struct Args {
     /// Record the preceding proposal-generation cost separately from the solve.
     #[arg(long)]
     discovery_report: Option<PathBuf>,
+    /// Include the public CLI ordering search and final solve in the outer cap.
+    #[arg(long)]
+    public_solve: bool,
 }
 
 fn validate(args: &Args) -> Result<f64> {
@@ -137,7 +140,13 @@ fn mathematical_fields(problem: &Problem) -> Result<Value> {
 
 fn prepare(source: &Problem, args: &Args, checkpoints: PathBuf) -> Result<Problem> {
     let mut problem = source.clone();
-    problem.limits.wall_time_secs = args.seconds;
+    // Public orchestration needs time to export its final search/solve record.
+    // Both the search and child solve still share this smaller inner budget.
+    problem.limits.wall_time_secs = if args.public_solve {
+        0.95 * args.seconds
+    } else {
+        args.seconds
+    };
     problem.limits.memory_mib = args.memory_mib;
     problem.limits.workers = 1;
     problem.solver.checkpoint_dir = Some(checkpoints);
@@ -235,6 +244,63 @@ fn successful_summary(process: &ProcessOutcome) -> Result<Option<Summary>> {
     Ok(Some(summary))
 }
 
+#[derive(Deserialize, Serialize)]
+struct PublicStatistics {
+    raw_cells: usize,
+    #[serde(default)]
+    ordering_search: Option<Value>,
+    #[serde(default)]
+    search_seconds: f64,
+    #[serde(default)]
+    total_seconds: f64,
+}
+
+#[derive(Deserialize)]
+struct PublicResult {
+    status: String,
+    #[serde(default)]
+    diagnostic: Option<String>,
+    statistics: PublicStatistics,
+}
+
+struct DeadlineReader<R> {
+    inner: R,
+    deadline: Instant,
+}
+impl<R: Read> Read for DeadlineReader<R> {
+    fn read(&mut self, buffer: &mut [u8]) -> std::io::Result<usize> {
+        if Instant::now() >= self.deadline {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::TimedOut,
+                "campaign deadline while reading summary",
+            ));
+        }
+        self.inner.read(buffer)
+    }
+}
+
+fn public_summary(
+    process: &ProcessOutcome,
+    path: &Path,
+    deadline: Instant,
+) -> Result<Option<Summary>> {
+    if process.status != "completed" || process.exit_code != Some(0) {
+        return Ok(None);
+    }
+    // Ignore cell/proof arrays while streaming; the independent worker below
+    // remains the only authority for the returned mathematical certificate.
+    let result: PublicResult = serde_json::from_reader(BufReader::new(DeadlineReader {
+        inner: fs::File::open(path)?,
+        deadline,
+    }))?;
+    Ok(Some(Summary {
+        status: result.status,
+        cells: Some(result.statistics.raw_cells),
+        diagnostic: result.diagnostic,
+        statistics: Some(serde_json::to_value(result.statistics)?),
+    }))
+}
+
 fn worker(executable: &Path, operation: &str, input: &Path, output: &Path) -> Command {
     let mut command = Command::new(executable);
     command
@@ -244,6 +310,30 @@ fn worker(executable: &Path, operation: &str, input: &Path, output: &Path) -> Co
         .arg(output)
         .env("RAYON_NUM_THREADS", "1")
         .env("OMP_NUM_THREADS", "1")
+        .env_remove("SYMGCAD_CAPTURE_DIR")
+        .env_remove("SYMGCAD_PROGRESS_PATH")
+        .env_remove("SYMGCAD_LIFTING_PROGRESS_PATH");
+    command
+}
+
+fn solve_command(executable: &Path, output: &Path, public: bool) -> Command {
+    if !public {
+        return worker(
+            executable,
+            "solve",
+            &output.join("input.json"),
+            &output.join("result.json"),
+        );
+    }
+    let mut command = Command::new(executable);
+    command
+        .arg("solve")
+        .arg(output.join("input.toml"))
+        .arg("--output")
+        .arg(output.join("result.json"))
+        .env("RAYON_NUM_THREADS", "1")
+        .env("OMP_NUM_THREADS", "1")
+        .env_remove("SYMGCAD_SEARCH_REPORT")
         .env_remove("SYMGCAD_CAPTURE_DIR")
         .env_remove("SYMGCAD_PROGRESS_PATH")
         .env_remove("SYMGCAD_LIFTING_PROGRESS_PATH");
@@ -281,17 +371,12 @@ fn main() -> Result<()> {
     } else {
         None
     };
-    let provenance = json!({"schema_version":1,"executable":executable,"executable_sha256":hash(&executable,deadline)?,"harness_sha256":hash(&std::env::current_exe()?,deadline)?,"source":source_path,"source_sha256":format!("{:x}",Sha256::digest(&source_bytes)),"input_json_sha256":hash(&output.join("input.json"),deadline)?,"original_mathematical_fields_preserved":true,"original_order_preserved":true,"cold_checkpoints":checkpoint,"capture":capture,"cpu":args.cpu,"limits":problem.limits,"max_refinements":problem.solver.local_max_refinements,"max_nodes":problem.solver.local_max_nodes,"verification_seconds":args.verification_seconds,"campaign_seconds":campaign_seconds,"discovery":discovery});
+    let provenance = json!({"schema_version":1,"executable":executable,"executable_sha256":hash(&executable,deadline)?,"harness_sha256":hash(&std::env::current_exe()?,deadline)?,"source":source_path,"source_sha256":format!("{:x}",Sha256::digest(&source_bytes)),"input_json_sha256":hash(&output.join("input.json"),deadline)?,"original_mathematical_fields_preserved":true,"original_order_preserved":true,"public_solve_includes_search":args.public_solve,"cold_checkpoints":checkpoint,"capture":capture,"cpu":args.cpu,"limits":problem.limits,"max_refinements":problem.solver.local_max_refinements,"max_nodes":problem.solver.local_max_nodes,"verification_seconds":args.verification_seconds,"campaign_seconds":campaign_seconds,"discovery":discovery});
     write(&output.join("provenance.json"), &provenance)?;
     let progress_path = output.join("progress.json");
     let lifting_path = output.join("lifting-progress.json");
     let result_path = output.join("result.json");
-    let mut command = worker(
-        &executable,
-        "solve",
-        &output.join("input.json"),
-        &result_path,
-    );
+    let mut command = solve_command(&executable, &output, args.public_solve);
     command
         .env("SYMGCAD_PROGRESS_PATH", &progress_path)
         .env("SYMGCAD_LIFTING_PROGRESS_PATH", &lifting_path)
@@ -300,7 +385,7 @@ fn main() -> Result<()> {
     let mut next_snapshot = Duration::ZERO;
     let mut snapshot_errors = 0usize;
     let mut solve_limits = problem.limits.clone();
-    solve_limits.wall_time_secs = solve_limits.wall_time_secs.min(
+    solve_limits.wall_time_secs = args.seconds.min(
         deadline
             .saturating_duration_since(Instant::now())
             .as_secs_f64(),
@@ -331,7 +416,11 @@ fn main() -> Result<()> {
         history.write_all(b"\n")?;
     }
     history.flush()?;
-    let selection = successful_summary(&process);
+    let selection = if args.public_solve {
+        public_summary(&process, &result_path, deadline)
+    } else {
+        successful_summary(&process)
+    };
     let summary_error = selection.as_ref().err().map(ToString::to_string);
     let summary = selection.unwrap_or(None);
     let complete = summary
@@ -393,7 +482,59 @@ mod tests {
             max_refinements: Some(1_000_000),
             max_nodes: Some(10_000_000),
             discovery_report: None,
+            public_solve: false,
         }
+    }
+    #[test]
+    fn public_mode_uses_toml_and_streams_only_completed_output() -> Result<()> {
+        let c = solve_command(Path::new("worker"), Path::new("out"), true);
+        let args = c
+            .get_args()
+            .map(|x| x.to_str().unwrap())
+            .collect::<Vec<_>>();
+        assert_eq!(
+            args,
+            ["solve", "out/input.toml", "--output", "out/result.json"]
+        );
+        let value: PublicResult = serde_json::from_str(
+            r#"{"status":"complete_generic","cells":[{"future_bound_kind":true}],"statistics":{"raw_cells":1,"ordering_search":{"winner":"freshly solved"}}}"#,
+        )?;
+        assert_eq!(value.statistics.raw_cells, 1);
+        assert_eq!(
+            value.statistics.ordering_search.as_ref().unwrap()["winner"],
+            "freshly solved"
+        );
+        let mut public = super::tests::args();
+        public.public_solve = true;
+        let input = Problem::from_toml("variables=['x']\nconstraints=['x>0']\n")?;
+        assert_eq!(
+            prepare(&input, &public, "cold".into())?
+                .limits
+                .wall_time_secs,
+            114.
+        );
+        let mut killed: ProcessOutcome = serde_json::from_value(
+            json!({"status":"timeout","wall_time_secs":1.0,"peak_rss_kib":0,"exit_code":null,"stdout":"","stderr":"","output_truncated":false,"user_cpu_secs":0.0,"system_cpu_secs":0.0}),
+        )?;
+        assert!(
+            public_summary(
+                &killed,
+                Path::new("missing-file"),
+                Instant::now() + Duration::from_secs(1)
+            )?
+            .is_none()
+        );
+        killed.status = "completed".into();
+        killed.exit_code = Some(1);
+        assert!(
+            public_summary(
+                &killed,
+                Path::new("missing-file"),
+                Instant::now() + Duration::from_secs(1)
+            )?
+            .is_none()
+        );
+        Ok(())
     }
     #[test]
     fn preparation_preserves_every_mathematical_and_ordering_field() -> Result<()> {
