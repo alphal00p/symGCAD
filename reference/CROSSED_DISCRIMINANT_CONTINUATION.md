@@ -125,3 +125,37 @@ The explicit derivative-pair capture has SHA-256
 and pair input hash
 `510e1aa47dafabf31f7c54cf0c9b7198a6d8208d8f6a4c83b192084ed7300544`.
 No production option, cache or proof was changed.
+
+### Signed discriminant computation and independent grid
+
+The unchanged frozen research helper then completed that exact captured
+`x1`-discriminant in **48.177916 seconds**, at **256,888 KiB peak RSS**.
+The signed result has **13,704 terms** and degrees `(s,t)=(162,90)`.
+A separate exact numerical Ducos grid completed **all 32,852 valid points**
+in **30.125722 seconds**, at **49,244 KiB peak RSS**. The complete campaign,
+including the intervening Rust Symbolica adapter and binding checks, took
+84.138443 seconds on CPU11. Its limits were 4 GiB, at most 1,200 seconds for
+computation, and 3,600 seconds shared by all stages.
+
+The unknown resultant's bounds are `(171,190)`, giving `(171+1)(190+1)`
+points. Verification does not substitute the smaller candidate degrees for
+these bounds. The nested grid skips specializations where either input
+loses its eliminated degree. For degree ten, the exact adapter retains
+`Res(p,p′) = -LC_x1(p) * Disc_x1(p)`, including the negative sign and full
+rational scale, and replays the exact quotient. Its derivative matches the
+separately coefficient-checked derivative capture. Consequently the full
+grid proves the signed discriminant identity after cancellation of the
+nonzero polynomial leading coefficient; no pointwise nonvanishing assumption
+or removal of leading-coefficient-zero boundaries is made.
+
+All input, executable, adapter and candidate bindings were checked again
+after completion. Evidence under
+`artifacts/research/ax318-pending-discriminant-compute-01/` is:
+
+- `independent-final-audit.json`: `5e4fa155b4287ca7c8719ee999878833453fefd3642952b5bb0ec2e6a9ebebe5`.
+- `discriminant.json`: `5e5c0ef77705c3cc740b81c63a96b6b2c4b9442849e7918880e842a92a852a2e`.
+- `grid-verification.json`: `9fd05c7c1baf8b64693465ca5633179b87fa1f3521b6744cd3256fe2a1bffc47`.
+
+This is completed algebraic identity evidence for one authentic pending
+operation. No research value was inserted into production, and it adds no
+original CAD coverage or solved-case performance ratio.
