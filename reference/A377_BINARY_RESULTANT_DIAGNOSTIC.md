@@ -55,8 +55,9 @@ initial per-file hash manifest has SHA-256
 The new campaign is explicitly warm and must account for the preceding
 300.007477 seconds of preprocessing. Its input, bounds and provenance are in
 `artifacts/research/a377-segmentation-warm-hour-01/`; the exact original
-mathematics, order and solver options remain unchanged. This follow-up is
-still running and contributes no completion credit.
+mathematics, order and solver options remain unchanged. This follow-up ended
+at its hour limit and contributes no completion credit; final evidence is
+recorded below.
 
 The warm run subsequently completed the largest tracked pair in 34.480010
 seconds with the same canonical output digest. All ten recovered historical
@@ -87,3 +88,55 @@ The raw profile, readable report and analysis are retained beneath
 
 This run did not enable `SYMGCAD_CAPTURE_DIR`. Its stale progress record is
 not an operand capture, and the profile provides no additional proof coverage.
+
+## Final warm-hour outcome
+
+The warm continuation timed out after 3,600.004030 seconds at 573,196 KiB
+peak process-group RSS. Neither a result nor a verification file exists.
+The original constraints, splits, parameters, variable groups and selected
+order were rechecked against the original input. Together with its preceding
+cold pilot, this consumed at least 3,900.011507 seconds of solve wall time,
+including the live profiling overhead described above. It is not a cold run
+or a matched speed ratio.
+
+The operation cache grew from 1,210 to 1,880 completed records, adding 670
+records and reaching 153,045,011 bytes. The last retained progress snapshot,
+at worker elapsed 3,559.578 seconds, has 1,272,153 speculative nodes and
+288,625 refinements, with level 5 and prefix `[5,0,5/4,1/2,1/2]`. This shows
+substantial later progress; it does not identify the exact operation pending
+at termination.
+
+The largest newly completed operation was a resultant in `x0`, input SHA-256
+`ac6f3048ce62636fa9eb95a6df3995fb92d2a7b62c9eb5f4b25945acd5ce3741`,
+with recorded algebra time 3,041.788607 seconds. Its file was persisted at
+09:51:44.480 UTC; subtracting that duration estimates a start near
+09:01:02.691 UTC. That interval contains the 09:09 profile, making this a
+timing-consistent candidate for the sampled ordinary resultant. This is an
+inference from elapsed time and file metadata, not a direct operand binding
+from the profiler. The next most expensive new operation was a 72.839-second
+factorization.
+
+Its exact ordered operand strings were recovered by a unique SHA-256 match
+among 141 retained factors with the required variable support. The operands
+contain 38,110 and 19,319 characters in the map
+`[s,t,x0,x3,x5,x6,x8]`. The saved canonical result hashes to
+`49e3495b80ed9a6cb4c987e552497231619476808c798214347eba6b9a11c7d6`.
+As above, the completed cache does not retain the removed scalar/sign.
+No new algebra was executed for this recovery.
+
+The immutable final evidence is retained under
+`artifacts/research/a377-segmentation-warm-hour-01/`:
+
+| File | SHA-256 |
+|---|---|
+| `results/ledger.json` | `d759a2a30048237bc0a0b6dcd099e6db7e10a0a4dc2442edf77bcba82288ae16` |
+| `final-audit.json` | `54c50dbebc618aa42d73e99a62d5e5c155174487d8972bc911d2c0bdeb2b12f5` |
+| `final-cache-manifest.json` | `50a1d461a673047a69d961c5c6bffc034168ccd01b8d70c4f385264f958d8c4a` |
+| `final-progress.json` | `8a7205e126a9d2766dd8f79143a808c1d89a25ff1281e4968763a36e2a4ce975` |
+| `new-operation-timings.json` | `cc8d23267e1a9c10a19e8bab72bbca294414288b7501cc7a8b8f21055f4bc108` |
+| `ac6f3048ce62-capture.json` | `efcbc63dec5f454ada5744254397d9729ba9492742597652ca9be6efe6476f3b` |
+| `operand-recovery.json` | `7fc86953fb126162a9a4e752dde12850c07a57c2037f0b56fb029b19686d7d02` |
+
+The final cache manifest binds the source factor records and all completed
+outputs. The original warm worker was not restarted; subsequent experiments
+must use separate outputs and explicitly describe any reuse of this cache.
