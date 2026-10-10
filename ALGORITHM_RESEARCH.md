@@ -382,7 +382,39 @@ delineable branches apart with a continuous separator c and nonvanishing
 one separator for a deduplicated polynomial pair is insufficient when its
 roots interleave. Exact sample placement, denominator/order guards, stable
 positive ordinals and finite template stock would all require replay. This
-pair rule is a research proposal, not an implemented omission.
+fixed-rational pair rule is now implemented behind the default-false
+`positive_pair_witnesses` option; polynomial/rational sections remain research.
+
+The implementation certifies the complete two-polynomial positive root chain.
+Its supplied inventory must contain every pair `(owner, positive ordinal)`
+exactly once, with each owner's ordinals increasing from zero. Exact Sturm
+counts first check both full positive root counts. For every adjacent edge
+`(p,i)->(q,j)` with distinct owners, its strictly positive rational separator c
+must satisfy `N_p(0,c)=i+1`, `N_q(0,c)=j`, `p(c)!=0`, and `q(c)!=0`.
+Every cross-owner edge is present and separators increase strictly. These
+checks establish sample placement even when a template is reused at a new
+prefix; signs alone would not suffice. On the connected ancestor cell,
+individual positive-root delineability and the nonzero evaluation guards
+preserve each edge inequality. Same-owner edges follow from ordinals;
+transitivity preserves the whole chain, excluding common positive roots.
+
+Each sorted canonical polynomial pair and main axis admits at most two
+templates over the entire Builder lifetime. Admission occurs before any later
+stack or ancestor failure, and neither proof-cache nor hint-cache eviction
+resets the stock. Each admitted template adds only finitely many evaluations
+in strictly earlier axes, so the downward finite-closure argument above
+extends to pairs. The current limits are degree 32 and 4,096 terms per
+polynomial, 16 total distinct positive roots, eight cross-owner edges, and
+256 combined numerator/denominator bits per separator. Shared positive roots,
+ineligible inputs, exhausted stock and inconclusive placement use ordinary
+resultants. Shared negative roots do not invalidate positive separation.
+
+Independent replay validates the supplied inventory and every exact Sturm
+placement, recomputes evaluation signs and polynomials, and propagates their
+complete factor obligations through ancestor cells. It does not reconstruct
+stock history. A missing pair witness selects the stronger ordinary resultant;
+the entire regenerated ray certificate and guard inventory must still match,
+so deleting witness metadata cannot silently delete its obligation.
 
 ## Sum-of-squares screen for positive repeated roots
 
