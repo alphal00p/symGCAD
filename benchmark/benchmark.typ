@@ -181,14 +181,21 @@ with three fresh repetitions and identical orders. *±* means two separate sign-
   and hashes are in #text(font: "Libertinus Mono")[reference/QUADRATIC_RELEASE_ABLATION.md].
 
   == Root-isolation research
-  An isolated backend with unit-shift and positive-axis research patches compares complete
-  full-real and strictly positive root inventories for the same exact polynomial. The corpus
-  backend is unchanged. Ordered matches require an exact point root
-  or a sign-changing interval intersection, not identical interval spelling. A positive-only
-  index cannot silently replace a full-real index in an existing proof. Individual Taylor-shift
-  measurements are separate from complete isolation and original-problem solve times.
-  // Append the final independently checked isolation measurement here when available.
+  On one captured degree-1478 discriminant block, an isolated backend with unit-shift and
+  positive-axis patches took *765.808 s* to isolate all *294 real roots* (813 MiB peak RSS),
+  versus *557.983 s* for its *145 positive roots* (421 MiB), using the same CPU and build.
+  Positive-only isolation used 27.1% less API time in this single-run comparison.
+  Fresh exact ordered comparisons matched all 294 old full-real roots and all 145 positive
+  roots; their separate process costs were 34.577 s and 20.528 s. Equality required an exact
+  root or a sign-changing interval intersection, not identical interval spelling.
 
+  The old full-real wrapper took 1138.550 s, but also included retained-fiber and interval
+  preparation; it is not a matched API ratio. These isolated measurements add no original
+  CAD completion or solver-speedup claim. The corpus backend is unchanged, and positive-only
+  indices cannot silently replace full-real indices in proofs. Evidence and public replay
+  instructions are in #text(font: "Libertinus Mono")[reference/POSITIVE_AXIS_ISOLATION_RESEARCH.md].
+
+  #block(breakable: false)[
   == Reproduce and inspect
   The Typst source and frozen #text(font: "Libertinus Mono")[data.json] render without private
   literature or original proof files. Regeneration from retained evidence uses the Rust example
@@ -197,4 +204,5 @@ with three fresh repetitions and identical orders. *±* means two separate sign-
   exact original fields, legal orders and executable hashes; it changes no completion or ratio.
   Run #text(font: "Libertinus Mono")[benchmark/render.sh] to render both PDFs. Full provenance remains in the JSON snapshot
   and the repository's benchmark/reference notes.
+]
 ]
