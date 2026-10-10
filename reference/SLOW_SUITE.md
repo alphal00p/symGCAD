@@ -226,3 +226,30 @@ its queue snapshot has SHA-256
 Final ledger/input copies and `fifth-wave-outcomes.json` remain beside it;
 the outcomes digest is
 `bb005db12e7eb3dc4af68c2b446a0bb72d1e6a9de87bfe4c84c1470cdbc0f636`.
+
+## Sixth one-hour wave
+
+The 12:32 UTC read-only audit found twenty-four finished incomplete attempts
+and the final four running. The four additional crossed symbolic originals
+timed out without result or verification files:
+
+| Original | Bounded solve, seconds | Peak RSS, MiB |
+| --- | ---: | ---: |
+| Ax12-C215 | 3600.030057 | 1841.1 |
+| Ax12-C231 | 3600.031299 | 740.5 |
+| Ax12-C476 | 3600.031433 | 871.6 |
+| Ax12-C247 | 3600.021902 | 802.6 |
+
+All twenty-four finished ledger hashes were rechecked. The four new original,
+prepared and actual worker inputs match their recorded hashes and parsed
+mathematical inputs. Solver and resource settings are retained in the hashed
+inputs and excluded from that mathematical comparison. Coverage remains **303 / 331**; these timeouts
+are censored attempts, not solved times or performance ratios.
+
+The snapshot `artifacts/slow-suite-one-hour-audit-08/audit.json` has SHA-256
+`2dcc6437b8338c85f7f74cf99647c3370ee0c1471a5bd4228a3926d363146e08`;
+its queue snapshot has SHA-256
+`a6327001cb0d0c4d0913f825a515b9325d34a8a91ea0ec1505c38989e64906d6`.
+Final ledger/input copies and `sixth-wave-outcomes.json` remain beside it;
+the outcomes digest is
+`d9b960340bc5243006ca12c5d0b92aed0f2f2c8e8b6af42e464d23a121e9864e`.
