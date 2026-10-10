@@ -330,3 +330,23 @@ seconds at 18,432 KiB. These short censored observations do not establish
 relative completed-operation performance. The combined strategy summary
 has SHA-256
 `9c95059f3f8c34285564ae130caab5d8551ed6a5e19d1484395a96514906471e`.
+
+### Support-only degree-bound diagnostic
+
+A separate metadata calculation constructed the 63-by-63 Sylvester support
+matrix for the degree-32 operand and its derivative. Each nonzero entry's
+weight is its exact coefficient degree in `s`. An integer row/column dual
+certificate bounds every determinant term by **4,714**, compared with the
+current rectangular/diagonal bound of **4,772**. A matching attains the dual
+sum; every edge inequality was checked with integers. Cancellation can lower
+the actual resultant degree further, but the proposed candidate's degree
+alone is not a bound on the unknown resultant.
+
+This improves the bound by only 1.2%, so no production implementation or
+change to the running grid was made. The metadata-only Python/SciPy pilot
+proposed the combinatorial certificate; it performed no polynomial algebra.
+The complete parsed coefficient-degree profiles, matching and exact integer
+dual are retained in
+`artifacts/research/a377-sylvester-support-bound-01/report.json`, SHA-256
+`79282107b2a64a73904470bbbd2b15ddda8981f7e4984afaaa1a2a1f42b85216`.
+This support bound does not itself verify the discriminant or any CAD cell.
