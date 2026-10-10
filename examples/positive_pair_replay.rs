@@ -15,7 +15,7 @@ use std::{
 };
 use symbolica::prelude::*;
 use symgcad::{
-    algebra::{Algebra, Poly, rational},
+    algebra::{Algebra, Poly, factors_checked, rational},
     domain::{
         CertificateOptions, DomainCertificate, certify_nonzero, derive_domain, verify_certificate,
     },
@@ -54,6 +54,20 @@ struct Identity {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
+struct KinematicMap {
+    /// q=Q-s*H-u*C and B=M-u*T; names refer to original base axes.
+    parameters: [String; 2],
+    #[serde(default)]
+    factor_critical: bool,
+    #[serde(default)]
+    critical_resultant: bool,
+    /// Explicit research-only export allowance; ordinary helper caps stay fixed.
+    #[serde(default)]
+    critical_resultant_term_cap: Option<usize>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 struct Input {
     /// Original lifting order; the selected y,x,z must be its final three axes.
     variables: Vec<String>,
@@ -67,6 +81,8 @@ struct Input {
     endpoint_multipliers: [String; 2],
     #[serde(default)]
     identities: Vec<Identity>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    kinematic_map: Option<KinematicMap>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -82,8 +98,61 @@ struct Evidence {
     schema_version: u32,
     input_sha256: String,
     polynomials: BTreeMap<String, String>,
+    polynomial_statistics: BTreeMap<String, PolynomialStatistics>,
     certificates: Vec<NamedCertificate>,
     checked_identity_names: Vec<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+struct PolynomialStatistics {
+    terms: usize,
+    degrees: Vec<u32>,
+    coefficient_bits: u64,
+}
+
+fn coefficient_bits(p: &Poly) -> u64 {
+    p.coefficients
+        .iter()
+        .map(|c| {
+            c.numerator_ref().significant_bits() as u64
+                + c.denominator_ref().significant_bits() as u64
+        })
+        .sum()
+}
+
+fn map_resultant_bound(p: &Poly, map: &KinematicMap) -> Result<()> {
+    let cap = map.critical_resultant_term_cap.unwrap_or(MAX_TERMS);
+    ensure!(
+        (MAX_TERMS..=16_384).contains(&cap),
+        "research resultant term allowance"
+    );
+    let bits = coefficient_bits(p);
+    let estimated_storage_bytes = (p.nterms() as u64)
+        .saturating_mul((p.nvars() as u64) * 4 + 64)
+        .saturating_add(bits.div_ceil(8));
+    ensure!(
+        bits <= 16 * 1024 * 1024 && estimated_storage_bytes <= 128 * 1024 * 1024,
+        "research resultant logical storage cap"
+    );
+    bounded(p, cap, MAX_DEGREE)
+}
+
+fn polynomial_statistics(
+    polynomials: &BTreeMap<String, Poly>,
+) -> BTreeMap<String, PolynomialStatistics> {
+    polynomials
+        .iter()
+        .map(|(name, p)| {
+            (
+                name.clone(),
+                PolynomialStatistics {
+                    terms: p.nterms(),
+                    degrees: (0..p.nvars()).map(|i| p.degree(i)).collect(),
+                    coefficient_bits: coefficient_bits(p),
+                },
+            )
+        })
+        .collect()
 }
 
 struct Extracted {
@@ -446,7 +515,130 @@ fn extract(input: &Input) -> Result<Extracted> {
             identity.name
         );
     }
-    let positive = vec![
+    let mut map_polynomials = Vec::new();
+    let mut map_positive = Vec::new();
+    if let Some(map) = &input.kinematic_map {
+        let mut parameter_axes = Vec::new();
+        for name in &map.parameters {
+            let axis = input
+                .variables
+                .iter()
+                .position(|v| v == name)
+                .context("unknown kinematic parameter")?;
+            ensure!(
+                axis < y && !parameter_axes.contains(&axis),
+                "distinct base parameters required"
+            );
+            parameter_axes.push(axis);
+        }
+        let (s, u) = (parameter_axes[0], parameter_axes[1]);
+        if let Some(cap) = map.critical_resultant_term_cap {
+            ensure!(
+                map.critical_resultant && (MAX_TERMS..=16_384).contains(&cap),
+                "explicit resultant allowance requires enabled projection and bounded cap"
+            );
+        }
+        ensure!(
+            q.degree(s) == 1 && q.degree(u) == 1 && b_poly.degree(s) == 0 && b_poly.degree(u) == 1,
+            "required affine kinematic pattern"
+        );
+        let h = -q.derivative(s);
+        let c_map = -q.derivative(u);
+        let t = -b_poly.derivative(u);
+        let mass_q = &q
+            + &budget.multiply(&coordinates[s], &h)?
+            + budget.multiply(&coordinates[u], &c_map)?;
+        let mass_b = &b_poly + &budget.multiply(&coordinates[u], &t)?;
+        ensure!(
+            [&h, &c_map, &t, &mass_q, &mass_b]
+                .iter()
+                .all(|p| p.degree(s) == 0 && p.degree(u) == 0),
+            "kinematic coefficients must be parameter independent"
+        );
+        let n_map = &mass_q - &budget.multiply(&coordinates[u], &c_map)?;
+        let h_x = h.derivative(x);
+        let h_y = h.derivative(y);
+        let ax = budget.multiply(&h, &n_map.derivative(x))? - budget.multiply(&h_x, &n_map)?;
+        let ay_map = budget.multiply(&h, &n_map.derivative(y))? - budget.multiply(&h_y, &n_map)?;
+        let critical = budget.multiply(&ay_map, &bx)? - budget.multiply(&ax, &by)?;
+        let correction = budget.multiply(&h_y, &bx)? - budget.multiply(&h_x, &by)?;
+        ensure!(
+            critical == budget.multiply(&h, &delta)? - budget.multiply(&q, &correction)?,
+            "s-free critical ideal identity"
+        );
+        ensure!(critical.degree(s) == 0, "critical polynomial retains s");
+        let s_numerator = budget.multiply(&mass_q, &t)? - budget.multiply(&c_map, &mass_b)?;
+        let s_denominator = budget.multiply(&h, &t)?;
+        ensure!(
+            budget.multiply(&t, &q)?
+                == &s_numerator - &budget.multiply(&coordinates[s], &s_denominator)?
+                    + budget.multiply(&c_map, &b_poly)?,
+            "rational map inverse identity"
+        );
+        let ux_numerator = budget.multiply(&mass_b.derivative(x), &t)?
+            - budget.multiply(&mass_b, &t.derivative(x))?;
+        let uy_numerator = budget.multiply(&mass_b.derivative(y), &t)?
+            - budget.multiply(&mass_b, &t.derivative(y))?;
+        ensure!(
+            ux_numerator
+                == budget.multiply(&t, &bx)? - budget.multiply(&b_poly, &t.derivative(x))?,
+            "U_x rational derivative identity"
+        );
+        ensure!(
+            uy_numerator
+                == budget.multiply(&t, &by)? - budget.multiply(&b_poly, &t.derivative(y))?,
+            "U_y rational derivative identity"
+        );
+        if map.factor_critical {
+            ensure!(critical.nterms() <= 512, "critical factor support gate");
+            for (index, factor) in factors_checked(&[critical.clone()])?
+                .into_iter()
+                .enumerate()
+            {
+                map_polynomials.push((format!("map_critical_factor_{index}"), factor));
+            }
+        }
+        if map.critical_resultant {
+            ensure!(
+                b_poly.degree(x) <= 2
+                    && critical.degree(x) <= 4
+                    && b_poly.nterms() <= 128
+                    && critical.nterms() <= 512,
+                "critical resultant operand gate"
+            );
+            let projected = exact_resultant(&b_poly, &critical, x)?;
+            map_resultant_bound(&projected, map).with_context(|| {
+                format!(
+                    "critical resultant rejected: {} terms, {} coefficient bits, degrees {:?}",
+                    projected.nterms(),
+                    coefficient_bits(&projected),
+                    (0..projected.nvars())
+                        .map(|i| projected.degree(i))
+                        .collect::<Vec<_>>()
+                )
+            })?;
+            map_polynomials.push(("map_critical_resultant".into(), projected));
+        }
+        map_positive.extend([("map_H", h.clone()), ("map_T", t.clone())]);
+        map_polynomials.extend(
+            [
+                ("map_H", h),
+                ("map_C", c_map),
+                ("map_T", t),
+                ("map_Q", mass_q),
+                ("map_M", mass_b),
+                ("map_N", n_map),
+                ("map_critical", critical),
+                ("map_S_numerator", s_numerator),
+                ("map_S_denominator", s_denominator),
+                ("map_U_x_numerator", ux_numerator),
+                ("map_U_y_numerator", uy_numerator),
+            ]
+            .into_iter()
+            .map(|(name, p)| (name.to_string(), p)),
+        );
+    }
+    let mut positive = vec![
         ("x_leading", a),
         ("y_leading", ay),
         ("h_x", hx),
@@ -458,6 +650,7 @@ fn extract(input: &Input) -> Result<Extracted> {
         ("y_zero_x_leading", d2),
         ("y_zero_conditional", pd),
     ];
+    positive.extend(map_positive);
     let mut polynomials = BTreeMap::new();
     for (name, p) in [
         ("F", f),
@@ -478,6 +671,20 @@ fn extract(input: &Input) -> Result<Extracted> {
     {
         bounded(&p, MAX_TERMS, MAX_DEGREE)?;
         polynomials.insert(name.into(), p);
+    }
+    for (name, p) in map_polynomials {
+        if name == "map_critical_resultant" {
+            map_resultant_bound(
+                &p,
+                input
+                    .kinematic_map
+                    .as_ref()
+                    .context("missing map declaration")?,
+            )?;
+        } else {
+            bounded(&p, MAX_TERMS, MAX_DEGREE)?;
+        }
+        polynomials.insert(name, p);
     }
     Ok(Extracted {
         algebra,
@@ -515,13 +722,14 @@ fn discover(input: &Input) -> Result<Evidence> {
         });
     }
     Ok(Evidence {
-        schema_version: 1,
+        schema_version: 2,
         input_sha256: semantic_hash(input)?,
         polynomials: e
             .polynomials
             .iter()
             .map(|(name, p)| (name.clone(), e.algebra.format(p)))
             .collect(),
+        polynomial_statistics: polynomial_statistics(&e.polynomials),
         certificates,
         checked_identity_names: input.identities.iter().map(|i| i.name.clone()).collect(),
     })
@@ -529,7 +737,7 @@ fn discover(input: &Input) -> Result<Evidence> {
 
 fn verify(input: &Input, proof: &Evidence) -> Result<()> {
     ensure!(
-        proof.schema_version == 1 && proof.input_sha256 == semantic_hash(input)?,
+        proof.schema_version == 2 && proof.input_sha256 == semantic_hash(input)?,
         "evidence version or original input changed"
     );
     ensure!(
@@ -545,6 +753,10 @@ fn verify(input: &Input, proof: &Evidence) -> Result<()> {
     ensure!(
         proof.polynomials == expected,
         "reconstructed polynomials changed"
+    );
+    ensure!(
+        proof.polynomial_statistics == polynomial_statistics(&e.polynomials),
+        "polynomial statistics changed"
     );
     ensure!(
         proof.checked_identity_names
@@ -645,7 +857,7 @@ fn main() -> Result<()> {
     });
     save_fresh(&args.output, &report)?;
     println!(
-        "research identities and 10 strict premises replayed; no root topology or CAD coverage claim"
+        "research identities and strict premises replayed; no root topology or CAD coverage claim"
     );
     Ok(())
 }
@@ -664,6 +876,7 @@ mod tests {
             positive_scale: "3/7".into(),
             endpoint_multipliers: ["1", "2"].map(String::from),
             identities: Vec::new(),
+            kinematic_map: None,
         }
     }
 
@@ -782,6 +995,38 @@ mod tests {
         assert!(save_fresh(&path, &serde_json::json!({"second": true})).is_err());
         assert_eq!(fs::read(&path)?, original);
         fs::remove_file(path)?;
+        Ok(())
+    }
+
+    #[test]
+    fn affine_kinematic_map_replays_and_rejects_wrong_scope() -> Result<()> {
+        let mut input = family_one();
+        input.variables.insert(0, "s".into());
+        input.polynomial =
+            "(3/7)*((x^2+(1-s*y)*x+y^2+1-v*(y+1))*z+(x+1)*(y+2)*(x+y+3)-v*(y+2)-3*v*(x+1))".into();
+        input.kinematic_map = Some(KinematicMap {
+            parameters: ["s", "v"].map(String::from),
+            factor_critical: true,
+            critical_resultant: true,
+            critical_resultant_term_cap: Some(8192),
+        });
+        let proof = discover(&input)?;
+        verify(
+            &input,
+            &serde_json::from_slice(&serde_json::to_vec(&proof)?)?,
+        )?;
+        assert_eq!(proof.certificates.len(), 12);
+        assert!(proof.polynomials.contains_key("map_critical_resultant"));
+        let mut altered = proof.clone();
+        altered
+            .polynomials
+            .insert("map_critical".into(), "0".into());
+        assert!(verify(&input, &altered).is_err());
+        for expression in ["s*v*x", "s", "v^2", "s*y*z"] {
+            let mut changed = input.clone();
+            changed.polynomial.push_str(&format!("+{expression}"));
+            assert!(discover(&changed).is_err(), "{expression}");
+        }
         Ok(())
     }
 }

@@ -1,11 +1,13 @@
 # A rational kinematic map for positive pair roots
 
-Research continuation, 10 October 2026. The map and derivative identities in
-this note are hand-derived, with independent static review; they have not
-been added to the Symbolica replay gate. The preceding endpoint/resultant
-gate is recorded in [positive pair root stratification](POSITIVE_PAIR_ROOT_STRATIFICATION.md).
-No new algebra run, root-count theorem for the authentic complement, or
-production change is claimed.
+Research continuation, 10 October 2026. The map and derivative identities
+were hand-derived and independently reviewed. The bounded gate below now
+replays affine extraction, the cleared inverse map, both `U` derivative
+numerators, and the full `D` identity on the authenticated operand. The
+geometric consequences remain conditional on the stated whole-cell
+obligations; no authentic-complement root-count theorem or production
+change is claimed. The preceding endpoint/resultant gate is recorded in
+[positive pair root stratification](POSITIVE_PAIR_ROOT_STRATIFICATION.md).
 
 ## Extract the affine parameters without changing the variable order
 
@@ -178,8 +180,82 @@ masses positive. That theorem cannot certify away the genuinely
 sign-changing mixed-mass complement here. A successfully replayed positive
 coefficient identity would still be a valid local sufficient certificate.
 
-The recommended next gate remains small: replay the affine-map and `D`
-identities on unrelated inputs and the authenticated operand, then certify
-the positive pair inventory across one documented irrelevant resultant
-collision. Do not start with a full unrestricted sextic discriminant, and
-do not infer a global two-intersection bound from the existing samples.
+The next topology gate is to certify the positive pair inventory across
+one documented irrelevant resultant collision. Do not infer a global
+two-intersection bound from the existing samples.
+
+## Bounded generic replay and elimination evidence
+
+The optional `kinematic_map` declaration in `examples/positive_pair_replay.rs`
+names the two original base parameters. The helper extracts all coefficients,
+rejects parameter cross terms and unsupported dependencies, and reconstructs
+the `s`-free critical polynomial. It verifies the full ideal identity above,
+the cleared inverse identity
+
+```text
+T*q = (Q*T-C*M)-s*H*T+C*B,
+```
+
+and both normalized `U` derivative numerators. Existing domain certificates
+prove `H,T>0` in addition to the ten preceding endpoint premises. All twelve
+certificates on the authentic operand used `shifted_coefficients` and passed
+fresh serialization/replay. The input retains the exact preceding signed
+polynomial and constraints `s>4,u>4` and seven positive Feynman coordinates,
+without a `C0` assumption. This remains a conditional operand check, not a
+new original-coordinate transport proof.
+
+In order `[s,u,x1,x3,x5,x7,y,x,z]`, the exact outputs are:
+
+| Polynomial | Terms | Coordinate degrees | Aggregate rational coefficient bits |
+|---|---:|---|---:|
+| `D` | 220 | `[0,2,4,4,4,4,4,4,0]` | 1,636 |
+| `Res_x(B,D)` | 5,863 | `[0,6,5,6,12,13,11,0,0]` | 147,339 |
+
+Shared checked factorization of `D` returned one canonical support factor,
+with the same degrees and term count. This output is not a displayed signed
+multiplicity decomposition. No factorization, positive-root classification,
+or delineability proof for `Res_x(B,D)` was attempted. Its degree eleven in
+`y` is itself a reason not to treat this projection as a completed reduction.
+
+The first resultant run reached the helper's 2,048-term export cap and
+failed explicitly in 0.122560 seconds, at 17,896 KiB peak RSS. A separate
+metadata-only rejection recorded the 5,863 terms in 0.123266 seconds. Both
+failed process records remain. An explicit research-only allowance of
+8,192 terms then enabled export and fresh recomputation; the ordinary cap
+remains unchanged for every other polynomial. The option is bounded by
+16,384 terms, aggregate coefficient size of 16 Mi-bits, estimated logical
+storage of 128 MiB, total degree 24, and per-coefficient rational height 512.
+The existing 4 MiB evidence/output limit also remains. These are output
+gates; the external supervisor bounds native transient allocations.
+
+Final supervised single-CPU measurements, each including fresh replay:
+
+| Gate | Wall seconds | Peak RSS KiB | Discovery seconds | Separate replay seconds |
+|---|---:|---:|---:|---:|
+| Map identities and twelve premises | 0.062639 | 10,776 | 0.026538 | 0.021707 |
+| Also checked `D` factorization | 0.081817 | 12,692 | 0.032065 | 0.030913 |
+| Also `Res_x(B,D)`, allowance 8,192 | 0.263918 | 19,588 | 0.114849 | 0.119254 |
+
+The final resultant report is 263,893 bytes. Every process completed with
+exit zero and untruncated output under CPU 3 / 2 GiB and at most 120 seconds.
+Seven focused tests passed; the additional map test includes a nonconstant
+`C(y)`, changed evidence, and rejected affine-pattern violations. The final
+test/build supervisors took 11/10 seconds and sampled 814,132/822,636 KiB
+aggregate peak RSS. Earlier successful development builds and both capped
+resultant attempts are retained. These are individual research measurements,
+not a whole-solver comparison.
+
+Artifacts remain outside commits in
+`artifacts/research/rational-kinematic-map-01/`. `preparation.json` preserves
+the previous authenticated original bindings; `runtime-final-before.sha256`
+was checked unchanged after the runs, and `final-manifest.json` binds the
+retained inputs, binaries, reports, process records and source.
+
+| Artifact | SHA-256 |
+|---|---|
+| Generic helper source | `958c1c302a054a2efc68f4aaff6443b7d3159a2b067b56d0100017660f11e1f8` |
+| Frozen `helper-final` | `43ebdc3b928f912806e53b57910b316a657cc500073cd380057449f27850f974` |
+| `resultant-8192-input.json` | `536fa659260e062b0a827e1987db2bc2480579708ffd6c2762bb57eeff1d7842` |
+| `identities-final-report.json` | `309fa6b5a2ce11188d8132d829132261d6e3bf88564a1d84ee177f93961ce878` |
+| `factor-final-report.json` | `df16903271cf4f94cd77634be8cdf1fba626345087aae7d198914be9f9c5b6e7` |
+| `resultant-8192-report.json` | `4f13784622f94918f431e9180418334c6bf0d66c3b758bc88fb91a7a5a880a6b` |
