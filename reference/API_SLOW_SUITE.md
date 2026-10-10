@@ -105,10 +105,14 @@ The immutable evidence is under
 
 At this audit checkpoint, a third one-hour attempt,
 `test_gluza_ex33_trivial/order/1`, is running on CPU2, and a fourth,
-`test_gluza_ex33/order/1`, started on CPU1 at approximately 09:18 UTC on
+`test_gluza_ex33/order/1`, started on CPU1 at approximately 09:16 UTC on
 2026-10-10. They use the same frozen helper, solver, limits and reference-cap
 policy, under `artifacts/bench/api-hour-01/{gluza33-trivial,gluza33}/`.
-The symbolic pentabox-b and pentabox-d ordering APIs are still pending.
+The fifth attempt, `test_pentabox_exb_symb/order/1`, started on CPU0 at
+approximately 09:49 UTC with the same frozen helper, solver and limits under
+`artifacts/bench/api-hour-01/pentabox-b/`. Its input SHA-256 is
+`120e230d5d07bdd6e54a086d4a541b3c3644e6ce1b628d86be85fede672a8fa5`.
+The symbolic pentabox-d ordering API is still pending.
 These workers are independent of the original-decomposition queue.
 
 | Evidence | SHA-256 |

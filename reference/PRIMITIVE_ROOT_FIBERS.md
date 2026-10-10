@@ -83,3 +83,21 @@ With this change and the independently measured affine-prefix shortcut, the
 full fast suite passes **512 tests across 34 targets**. Its log is
 `artifacts/primitive-root-affine-fast-tests-01.log`, SHA-256
 `f5f98201ee335153f4ae1d11d08b847ff26a1c4407b706b2f2be83f33a48d02f`.
+
+The release built from `875f537` in 468 seconds has SHA-256
+`2887414c30abddd437da4a216f50f6bbddfdd176577dacbec75734df80e64d85`.
+A fresh public CLI solve and independent verification of the bounded square
+with deferred local projection accepted two cells, two stacks and four
+rejected branches. The same source's debug verifier also accepted the unchanged
+historical fixed-A446 proof: eight cells, five stacks and six rejected branches.
+That replay neither regenerates the proof nor repeats the supplemental sampling.
+The build, test and verification manifest is
+`artifacts/primitive-root-affine-release-build-01.json`, SHA-256
+`51a906f519ae8a8a38aa9069e32b8a2f355c8fd29aa997a5916cd4864ba6a584`.
+
+A [three-pair release diagnostic](A414_FIXED_WORK_RELEASE.md) subsequently
+compared this change together with the affine-prefix shortcut against the
+previous release. Identical capped A414 work took median 7.747562 seconds
+before and 6.916713 seconds after; all exact outputs and counters matched.
+Every run remained incomplete at the same node cap. This does not establish
+a completed-solve speedup or isolate the benefit of either shortcut.
