@@ -51,6 +51,10 @@ pub struct SolverOptions {
     /// Retain bounded learned cuts as hints; every stack is re-certified.
     #[serde(skip_serializing_if = "is_true")]
     pub local_reuse_learned_cuts: bool,
+    /// Experimental durable cut hints, never cached proofs. Requires an
+    /// explicit checkpoint directory and compatible local projection options.
+    #[serde(skip_serializing_if = "is_false")]
+    pub local_hint_archive: bool,
     /// Retain bounded rational sampling hints across refinements of one stack.
     #[serde(skip_serializing_if = "is_false")]
     pub local_stable_samples: bool,
@@ -110,6 +114,7 @@ impl Default for SolverOptions {
             local_batch_siblings: true,
             local_reuse_subtrees: true,
             local_reuse_learned_cuts: true,
+            local_hint_archive: false,
             local_stable_samples: false,
             local_pair_cancellations: 2,
             local_descartes_one: true,

@@ -656,3 +656,39 @@ wall budget. Report loaded and actually used prefixes/cuts, preprocessing and
 I/O cost, newly reached prefixes, algebra cache hits, refinements, and complete
 independent verification if achieved. The current evidence favors this small
 hint experiment before a trusted-looking but unverified serialized tree cache.
+
+The opt-in v1 hint implementation uses an 8 MiB regular JSON file with a
+checksummed, canonical sparse polynomial dictionary; the human-readable
+expression must match the reconstructed sparse polynomial exactly. Untrusted
+expressions are never expanded. Decimal integer coefficients, exponent/degree
+bounds and canonical rational prefixes are checked before construction. A cut
+is admitted lazily on its first exact-prefix hit only if it belongs to that
+axis and its fresh exact factor basis is the singleton primitive polynomial.
+Fresh registry IDs exist only in memory. Original cuts remain present, and the
+ordinary stack projection, sectors and returned ancestor obligations run in
+full. A malformed archive or rejected polynomial only loses a hint.
+
+The context includes the ordered normalized problem, original parameters and
+groups, solver/proof options, domain-certificate options, Symbolica version and
+an explicit hint-policy version. Paths and resource budgets are excluded.
+Archives retain recent shallow inventories from the first four axes before
+bounded FIFO entries; these recent inventories remain useful exact-prefix
+hints even after their recursive visit returns. Limits are 2,048 dictionary
+polynomials and prefix entries, 2,048 cuts per prefix, 2,048 terms per
+polynomial and 32,768 dictionary terms, total degree 64, coefficient height
+4,096 bits, and prefix height 512 bits per numerator/denominator (8,192 bits in
+total). Both sparse and expression bytes count toward the bound. Loading and
+lazy validation share a soft preprocessing budget of min(2 seconds, 5% of the
+solve budget), checked between exact operations; the external worker remains
+responsible for preempting any single factorization.
+
+Snapshots are coarsely spaced by ten seconds and use a bounded temporary file,
+fsync and atomic rename. A soft stop publishes only while wall budget remains;
+a killed writer leaves the preceding complete archive available. Snapshot,
+load and validation time is part of solve/campaign time. The checker has no
+archive access and replays only the exported evidence. Saturated Descartes,
+interval Descartes and rational pair-separator template discovery all disable
+this v1 archive explicitly, since their permanent admission history is not
+stored. Ordinary Descartes-one and algebraic cancellation certificates have
+no such template ledger. This remains an optional discovery experiment until
+matched interrupted-restart measurements establish a benefit.

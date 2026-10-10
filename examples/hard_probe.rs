@@ -87,6 +87,9 @@ struct Args {
     /// Reuse visited rational samples after exact membership in refined sectors.
     #[arg(long)]
     stable_samples: bool,
+    /// Persist bounded cut hints; incompatible sample-template modes decline it.
+    #[arg(long)]
+    local_hint_archive: bool,
     /// Retain high-degree discriminants instead of using Descartes one variation.
     #[arg(long)]
     no_descartes_one: bool,
@@ -380,6 +383,7 @@ struct Campaign {
     batch_siblings: bool,
     reuse_subtrees: bool,
     reuse_learned_cuts: bool,
+    local_hint_archive: bool,
     stable_samples: bool,
     descartes_one: bool,
     descartes_witnesses: bool,
@@ -460,6 +464,7 @@ fn run_trial(campaign: &Campaign, trial: Trial) -> Result<Record> {
     problem.solver.local_batch_siblings = campaign.batch_siblings;
     problem.solver.local_reuse_subtrees = campaign.reuse_subtrees;
     problem.solver.local_reuse_learned_cuts = campaign.reuse_learned_cuts;
+    problem.solver.local_hint_archive = campaign.local_hint_archive;
     problem.solver.local_descartes_one = campaign.descartes_one;
     problem.solver.local_descartes_witnesses = campaign.descartes_witnesses;
     problem.solver.local_descartes_intervals = campaign.descartes_intervals;
@@ -1009,6 +1014,7 @@ fn main() -> Result<()> {
         batch_siblings: !args.no_batch_siblings,
         reuse_subtrees: !args.no_reuse_subtrees,
         reuse_learned_cuts: !args.no_learned_cuts,
+        local_hint_archive: args.local_hint_archive,
         stable_samples: args.stable_samples,
         descartes_one: !args.no_descartes_one,
         descartes_witnesses: args.descartes_witnesses,

@@ -65,7 +65,9 @@ use symbolica::prelude::*;
 mod descartes;
 mod interval_descartes;
 pub use interval_descartes::{PositiveInterval, PositiveIntervalEndpoint, PositiveIntervalWitness};
+mod hint_archive;
 mod learned_cuts;
+pub use hint_archive::HintArchiveReport;
 mod pair_witnesses;
 mod stack_samples;
 mod subtree_cache;
@@ -260,6 +262,8 @@ pub struct LocalReport {
     pub learned_cut_cache_budget_bytes: usize,
     pub learned_cut_cache_entry_limit: usize,
     pub learned_cut_cache_id_limit: usize,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub hint_archive: Option<HintArchiveReport>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -1523,6 +1527,7 @@ struct Builder<'a> {
     completed_subtrees: subtree_cache::CompletedSubtrees,
     /// Incomplete discoveries are only hints; every seeded stack is rebuilt.
     learned_cuts: learned_cuts::LearnedCuts,
+    hint_archive: Option<hint_archive::HintArchive>,
     descartes_stock: descartes::WitnessStock,
     interval_stock: interval_descartes::WitnessStock,
     pair_witness_stock: pair_witnesses::WitnessStock,
@@ -1552,12 +1557,25 @@ impl Builder<'_> {
         report.elapsed_seconds = self.started.elapsed().as_secs_f64();
         self.completed_subtrees.report(&mut report);
         self.learned_cuts.report(&mut report);
+        report.hint_archive = self
+            .hint_archive
+            .as_ref()
+            .map(|archive| archive.report.clone());
         self.descartes_stock.report(&mut report);
         self.interval_stock.report(&mut report);
         self.pair_witness_stock.report(&mut report);
         report
     }
     fn publish(&mut self, force: bool) -> Result<()> {
+        if let Some(archive) = &mut self.hint_archive {
+            let terminal = matches!(self.report.active_phase.as_str(), "incomplete" | "complete");
+            archive.snapshot(
+                self.learned_cuts.snapshots(),
+                &self.polynomials,
+                &self.normalized.algebra,
+                terminal,
+            );
+        }
         let Some(path) = &self.progress_path else {
             return Ok(());
         };
@@ -1591,6 +1609,60 @@ impl Builder<'_> {
         self.ids.insert(polynomial.clone(), id);
         self.polynomials.push(polynomial);
         id
+    }
+    fn seed_archive(&mut self, prefix: &[Rational], cuts: &mut BTreeSet<usize>) {
+        let Some(mut archive) = self.hint_archive.take() else {
+            return;
+        };
+        let before = cuts.len();
+        for candidate in archive.candidates(prefix) {
+            if !archive.budget_available() {
+                break;
+            }
+            match candidate {
+                hint_archive::Candidate::Known(id) => {
+                    if highest(&self.polynomials[id]) == Some(prefix.len()) {
+                        cuts.insert(id);
+                    }
+                }
+                hint_archive::Candidate::New(hash, portable) => {
+                    let started = Instant::now();
+                    let polynomial = portable.reconstruct(&self.normalized.algebra, prefix.len());
+                    archive.report.construction_seconds += started.elapsed().as_secs_f64();
+                    let id = match polynomial {
+                        Ok(polynomial) if archive.budget_available() => {
+                            let started = Instant::now();
+                            let factors =
+                                self.operations.factors(std::slice::from_ref(&polynomial));
+                            archive.report.factor_seconds += started.elapsed().as_secs_f64();
+                            match factors {
+                                Ok(factors)
+                                    if factors.as_slice() == std::slice::from_ref(&polynomial) =>
+                                {
+                                    Some(self.intern(polynomial))
+                                }
+                                _ => None,
+                            }
+                        }
+                        _ => None,
+                    };
+                    if let Some(id) = id {
+                        cuts.insert(id);
+                    }
+                    archive.validated(hash, id);
+                }
+            }
+        }
+        archive.report.seeded_cuts += cuts.len() - before;
+        self.hint_archive = Some(archive);
+        if cuts.len() > before {
+            self.learned_cuts.remember(prefix, cuts);
+        }
+    }
+    fn observe_archive(&mut self, prefix: &[Rational], cuts: &BTreeSet<usize>) {
+        if let Some(archive) = &mut self.hint_archive {
+            archive.observe(prefix, cuts);
+        }
     }
     fn guard_nonzero(&self, required: &BTreeSet<usize>, prefix: &[Rational]) -> Work<()> {
         for &id in required {
@@ -1907,6 +1979,8 @@ impl Builder<'_> {
         if self.options.reuse_learned_cuts {
             self.learned_cuts.seed(prefix, &mut cuts);
         }
+        self.seed_archive(prefix, &mut cuts);
+        self.observe_archive(prefix, &cuts);
         // The ancestor prefix is restored after every child and remains fixed
         // throughout this loop. Pool hints never escape this visit or carry a
         // child proof. Every selected sample goes through the ordinary visitor.
@@ -1992,6 +2066,7 @@ impl Builder<'_> {
                         if self.options.reuse_learned_cuts && !additions.is_empty() {
                             cuts.extend(additions);
                             self.learned_cuts.remember(prefix, &cuts);
+                            self.observe_archive(prefix, &cuts);
                         }
                         return Err(stop);
                     }
@@ -2056,6 +2131,7 @@ impl Builder<'_> {
                 if self.options.reuse_learned_cuts {
                     self.learned_cuts.remember(prefix, &cuts);
                 }
+                self.observe_archive(prefix, &cuts);
                 self.report.refinements += 1;
                 continue;
             }
@@ -2290,6 +2366,7 @@ pub fn solve_local(problem: &Problem, options: &LocalOptions) -> Result<LocalSol
             ((problem.limits.memory_mib as usize).saturating_mul(1024 * 1024) / 128)
                 .min(options.learned_cut_cache_mib.saturating_mul(1024 * 1024)),
         ),
+        hint_archive: hint_archive::HintArchive::new(problem, &normalized, options, started),
         descartes_stock: descartes::WitnessStock::default(),
         interval_stock: interval_descartes::WitnessStock::default(),
         pair_witness_stock: pair_witnesses::WitnessStock::default(),
@@ -2367,6 +2444,14 @@ pub fn solve_local(problem: &Problem, options: &LocalOptions) -> Result<LocalSol
     builder.report.current_prefix.clear();
     builder.report.active_phase = "complete".into();
     builder.publish(true)?;
+    if started.elapsed().as_secs_f64() >= problem.limits.wall_time_secs {
+        return Ok(unfinished(
+            problem,
+            "wall time limit during local checkpoint publication".into(),
+            started,
+            Some(builder.snapshot()),
+        ));
+    }
     let report = builder.snapshot();
     statistics.projection_seconds = report.phases.factor_seconds
         + report.phases.discriminant_seconds

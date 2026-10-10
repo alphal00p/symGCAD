@@ -177,6 +177,16 @@ impl LearnedCuts {
         report.learned_cut_cache_entry_limit = self.entry_limit;
         report.learned_cut_cache_id_limit = self.id_limit;
     }
+
+    /// Read-only FIFO inventory for bounded durable *hint* snapshots. Numeric
+    /// IDs are resolved to canonical polynomials before any disk publication.
+    pub(super) fn snapshots(&self) -> impl Iterator<Item = (&[Rational], &[usize])> {
+        self.fifo.iter().filter_map(|prefix| {
+            self.entries
+                .get(prefix)
+                .map(|entry| (prefix.as_ref(), entry.ids.as_ref()))
+        })
+    }
 }
 
 #[cfg(test)]
