@@ -153,4 +153,40 @@ Every coefficient is positive, and independent Sturm checks also confirm no guar
 
 This is a **projection critical point**, not a proved physical Landau singularity, and a nondegenerate fold has not yet been established. It rules out simply omitting all relevant critical cuts using universal Jacobian nonvanishing. Further work must stratify the critical locus or use a different decomposition; repeating global sign-certificate searches for this false statement is inappropriate.
 
-Final evidence: `artifacts/research/a446-jacobian-cubic-01/counterexample-v4.json`, SHA-256 `f885c73d46bf5aa7eec596afd24946daf35c781cb03930c29b554ad80542999b`; process record `115101dff31e797b1317af16a0a515017d007691b3c378ca69c7c0b2050009aa`. Frozen helper SHA-256 `5d3d65d75a1f6b30088a49853d756c446f8cb992b54e31610f034f6aaed34d65`. Four exact helper tests pass, including the strict-domain critical-point regression. The final Rust-supervised run completed in 6.45 seconds under the 120-second/8-GiB cap, with about 30 MiB RSS. The earlier bounded Möbius threshold factorization also completed, retaining signed scalar and multiplicities; its mixed factors do not supply a sign certificate.
+Final evidence: `artifacts/research/a446-jacobian-cubic-01/counterexample-v4.json`, SHA-256 `f885c73d46bf5aa7eec596afd24946daf35c781cb03930c29b554ad80542999b`; process record `115101dff31e797b1317af16a0a515017d007691b3c378ca69c7c0b2050009aa`. Frozen helper SHA-256 `5d3d65d75a1f6b30088a49853d756c446f8cb992b54e31610f034f6aaed34d65`. Four exact helper tests pass, including the strict-domain critical-point regression. The final Rust-supervised run completed in 6.45 seconds under the 120-second/8-GiB cap, with about 38 MiB RSS. The earlier bounded Möbius threshold factorization also completed, retaining signed scalar and multiplicities; its mixed factors do not supply a sign certificate.
+
+## A checked stratification of the unbounded chart branch
+
+The critical point need not be handled by an unrestricted cubic discriminant. On the branch `A4>=0`, the first three coefficients of `C(h)=c0+c1*h+c2*h^2+c3*h^3` are strictly positive. The helper proves this with exact boundary identities. Set `b0=r+w+v+z`, `y0=v+z`, `A40=A4|t=0`, `B40=B4|t=0`, and
+
+```text
+U0=(r+v)(w+z)*(b0^2-m*w*(r+w))+r*w*b0^2,
+V0=r*w*b0*(2*b0-m*w).
+
+c0|t=0=y0*V0*B40,
+c1|t=0=y0*(V0*A40+U0*B40),
+c2|t=0=y0*U0*A40.
+```
+
+Symbolica reconstructs each identity and checks that `A40-A4`, `B40-A40`, `U0`, `V0`, and each `ci-ci|t=0` for `i=0,1,2` have strictly positive coefficients. Thus `A40>A4>=0` and all three coefficients are positive throughout this branch. Consequently `c3>=0` gives no positive critical `h`; `c3<0` gives exactly one simple positive critical `h`, by the intermediate value theorem and Descartes' bound with multiplicity. This includes the degree drop `c3=0` without introducing a spurious critical point.
+
+The sign of `c3` itself has a smaller nested description. Its exact signed factorization is
+
+```text
+c3=t*(w+z)*(r+v)*(36r+31w+36t+36v+31z)*H3/324.
+```
+
+The 52-term factor `H3=q0+q1*r+q2*r^2+q3*r^3` satisfies
+
+```text
+q1=5*w^2*(v-z)^2+R1,
+q0=w*v*K(t+v,w,z),
+K(j,w,z)=-5*z^3+(8*j-5*w)*z^2+(31*j^2+26*w*j)*z
+         +18*j^3+31*w*j^2+18*w^2*j.
+```
+
+The helper checks the square identity, and `R1`, `q2`, `q3` have respectively 22, 9 and 2 strictly positive monomials. Hence `H3` strictly increases with `r>0`. For fixed `j,w>0`, `K` has exactly one simple positive root in `z`: its coefficient signs in increasing degree are `+,+,arbitrary,-`. If `K>=0`, then `H3>0` for every `r>0`. If `K<0`, then `H3` has exactly one simple positive root in `r`, with negative sign below and positive sign above. These exact cubic thresholds give a stratification of the possible critical `h` values rather than incorrectly deleting them all.
+
+A separate checked coefficient identity proves `c0>0` on the larger region `B4>0`. The remaining bounded branch `A4<0<B4` is still unresolved. This research chart mixes original coordinates; the nested roots are not yet a transported cylindrical decomposition in the original mandatory order. There is no new original-problem completion or production projection rule.
+
+Evidence: `artifacts/research/a446-jacobian-cubic-01/stratification-v9.json`, SHA-256 `4d65e03b68e270396b8f7b2b1eaa51f1e777244f4074c5de1a7deade34472370`; process SHA-256 `58d40bb5e6b62eeddc33a8aab5ef76f13b33857ed30164dde60372aebe55d9e5`. Frozen helper SHA-256 `692fc77017ee807ec3cd23b2be43e00fb945a69a0a8637bb5262bcc21fa9ea29`; helper source SHA-256 `7bdb0e894ad757ba0ed256c4353df545d4458ea81bda6879221abe68add41dec`. Five tests pass, including a rejection when the purported positive square residual is negative. The exact worker completed in 0.49 seconds (0.53 seconds supervised wall time, about 21 MiB RSS), under the 120-second/8-GiB cap. This is algebraic research timing, not a solver benchmark.

@@ -25,6 +25,8 @@ struct Args {
     factor: bool,
     #[arg(long)]
     certificates: bool,
+    #[arg(long)]
+    factor_coefficients: bool,
     #[arg(long, hide = true)]
     worker: bool,
 }
@@ -93,11 +95,75 @@ fn strip_positive(a: &Algebra, f: &Poly) -> Result<(Poly, Poly, Vec<Value>)> {
 fn positive(p: &Poly) -> bool {
     !p.is_zero() && p.coefficients.iter().all(|c| *c > Rational::zero())
 }
+fn factor_record(a: &Algebra, p: &Poly) -> Result<Value> {
+    let factors = p.factor();
+    let reconstructed = factors
+        .iter()
+        .fold(p.one(), |acc, (f, e)| &acc * &f.pow(*e));
+    ensure!(
+        reconstructed == *p,
+        "full signed factorization reconstructed"
+    );
+    Ok(
+        json!({"product_checked":true,"factors":factors.iter().map(|(f,e)|json!({"factor":stats(a,f),"multiplicity":e})).collect::<Vec<_>>()}),
+    )
+}
+fn leading_factor_stratification(a: &Algebra, p: &Poly) -> Result<Value> {
+    let mut q = vec![p.zero(); 4];
+    for (c, e) in p.to_univariate_polynomial_list(1) {
+        ensure!(e <= 3, "leading factor r degree");
+        q[e as usize] = c;
+    }
+    let exponent = [0, 0, 2, 0, 1, 1];
+    let cross = q[1]
+        .coefficients
+        .iter()
+        .zip(q[1].exponents_iter())
+        .find(|(_, e)| **e == exponent)
+        .map(|(c, _)| c.clone())
+        .context("quadratic cross coefficient")?;
+    ensure!(cross < Rational::zero(), "negative cross term");
+    let weight = -cross / Rational::from(2);
+    let square = a.parse("ww^2*(vv-zz)^2")?.mul_coeff(weight.clone());
+    let residual = &q[1] - &square;
+    let j = a.parse("tt+vv")?;
+    let z = a.parse("zz")?;
+    let w = a.parse("ww")?;
+    let k = z.pow(3).mul_coeff(Rational::from(-5))
+        + &(&j.clone().mul_coeff(Rational::from(8)) - &w.clone().mul_coeff(Rational::from(5)))
+            * &z.pow(2)
+        + &(&j.pow(2).mul_coeff(Rational::from(31)) + &(&w * &j).mul_coeff(Rational::from(26)))
+            * &z
+        + j.pow(3).mul_coeff(Rational::from(18))
+        + (&w * &j.pow(2)).mul_coeff(Rational::from(31))
+        + (&w.pow(2) * &j).mul_coeff(Rational::from(18));
+    let scale = &weight / &Rational::from(5);
+    ensure!(
+        &a.parse("ww*vv")? * &k.clone().mul_coeff(scale.clone()) == q[0],
+        "endpoint cubic identity"
+    );
+    let mut kc = vec![p.zero(); 4];
+    for (c, e) in k.to_univariate_polynomial_list(5) {
+        kc[e as usize] = c;
+    }
+    ensure!(
+        positive(&kc[0]) && positive(&kc[1]) && kc[3] == p.constant(Rational::from(-5)),
+        "one variation in endpoint cubic"
+    );
+    let proved = positive(&residual) && positive(&q[2]) && positive(&q[3]);
+    ensure!(
+        &square + &residual == q[1],
+        "linear coefficient square identity"
+    );
+    Ok(
+        json!({"proved":proved,"factor":a.format(p),"r_coefficients":q.iter().map(|p|stats(a,p)).collect::<Vec<_>>(),"linear_square":a.format(&square),"linear_residual":stats(a,&residual),"endpoint_cubic":a.format(&k),"endpoint_positive_scale":scale.to_string(),"identities_checked":true,"conclusion":"H3 is strictly increasing in r>0. Its endpoint is positive scale*w*v*K(t+v,w,z). K has exactly one simple positive z root. If K>=0 then H3>0 for all r>0; if K<0 then H3 has exactly one simple positive r root, negative below it and positive above."}),
+    )
+}
 // Sufficient coefficient certificate only. No failed search decides a sign.
 fn subtract_premise(f: &Poly, premise: &Poly, reverse: bool) -> Result<(Poly, Poly, usize)> {
     use std::collections::BTreeMap;
     ensure!(
-        f.variables() == premise.variables() && f.nterms() <= 16384 && premise.nterms() <= 64,
+        f.variables() == premise.variables() && f.nterms() <= 16384 && premise.nterms() <= 512,
         "certificate bounds"
     );
     let mut residual = f.clone();
@@ -357,6 +423,9 @@ fn main() -> Result<()> {
         if args.certificates {
             c.arg("--certificates");
         }
+        if args.factor_coefficients {
+            c.arg("--factor-coefficients");
+        }
         let p = symgcad::benchmark::run_bounded(
             &mut c,
             &symgcad::Limits {
@@ -399,6 +468,90 @@ fn main() -> Result<()> {
     }
     let mut report = json!({"research_only":true,"coverage_claim":false,"input_sha256":format!("{:x}",Sha256::digest(&bytes)),"variables":a.names,"identity_checked":true,"positive_factors_removed":removed,"positive_factor":a.format(&positive_factor),"reduced":stats(&a,&reduced),"V_over_h_coefficients":[stats(&a,&bb),stats(&a,&aa)],"s_above_4_coefficients":[stats(&a,&b4),stats(&a,&a4)],"cubic_coefficients":coefficients.iter().map(|p|stats(&a,p)).collect::<Vec<_>>(),"elapsed_seconds":started.elapsed().as_secs_f64(),"stage":"structure_complete"});
     save(&args.output, &report)?;
+    let zero = Rational::zero();
+    let a40 = a4.replace(3, &zero);
+    let b40 = b4.replace(3, &zero);
+    let b0 = a.parse("rr+ww+vv+zz")?;
+    let y0 = a.parse("vv+zz")?;
+    let u0 = a.parse("(rr+vv)*(ww+zz)")? * &(&b0.pow(2) - &a.parse("(5/18)*ww*(rr+ww)")?)
+        + &a.parse("rr*ww")? * &b0.pow(2);
+    let v0 = &a.parse("rr*ww")?
+        * &b0
+        * &(&b0.clone().mul_coeff(Rational::from(2)) - &a.parse("(5/18)*ww")?);
+    let predicted = [
+        &y0 * &v0 * &b40,
+        &y0 * &(&v0 * &a40 + &u0 * &b40),
+        &y0 * &u0 * &a40,
+    ];
+    let mut lifts = Vec::new();
+    for i in 0..3 {
+        let boundary = coefficients[i].replace(3, &zero);
+        ensure!(
+            boundary == predicted[i],
+            "exact coefficient boundary factor identity at coefficient {i}"
+        );
+        lifts.push(&coefficients[i] - &boundary);
+    }
+    let ac = &a40 - &a4;
+    let bc = &b40 - &a40;
+    let certified = positive(&ac)
+        && positive(&bc)
+        && positive(&u0)
+        && positive(&v0)
+        && lifts.iter().all(positive);
+    report["unbounded_branch_stratification"] = json!({"identity_checked":true,"proved":certified,"premises":["h,r,w,t,v,z>0","A4>=0"],"A40_minus_A4":stats(&a,&ac),"B40_minus_A40":stats(&a,&bc),"U0":stats(&a,&u0),"V0":stats(&a,&v0),"coefficient_lifts":lifts.iter().map(|p|stats(&a,p)).collect::<Vec<_>>(),"conclusion":"c0,c1,c2>0. If c3>=0 there is no positive critical h; if c3<0 there is exactly one simple positive critical h (Descartes with multiplicity)."});
+    save(&args.output, &report)?;
+    if args.factor_coefficients {
+        let mut factorizations = Vec::new();
+        for (i, c) in coefficients.iter().enumerate() {
+            report["stage"] = json!(format!("factor_coefficient_{i}"));
+            save(&args.output, &report)?;
+            factorizations.push(factor_record(&a, c)?);
+            report["coefficient_factorizations"] = json!(factorizations);
+            save(&args.output, &report)?;
+        }
+        let factors = coefficients[0].factor();
+        let mixed = factors
+            .iter()
+            .filter(|(p, _)| !positive(p))
+            .collect::<Vec<_>>();
+        if mixed.len() == 1 && mixed[0].1 == 1 {
+            let h0 = &mixed[0].0;
+            let multiplier = a.parse("18*(rr+ww+vv+zz)")?;
+            let residual = h0 - &(&multiplier * &b4);
+            let certified = residual.is_zero() || positive(&residual);
+            ensure!(
+                &multiplier * &b4 + residual.clone() == *h0,
+                "constant coefficient lemma reconstructed"
+            );
+            report["constant_coefficient_lemma"] = json!({"factor":a.format(h0),"multiplier_B4":a.format(&multiplier),"residual":stats(&a,&residual),"identity_checked":true,"strict_on_B4_positive":certified});
+            save(&args.output, &report)?;
+            if certified {
+                let c1 =
+                    certificate_portfolio(&a, &coefficients[1], &b, &[h0.clone(), b4.clone()])?;
+                report["linear_coefficient_lemma"] = c1.clone();
+                save(&args.output, &report)?;
+                let mut premises = vec![h0.clone(), b4.clone(), a4.clone()];
+                if c1["strict_certificate"] == true {
+                    premises.push(coefficients[1].clone());
+                }
+                report["quadratic_coefficient_lemma"] =
+                    certificate_portfolio(&a, &coefficients[2], &b, &premises)?;
+                save(&args.output, &report)?;
+            }
+        }
+        let factors = coefficients[3].factor();
+        let mixed = factors
+            .iter()
+            .filter(|(p, _)| !positive(p))
+            .collect::<Vec<_>>();
+        ensure!(
+            mixed.len() == 1 && mixed[0].1 == 1,
+            "one sign-determining leading factor"
+        );
+        report["leading_factor_stratification"] = leading_factor_stratification(&a, &mixed[0].0)?;
+        save(&args.output, &report)?;
+    }
     if args.certificates {
         let mut attempts = Vec::new();
         for (i, c) in coefficients.iter().enumerate() {
@@ -609,6 +762,22 @@ mod tests {
             q[0] = Rational::from(h);
             original_jacobian_point(&q, &cubic.replace_all(&q))?;
         }
+        Ok(())
+    }
+    #[test]
+    fn leading_factor_square_certificate_requires_a_strict_residual() -> Result<()> {
+        let a = Algebra::new(&["hh", "rr", "ww", "tt", "vv", "zz"].map(String::from))?;
+        let k=a.parse("-5*zz^3+(8*(tt+vv)-5*ww)*zz^2+(31*(tt+vv)^2+26*ww*(tt+vv))*zz+18*(tt+vv)^3+31*ww*(tt+vv)^2+18*ww^2*(tt+vv)")?;
+        let p = &a.parse("ww*vv")? * &k + a.parse("rr*(5*ww^2*(vv-zz)^2+1)+rr^2+rr^3")?;
+        ensure!(
+            leading_factor_stratification(&a, &p)?["proved"] == true,
+            "strict square residual"
+        );
+        let bad = &p - &a.parse("2*rr")?;
+        ensure!(
+            leading_factor_stratification(&a, &bad)?["proved"] == false,
+            "negative residual cannot prove monotonicity"
+        );
         Ok(())
     }
 }
