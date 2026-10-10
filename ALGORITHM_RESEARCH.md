@@ -317,3 +317,69 @@ The helper's small workflow smoke completed and independently verified.
 Inputs, exact identities, operation captures and binary hashes are retained
 in `artifacts/hard-campaigns/simplex-release-01`; every record explicitly
 sets `original_completion=false`.
+
+## Bounded stock of rational root witnesses
+
+A saturated Descartes certificate combines k coefficient sign variations
+with alternating strict signs at zero, k−1 ordered positive rational
+separators, and positive infinity (the leading-coefficient sign). The
+intermediate value theorem supplies at least one positive root in each of
+the k intervals; Descartes' bound counts multiplicities, so each interval
+contains exactly one simple root. Keeping all nonzero coefficient and
+separator-evaluation signs fixed establishes continuous, locally analytic
+positive root branches without excluding collisions of negative roots.
+Exported root ordinals must therefore count positive roots.
+
+Unbounded regeneration of separator constants can nevertheless prevent
+termination. For `p(z,x)=product_j(z-x-j)` on x>0, ordinary leading-coefficient
+and discriminant projection is constant, while separators chosen afresh at
+successive samples can introduce endlessly translated cuts `p(c,x)=0`.
+Valid completed certificates alone do not rule out this search failure.
+
+The proposed construction limit is two distinct separator vectors per
+canonical polynomial in the Builder's fixed variable map and axis. Reuse
+an existing vector when its exact signs establish a witness; after its
+stock is exhausted, use ordinary full-real projection. Admission consumes a
+slot immediately, including when the tentative stack later fails. Slots
+persist for the Builder's entire lifetime: ancestor restarts and subtree or
+learned-cut cache eviction must not reset them, and eviction must never
+permit fresh replacement vectors. Stable append-only canonical polynomial
+IDs are suitable keys.
+
+This yields a finite symbolic closure by downward induction on the highest
+variable. The top-axis inputs are finite. Every polynomial supplies finitely
+many coefficients, leading coefficients, discriminants and at most two
+fixed evaluation sets; each pair supplies finitely many resultants and
+bounded algebraic separation candidates. All resulting guards have strictly
+lower highest variable. Factoring and canonical deduplication therefore
+produce a finite input inventory at the next axis, and the induction repeats.
+Learned hints reuse only guards already generated. With restarts requiring
+a newly discovered canonical cut, this removes the unbounded artificial-cut
+mechanism; it does not make the finite computation cheap or guarantee
+completion within resource limits.
+
+Independent verification must check the supplied witness, not reproduce the
+history-dependent stock choice. It recomputes the polynomial's coefficient
+sign variation count, ordered positive rational separators, exact evaluations,
+strict alternating signs and the full lower-axis guard inventory. It rejects
+missing obligations and zero evaluations. A supplied full-real certificate
+remains valid when its ordinary leading-coefficient/discriminant obligations
+hold, even if the checker could have found a cheaper rational witness.
+
+Future section templates may avoid translated or scaled artificial cuts.
+Examples are `c_j=q_j*L`, for a positive earlier-coordinate or Feynman-parameter
+sum L, and `c_j=-a_(m-1)/(m*a_m)+q_j*L`, using the Vieta center of a
+degree-m polynomial. These are proof sections only; they need not change the
+output coordinates. For common positive denominator D and numerators N_j,
+the exact additional obligations are `N_1>0`, `N_(j+1)-N_j>0`, `D>0`, and
+the signs of `D^m*p(N_j/D)`, expanded polynomially. Existing coefficient
+obligations remain. Templates also need finite admission stock and strict
+expansion budgets; no performance benefit has yet been measured.
+
+A related prospective pair rule can keep two adjacent, individually
+delineable branches apart with a continuous separator c and nonvanishing
+`p(c)` and `q(c)`. Every cross-polynomial adjacency edge must be covered;
+one separator for a deduplicated polynomial pair is insufficient when its
+roots interleave. Exact sample placement, denominator/order guards, stable
+positive ordinals and finite template stock would all require replay. This
+pair rule is a research proposal, not an implemented omission.
