@@ -94,22 +94,22 @@ with three fresh repetitions and identical orders. *±* means two separate sign-
   full one-hour campaigns; this snapshot must be regenerated as those runs finish.
   Missing times and cells are not zeros, and timeouts do not produce finite speedup ratios.
 
-  The main measurements select an available verified three-repeat control, otherwise the fastest
-  accepted full-problem campaign run. They span explicitly labelled immutable implementations;
-  they are not a uniform benchmark of one current executable. A fresh process does not imply a cold
-  cache: C marks isolated cold repetitions, S marks shared checkpoint policy (possibly warm), and ?
-  marks historical runs whose cache policy was not recorded.
-  All in-run search, preprocessing and export are included. Earlier exploratory guide/order discovery
-  is outside fixed-order trials; notably Gluza30 positive used a separately reported 300.026-second
-  ordering search. Verification has its own wall-time column.
+  Measurements prefer verified three-repeat controls, otherwise the fastest accepted original-problem
+  run. Builds are labelled. Cache tags mean cold (C), shared and possibly warm (S), or unrecorded (?).
+  Solve times include in-run search, preprocessing and export. Earlier order discovery is separate;
+  Gluza30 positive used a disclosed 300.026-second search. Verification has its own column.
 
   Baseline ratios use the frozen #text(font: "Libertinus Mono")[9025e71] release and original native GCAD,
-  with the same inputs, variable orders, merge settings, CPU assignment and paired limits.
-  Where a group has two sign branches, the displayed times sum their separate median phase times;
-  the ratio is the ratio of those sums. These columns do not divide the optimized solve time by an
-  unrelated native time. All 483 native-completing branches matched raw cell counts and passed independent
-  verification; 96 native timeouts remain explicit. Across the 483 paired branches, the matched-phase
-  geometric mean ratio is 0.15; fresh-process geometric mean is 0.062.
+  with identical inputs, orders, merge settings, CPU assignment and paired limits. For two sign branches,
+  displayed times sum their separate three-repeat median phases; ratios compare those matched sums.
+  They do not compare the optimized solve column with an unrelated native time.
+  All 483 native-completing branches matched raw cell counts and independently verified; 96 native
+  timeouts remain explicit. Geometric mean ratios are 0.15 for matched phases and 0.062 for whole processes.
+
+  New reference comparisons use at most max(300 s, 3 × completed symGCAD solve-wall median)
+  per native repetition, subject to shorter explicit and campaign limits. Qualification runs
+  use a 300-second ceiling before Rust timings are known. Native timeouts have no exact ratio;
+  the historical baseline above retains its recorded limits.
 
   == Machine and resource policy
   AMD EPYC 9754 128-Core Processor, Linux 6.18.45, x86-64. The task budget is 16 CPU workers and

@@ -51,3 +51,12 @@ campaign ceilings, the one-hour hard ceiling, invalid timing data, failed
 and truncated Rust runs, and an actual supervised reference timeout with
 its applied budget retained. No new broad native campaign was launched
 while the one-hour unresolved-original queue was running.
+
+An actual native-adapter smoke run at source `7d0d563` used the two unit-square
+sign branches, order `[x,y]`, three paired repetitions, and an explicit
+five-second ceiling. Both branches matched cell counts and independently
+verified. All eight native workers (two qualifications and six measurements)
+recorded and respected that five-second limit; the adaptive ceiling remained
+300 seconds. This checks enforcement and accounting, not relative performance.
+The retained `artifacts/bench/adaptive-reference-smoke-01/audit.json` has SHA-256
+`0156c7dd53d6364aa158e76314c46bab77402319900a9bec8adac8af3868630c`.

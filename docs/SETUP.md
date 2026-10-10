@@ -52,3 +52,5 @@ The document's table data and source are committed separately from generated sol
 
 Historical benchmark source identifiers map to the copied public history through
 [the publication commit map](../reference/PUBLICATION_HISTORY.md).
+The documented setup and A446 workflow also passed an
+[isolated public-clone validation](../reference/SETUP_VALIDATION.md).

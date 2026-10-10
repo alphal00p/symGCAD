@@ -71,6 +71,8 @@ A `complete_generic` result covers full-dimensional open cells outside its recor
 
 The deterministic matched-baseline study covers all **331 groups / 579 sign-expanded problems**. Native GCAD completed 483 problems under the recorded limits; symGCAD matched all 483 raw cell counts and independently verified every result. Across three paired measurements, the geometric mean of matched algebra phases was **0.1466× native** (about 6.82× faster). This is a workload-wide average with documented regressions and censored timeouts, not a claim that every case improved.
 
+New reference comparisons are capped at `max(300 s, 3 × symGCAD solve time)`, with shorter campaign limits respected. Native timeouts receive no exact ratio; see the [reference budget policy](reference/REFERENCE_BUDGETS.md).
+
 Later certified reductions complete fixed A381/Ax381 with 836 cells each, negative Gluza30/Gluza33 with one/three cells, and positive Gluza30 with 80,980 cells. Discovery costs, verification costs, failed attempts and exact original-domain checks are recorded separately.
 
 A [supplemental seeded sanity check](reference/SUPPLEMENTAL_SANITY.md) sampled two fresh interior points in each fixed A446 cell: all 8 cells, 16 exact F evaluations and 112 original-constraint checks passed. This check recomputes boundaries at each new prefix and is excluded from benchmark timings; it does not replace the coverage proof.
