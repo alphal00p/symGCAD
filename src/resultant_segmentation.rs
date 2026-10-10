@@ -51,7 +51,7 @@ impl Default for Options {
         Self {
             min_degree_product: 60,
             min_input_terms: 64,
-            max_input_terms: 4096,
+            max_input_terms: 8192,
             min_parameters: 2,
             max_parameters: 2,
             max_variables: 128,
@@ -61,7 +61,9 @@ impl Default for Options {
             max_cleared_coefficient_bits: 32768,
             max_coefficient_bound_bits: 1_000_000,
             max_digits: 65536,
-            max_output_bits: 96_000_000,
+            // Bounds the encoded output, not intermediate native memory.
+            // Callers must still supervise the whole operation's resources.
+            max_output_bits: 256_000_000,
             max_total_input_bits: 512_000_000,
             max_output_terms: 65536,
         }
@@ -634,6 +636,94 @@ mod tests {
         // 10×6 capture; smaller pairs still use the existing exact backend.
         let smaller = a.parse("(x+s+t+1)^9+s*x+1").unwrap();
         assert!(plan(&smaller, &q, 1, &options).unwrap().is_none());
+    }
+
+    #[test]
+    fn bounded_dense_inputs_fit_within_the_new_term_ceiling() {
+        let a = algebra(&["s", "x", "unused"]);
+        let options = Options {
+            min_parameters: 1,
+            ..Options::default()
+        };
+        let powers = (0..=32)
+            .map(|k| format!("x^{k}"))
+            .collect::<Vec<_>>()
+            .join("+");
+        let p = a.parse(&format!("({powers})*(s+1)^123")).unwrap();
+        let q = p.derivative(1);
+        assert!(p.nterms() + q.nterms() > 4096);
+        assert!(p.nterms() + q.nterms() <= options.max_input_terms);
+        let admitted = plan(&p, &q, 1, &options).unwrap().unwrap();
+        assert!(admitted.output_bit_bound < 96_000_000);
+        assert!(
+            plan(
+                &p,
+                &q,
+                1,
+                &Options {
+                    max_input_terms: 4096,
+                    ..options.clone()
+                }
+            )
+            .unwrap()
+            .is_none()
+        );
+        let oversized = a.parse(&format!("({powers})*(s+1)^126")).unwrap();
+        assert!(oversized.nterms() + oversized.derivative(1).nterms() > options.max_input_terms);
+        assert!(
+            plan(&oversized, &oversized.derivative(1), 1, &options)
+                .unwrap()
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn larger_encoding_still_obeys_independent_output_input_and_digit_caps() {
+        let a = algebra(&["s", "x", "unused"]);
+        let options = Options {
+            min_parameters: 1,
+            ..Options::default()
+        };
+        let p = a.parse("-2/3*(x^10+2^3500*(s+1)^500)").unwrap();
+        let q = p.derivative(1);
+        let admitted = plan(&p, &q, 1, &options).unwrap().unwrap();
+        assert!(admitted.output_bit_bound > 96_000_000);
+        assert!(admitted.output_bit_bound < options.max_output_bits);
+        for restricted in [
+            Options {
+                max_output_bits: 96_000_000,
+                ..options.clone()
+            },
+            Options {
+                max_total_input_bits: admitted.total_input_bit_bound - 1,
+                ..options.clone()
+            },
+            Options {
+                max_digits: admitted.digits - 1,
+                ..options.clone()
+            },
+        ] {
+            assert!(plan(&p, &q, 1, &restricted).unwrap().is_none());
+        }
+        let oversized = a.parse("x^10+(s+1)^1900").unwrap();
+        let derivative = oversized.derivative(1);
+        assert!(
+            plan(&oversized, &derivative, 1, &options)
+                .unwrap()
+                .is_none()
+        );
+        let larger = plan(
+            &oversized,
+            &derivative,
+            1,
+            &Options {
+                max_output_bits: 512_000_000,
+                ..options
+            },
+        )
+        .unwrap()
+        .unwrap();
+        assert!(larger.output_bit_bound > 256_000_000);
     }
 
     #[test]

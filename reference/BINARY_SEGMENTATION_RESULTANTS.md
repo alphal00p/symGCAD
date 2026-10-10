@@ -31,8 +31,8 @@ preflight before denominator clearing and integer encoding. Set
 `solver.binary_resultants = true` to try it for pair resultants in optimized
 or local projection. The default is false. Pair limits admit exactly two
 surviving active parameters, elimination-degree product at least 60,
-elimination degrees at most 64, at most 4,096
-combined input terms, 65,536 output digits, and 96 million encoded output bits.
+elimination degrees at most 64, at most 8,192
+combined input terms, 65,536 output digits, and 256 million encoded output bits.
 Separate coefficient, common-denominator and total encoded-input limits apply.
 The two captured successful pairs fit these limits; the earlier four-active-
 variable discriminants do not. This size bound does not bound intermediate native memory or runtime,
@@ -41,8 +41,8 @@ so the usual killable worker limits remain necessary.
 The output limit was initially 64 million bits. A subsequently recovered
 A377 pair needs a certified 83,605,434-bit bound: the research encoder completed
 it in 95.189 seconds at 327.5 MiB peak RSS, followed by a complete independent
-43,681-point signed identity check. This motivates the current 96-million-bit
-limit; all other applicability limits are unchanged. The
+43,681-point signed identity check. This motivated the earlier 96-million-bit
+limit. The
 [A377 diagnostic](A377_BINARY_RESULTANT_DIAGNOSTIC.md) records the exact input,
 output and verification evidence. This is an operation-level result, not
 an original-problem completion or matched end-to-end ratio.
@@ -68,9 +68,9 @@ scope limitations.
 
 The two-parameter extension addresses the captured Ax318 degree-10
 discriminant described in [the continuation audit](CROSSED_DISCRIMINANT_CONTINUATION.md).
-Its 69,383,424-bit output bound fits the existing 96-million-bit ceiling;
-only the former one-parameter gate excluded it. No encoding, degree, memory
-or coefficient limit is enlarged, and all interior boundary polynomials
+Its 69,383,424-bit output bound fit the then-current 96-million-bit ceiling;
+only the former one-parameter gate excluded it. That extension enlarged no
+encoding, degree, memory or coefficient limit, and all interior boundary polynomials
 retain their exact signed values. Three-parameter discriminants still use
 the ordinary backend. Actual native memory and time remain subject to
 killable worker limits rather than being inferred from the output bound.
@@ -86,6 +86,48 @@ canonicalization. Its seven tests include rejection of altered signs/scales.
 The [production comparison note](BINARY_SEGMENTATION_PRODUCTION_CHECK.md)
 records exact equality with both independently certified captured results,
 including the retained initial A318 static decline and its cutoff adjustment.
+
+## Larger bounded operands
+
+The optional kernel now admits up to **8,192 combined input terms** and
+**256 million encoded output bits**. These are general resource bounds on
+the same exact algorithm; dispatch never consults a graph, fixture identity,
+coefficient pattern, or saved result. Degree, coefficient, denominator,
+parameter-count and digit caps are unchanged, including the separate
+512-million-bit total encoded-input bound. The default solver still leaves
+this experimental backend disabled.
+
+The measured motivation is a degree-32 discriminant with 4,921 combined
+derivative-pair terms and a 210,179,055-bit encoded-output bound. The
+[complete independent grid](A377_D32_GRID_VERIFICATION.md) verified its
+signed identity; the research computation used 1,364,132 KiB peak RSS and
+1538.878 seconds. Those observations justify trying larger bounded operands,
+not a prediction of memory or solve time for every admitted polynomial.
+Native intermediate allocations remain subject to the configured killable
+worker, and interrupted work never earns completion status.
+
+Synthetic polynomial families check admission across each old cutoff and
+rejection above the new cutoffs, including independent input-bit and digit
+limits. A separate large signed rational discriminant identity is an explicit
+resource regression outside the short default suite:
+
+```sh
+timeout --kill-after=5s 300s cargo test --locked \
+  --test large_discriminant_segmentation -- --ignored
+```
+
+The focused run passed **207 tests** (164 library, nine discriminant and
+34 optimized-projection tests). The explicit large identity also passed,
+taking 3.31 seconds after compilation. It checks the full signed rational
+polynomial, including its repeated-root locus, rather than a primitive hash.
+The retained logs are `artifacts/generic-segmentation-envelope-tests-02.log`
+and `artifacts/generic-segmentation-large-identity-01.log`. An earlier command
+named a nonexistent integration target and exited before running tests; its
+log is preserved separately.
+
+All leading-coefficient and repeated-root zero sets are retained. Increasing
+these limits does not authorize dropping a boundary or replacing an exact
+identity with a numerical comparison.
 
 ## Proposed verifier backend, not implemented
 
