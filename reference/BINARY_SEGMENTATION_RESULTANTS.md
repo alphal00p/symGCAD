@@ -30,7 +30,8 @@ would therefore be essential before considering a production path.
 preflight before denominator clearing and integer encoding. Set
 `solver.binary_resultants = true` to try it for pair resultants in optimized
 or local projection. The default is false. Initial limits admit exactly two
-surviving active parameters, elimination degrees at most 64, at most 4,096
+surviving active parameters, elimination-degree product at least 60,
+elimination degrees at most 64, at most 4,096
 combined input terms, 65,536 output digits, and 64 million encoded output bits.
 Separate coefficient, common-denominator and total encoded-input limits apply.
 The two captured successful pairs fit these limits; larger discriminants do
@@ -44,7 +45,7 @@ operation caches; reports separately count segmented resultants and their
 largest output-bit bound. Baseline projection, low-degree discriminant
 identities and independent proof replay retain their existing backend.
 
-Seven focused module regressions compare exact signed rational results with
+Eight focused module regressions compare exact signed rational results with
 ordinary Ducos, exercise variable maps, repeated/shared factors, centered
 decoding, static limits and cancellation. The full fast suite passes 489
 tests, including opt-in cache dispatch, static fallback and historical proof
@@ -52,6 +53,9 @@ metadata. The profiling helper accepts `--strategy binary-segmentation` and
 `--expected-result FILE`: it binds the original input and compares the full
 signed polynomial with a saved, independently certified candidate before
 canonicalization. Its seven tests include rejection of altered signs/scales.
+The [production comparison note](BINARY_SEGMENTATION_PRODUCTION_CHECK.md)
+records exact equality with both independently certified captured results,
+including the retained initial A318 static decline and its cutoff adjustment.
 
 ## Why reconstruction is exact
 

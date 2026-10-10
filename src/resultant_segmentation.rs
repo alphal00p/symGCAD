@@ -49,7 +49,7 @@ pub struct Options {
 impl Default for Options {
     fn default() -> Self {
         Self {
-            min_degree_product: 64,
+            min_degree_product: 60,
             min_input_terms: 64,
             max_input_terms: 4096,
             min_parameters: 2,
@@ -618,6 +618,22 @@ mod tests {
                 1,
             );
         }
+    }
+
+    #[test]
+    fn default_envelope_includes_the_measured_ten_by_six_degree_pair() {
+        let a = algebra(&["s", "x", "t"]);
+        let options = Options::default();
+        let p = a.parse("(x+s+t+1)^10+s*x+1").unwrap();
+        let q = a.parse("(x+s+t+2)^6+t*x+1").unwrap();
+        let admitted = plan(&p, &q, 1, &options).unwrap().unwrap();
+        assert_eq!(admitted.parameters, vec![0, 2]);
+        assert!(admitted.output_bit_bound <= options.max_output_bits);
+        assert!(admitted.total_input_bit_bound <= options.max_total_input_bits);
+        // Preserve a lower degree-product cutoff after admitting the known
+        // 10×6 capture; smaller pairs still use the existing exact backend.
+        let smaller = a.parse("(x+s+t+1)^9+s*x+1").unwrap();
+        assert!(plan(&smaller, &q, 1, &options).unwrap().is_none());
     }
 
     #[test]
