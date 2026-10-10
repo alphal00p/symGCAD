@@ -75,11 +75,66 @@ was a degree-10 `x4` discriminant of a 2,209-term polynomial, coefficient
 height 28 bits, with three surviving axes `[x2,x1,x7]`. The immutable capture
 snapshot SHA is
 `aab900ab332f90a1d0c9d32ec73cdd65b88d64b22a45d20e23ef77e33aa70289`.
-That specific operation lies outside the current one-parameter discriminant
-segmentation envelope and is not a first-axis univariate basis input. This
-is a captured pending operation, not a completed timing or a reason to
+That specific operation lies outside the discriminant segmentation envelope
+(one parameter at launch, at most two after `380d014`) and is not a
+first-axis univariate basis input. This is a captured pending operation, not a completed timing or a reason to
 discard any of its roots. No original completion is credited before a
 complete result and independent full proof verification.
+
+## First outcome and higher-memory continuation
+
+The `x3` cold run finished at **13:46:33 UTC** with an explicit memory
+allocation failure, after **1,341.544040 seconds**, at **3,314,968 KiB peak
+RSS** under its 4 GiB address-space limit. It was not a one-hour timeout.
+The public command returned a `computation_failure` result containing no
+accepted cells or trace; no verification ran. Its diagnostic records a
+failed 1,572,864-byte allocation. The last local progress snapshot was stale
+at 19.207449 seconds and cannot time or identify the final native call.
+The final exact capture is byte-identical to the earlier `x4` discriminant
+snapshot above, and its operation key has no completed cache record.
+
+The final cache contains **4,685 completed native records**, **18,699,827
+bytes**: 4,453 factorizations, 192 discriminants and 40 resultants. Every
+file hash, native operation key, output/multiplicity checksum, full variable
+map and domain fingerprint was checked. Recorded operation times sum to
+1.439851 seconds; they are not the full process time. The final audit and
+manifest under `gluza33-x5-last-hour-01/` have SHA-256:
+
+- `final-audit.json`: `41e62773469851184acd2c27f0fa237e375af8f81cc0cf92b0bb6f61bd9e7750`.
+- `final-cache-manifest.json`: `4cac2ac2c33cf07a6e5bc4f35d228cd779f39f8d892729d902591531a4102f9a`.
+- The failed `0-result.json`: `b716821093985a198a78bc6a863e72e11b4b4d146eae5ce0af21afbd7346b3cb`.
+
+A fresh warm continuation launched at **14:30:55 UTC**, CPU13,
+**24 GiB**, using the same original mathematics, `x3` anchor, order and
+proof options. The only input differences are the memory limit and fresh
+checkpoint namespace. An earlier 8 GiB preparation remains immutable and
+was never launched; the 24 GiB allowance superseded it before execution.
+The new run copies and rechecks all 4,685 completed native records, with no
+research algebra injected. Solve and verification still share one hour,
+with verification capped at 600 seconds of the remaining time.
+
+The frozen executable is `symgcad-two-parameter-discriminant-380d014-release`,
+SHA-256 `9f4230ea1b6a1c5c1090237947d76f432591f2d55a98897c9e40eea2c02d71a3`.
+Binary-resultant and base-basis options remain disabled for this Gluza input.
+The actual worker audit confirms all original fields, explicit solver
+options, order, anchor, shared cache, CPU13, 24 GiB limit and capture
+propagation. Its first saved pending operand is the same `x4` discriminant.
+This is a measured memory-limit follow-up, with no topology-specific
+production dispatch or omitted interior boundary.
+
+New artifacts are under
+`artifacts/research/gluza33-x5-last-warm24g-hour-03/`:
+
+| Artifact | SHA-256 |
+| --- | --- |
+| `input-audit.json` | `64f3a4e4b0c6b847e1769c56d760303578059163ddc61b713c8b334184ffad4c` |
+| `initial-cache-manifest.json` | `3eb29ada5b779680cba30ab63f28b5dd627f304f15b3a8ae2d77442d8618c2d2` |
+| `launch.json` | `2a8a41afe8cec8be1d5381d7f07cc594b256c59970ee07e307ac4eaf93d8be8d` |
+| `actual-worker-audit.json` | `1f87b7e04b9d0746d3e92dfd299284dd6bb9a12596e4f754ace7e8c0ff6f5d2b` |
+
+The earlier 1,341.544-second failed solve and one-second search nomination
+remain part of the retained history. This warm launch is not a cold speed
+comparison and earns no completion credit before full verification.
 
 ## Nonlinear-anchor alternative
 

@@ -159,3 +159,41 @@ after completion. Evidence under
 This is completed algebraic identity evidence for one authentic pending
 operation. No research value was inserted into production, and it adds no
 original CAD coverage or solved-case performance ratio.
+
+### Production two-parameter continuation
+
+The opt-in production discriminant envelope was extended to at most two
+surviving parameters in `380d0144206ff8bc02cbbe8a682de943f5564c5b`, retaining
+the existing exact kernel and all size caps. The default remains unchanged.
+Its 201 focused tests passed. Release CLI smoke tests independently verified
+7, 4 and 4 cells; the dense squared-polynomial case computed one segmented
+discriminant and retained both same-sign interior zero sheets, with the
+`t=s` leading-coefficient seam still exceptional. The smaller sparse smoke
+case declined segmentation and tested the ordinary fallback.
+
+A fresh **warm** original Ax318 continuation launched at **14:29:44 UTC**,
+CPU11, 8 GiB, with 3,600 seconds shared by solve and verification (verification
+at most 600 seconds of the remainder). Original mathematical fields,
+`[s,t,x8,x1,x2,x3,x4,x5]` order, `x8` anchor and solver options are unchanged
+except for the new checkpoint path. `binary_resultants=true` remains enabled;
+base-univariate mode remains disabled. All **46,551** final native records,
+**396,657,035 bytes**, were copied and rechecked. The independently verified
+research discriminant above was not inserted into this cache.
+
+The release build took 487 seconds. Its executable SHA-256 is
+`9f4230ea1b6a1c5c1090237947d76f432591f2d55a98897c9e40eea2c02d71a3`;
+build manifest `artifacts/two-parameter-discriminant-release-build-01.json`
+has SHA-256 `79c75caf160926e21a0b28f1c45365d80f1ffe9c6b5c05615de0c24fda20b6ad`.
+The source-manifest check and smoke audit are bound by that manifest.
+
+New evidence under `artifacts/research/ax318-segmentation-warm-hour-02/`:
+
+- `input-audit.json`: `5439226522432c3186941d7b213bcf732ee20b16cd13cf636854054430bff3db`.
+- `initial-cache-manifest.json`: `32d99d08982789cbf0313bdcacc26ba1a712b9c793d5d19a3528b2f37e69bcd5`.
+- `launch.json`: `6844d8e407cb0de1ece8549ad9b36cd0daf10d257d61a686e58a93f80bc7d31d`.
+- `actual-worker-audit.json`: `6cb2ad47347f19ad8e4b1a6f5b0b18444baf5361557ca0c269e68736c617fa70`.
+
+The actual worker's original fields, explicit options, order, anchor, shared
+cache, memory/CPU limits and capture environment were independently checked.
+Earlier search and warm-attempt costs remain retained separately. This launch
+has no solved-case speed ratio or original completion credit.
