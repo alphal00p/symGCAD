@@ -70,3 +70,12 @@ free-axis identity and prepares its coefficient problem. Its three tests
 cover rational normalization and rejection of a second axis constraint or
 nonlinearity. The successful full-problem solve uses the ordinary solver;
 the helper is not a new production elimination wrapper.
+
+The current aggregate auditor rechecked all five retained ledgers and the
+three supplemental verification records, including this new cold campaign.
+It reports 297/331 original problems complete, 34 unresolved, and no audit
+errors or rejected verifications. The prior 296 report is preserved.
+`artifacts/completion-aggregate-297.json` has SHA-256
+`46adb3cff1b2b31f18e11eebe7811dc612a59dac90c4081b9bd65f1c52fbfebb`.
+The frozen auditor SHA-256 is
+`fa2c9b40cdd0649052df16ba2f7b0719c7df6fdc46ac4270bffe8d19e4333f69`.
