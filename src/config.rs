@@ -45,6 +45,12 @@ pub struct SolverOptions {
     /// engine. This is a proposed algebraic witness, never a domain assumption.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub negative_linear_guide: Option<String>,
+    /// Proposed positive comparison polynomial for the exact two-fiber engine.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub bilinear_positive_guide: Option<String>,
+    /// Engine for the lower-dimensional coefficient-sign decomposition.
+    #[serde(skip_serializing_if = "is_optimized")]
+    pub bilinear_positive_base_engine: String,
     /// Batch tentative sibling discoveries in the experimental local engine.
     /// Omit the default to keep ordinary inputs readable by older workers.
     #[serde(skip_serializing_if = "is_true")]
@@ -120,6 +126,8 @@ impl Default for SolverOptions {
             monotone_base_engine: "optimized".into(),
             monotone_negative_target: false,
             negative_linear_guide: None,
+            bilinear_positive_guide: None,
+            bilinear_positive_base_engine: "optimized".into(),
             local_batch_siblings: true,
             local_reuse_subtrees: true,
             local_reuse_learned_cuts: true,
@@ -259,7 +267,8 @@ impl Problem {
                 "optimized",
                 "monotone",
                 "local",
-                "linear_negative"
+                "linear_negative",
+                "bilinear_positive"
             ]
             .contains(&self.solver.engine.as_str()),
             "unknown engine"
@@ -267,6 +276,11 @@ impl Problem {
         ensure!(
             ["optimized", "local"].contains(&self.solver.monotone_base_engine.as_str()),
             "monotone_base_engine must be optimized or local"
+        );
+        ensure!(
+            ["baseline", "optimized", "local"]
+                .contains(&self.solver.bilinear_positive_base_engine.as_str()),
+            "bilinear_positive_base_engine must be baseline, optimized or local"
         );
         ensure!(
             ["none", "aggressive"].contains(&self.solver.merge.as_str()),
@@ -283,8 +297,14 @@ impl Problem {
         );
         ensure!(
             !self.solver.positivity
-                || ["optimized", "monotone", "local", "linear_negative"]
-                    .contains(&self.solver.engine.as_str()),
+                || [
+                    "optimized",
+                    "monotone",
+                    "local",
+                    "linear_negative",
+                    "bilinear_positive"
+                ]
+                .contains(&self.solver.engine.as_str()),
             "positivity certificates require an optimized engine"
         );
         ensure!(

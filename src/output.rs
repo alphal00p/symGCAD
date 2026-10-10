@@ -127,6 +127,8 @@ pub struct SolveResult {
     pub sign_filter: Option<Box<crate::sign_filter::SignFilterEvidence>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub linear_negative: Option<Box<crate::linear_negative::LinearNegativeEvidence>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bilinear_positive: Option<Box<crate::bilinear_positive::BilinearPositiveEvidence>>,
 }
 
 impl SolveResult {
@@ -151,6 +153,7 @@ impl SolveResult {
             local: None,
             sign_filter: None,
             linear_negative: None,
+            bilinear_positive: None,
         }
     }
 }
@@ -172,6 +175,13 @@ mod root_selector_serialization_tests {
         let failed = SolveResult::failure(Problem::default(), Status::Incomplete, "old result");
         let encoded = serde_json::to_value(&failed).unwrap();
         assert!(encoded.get("linear_negative").is_none());
+        assert!(encoded.get("bilinear_positive").is_none());
+        assert!(
+            serde_json::from_value::<SolveResult>(encoded.clone())
+                .unwrap()
+                .bilinear_positive
+                .is_none()
+        );
         assert!(
             serde_json::from_value::<SolveResult>(encoded)
                 .unwrap()

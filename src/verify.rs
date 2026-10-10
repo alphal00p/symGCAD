@@ -209,6 +209,9 @@ impl Checker<'_> {
 }
 
 pub fn verify(result: &SolveResult) -> Result<Verification> {
+    if let Some(evidence) = &result.bilinear_positive {
+        return crate::bilinear_positive::verify(result, evidence);
+    }
     if result.linear_negative.is_some() {
         return crate::linear_negative::verify(result);
     }
@@ -225,8 +228,8 @@ pub fn verify(result: &SolveResult) -> Result<Verification> {
 /// certificate checker without redispatching through its fallback metadata.
 pub(crate) fn verify_nonlocal(result: &SolveResult) -> Result<Verification> {
     ensure!(
-        result.linear_negative.is_none(),
-        "unexpected negative linear coverage evidence"
+        result.linear_negative.is_none() && result.bilinear_positive.is_none(),
+        "unexpected fiber reduction coverage evidence"
     );
     if result.homogeneous.is_some() {
         return crate::homogeneity::verify_homogeneous(result);

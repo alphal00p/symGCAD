@@ -707,6 +707,7 @@ fn finish_base(
             steps: plan.steps,
             base: Box::new(base),
         })),
+        bilinear_positive: None,
     };
     // Keep a completed base and any reconstructed data for diagnostics while
     // preventing a late or empty reconstruction from escaping the wall cap.
@@ -728,7 +729,8 @@ pub fn verify(result: &SolveResult) -> Result<Verification> {
             && result.homogeneous.is_none()
             && result.monotone.is_none()
             && result.local.is_none()
-            && result.sign_filter.is_none(),
+            && result.sign_filter.is_none()
+            && result.bilinear_positive.is_none(),
         "unexpected alternate negative linear coverage evidence"
     );
     let evidence = result
@@ -755,6 +757,7 @@ pub fn verify(result: &SolveResult) -> Result<Verification> {
     );
     ensure!(
         evidence.base.linear_negative.is_none()
+            && evidence.base.bilinear_positive.is_none()
             && evidence.base.homogeneous.is_none()
             && evidence.base.monotone.is_none()
             && evidence.base.sign_filter.is_none()

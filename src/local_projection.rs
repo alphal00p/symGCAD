@@ -2570,6 +2570,7 @@ pub fn solve_local(problem: &Problem, options: &LocalOptions) -> Result<LocalSol
         local: None,
         sign_filter: None,
         linear_negative: None,
+        bilinear_positive: None,
     };
     Ok(LocalSolveResult {
         solution,
@@ -2947,8 +2948,8 @@ pub fn verify_local_parts(
         "only complete local results can be certified"
     );
     ensure!(
-        solution.linear_negative.is_none(),
-        "incompatible additional negative-linear evidence"
+        solution.linear_negative.is_none() && solution.bilinear_positive.is_none(),
+        "incompatible additional fiber reduction evidence"
     );
     let (input_factors, guard_certificates, root, options) = match evidence {
         LocalEvidence::GlobalFallback { .. } => return crate::verify::verify_nonlocal(solution),

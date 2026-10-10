@@ -1,0 +1,13 @@
+name = "two certified positive bilinear fibers"
+variables = ["y", "x"]
+constraints = ["y > 0", "x > 0", "-x*y + 2*x - y + 3 > 0"]
+
+[solver]
+engine = "bilinear_positive"
+ordering = "given"
+bilinear_positive_guide = "(y+1)*(x+1)"
+
+[limits]
+wall_time_secs = 30.0
+memory_mib = 1024
+workers = 1

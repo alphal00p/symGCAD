@@ -23,6 +23,9 @@ mod merging;
 pub use merging::merge;
 
 pub fn selected_order(problem: &Problem) -> Result<Vec<String>> {
+    if problem.solver.engine == "bilinear_positive" {
+        return crate::bilinear_positive::selected_order(problem);
+    }
     if problem.solver.engine == "linear_negative" {
         return crate::linear_negative::selected_order(problem);
     }
@@ -573,6 +576,9 @@ fn classify_solve_result(problem: &Problem, result: Result<SolveResult>) -> Resu
 
 fn solve_impl(problem: &Problem) -> Result<SolveResult> {
     problem.validate()?;
+    if problem.solver.engine == "bilinear_positive" {
+        return crate::bilinear_positive::solve(problem);
+    }
     if problem.solver.engine == "linear_negative" {
         return crate::linear_negative::solve(problem);
     }
@@ -731,6 +737,7 @@ fn solve_impl(problem: &Problem) -> Result<SolveResult> {
         local: None,
         sign_filter: None,
         linear_negative: None,
+        bilinear_positive: None,
     })
 }
 

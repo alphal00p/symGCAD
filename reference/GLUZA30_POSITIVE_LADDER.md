@@ -1,9 +1,10 @@
 # A two-fiber positive ladder for Gluza 30
 
-This is an exact reduction proposal for the original positive problem
+This is an exact reduction for the original positive problem
 `0332_test_gluza_ex30_solve_3.toml`. It preserves ordinary cylindrical cells in
 the original coordinates. A completed reduced problem alone is not yet an
-independently verified decomposition of the original problem.
+independently verified decomposition of the original problem; the opt-in
+production wrapper below also reconstructs and checks the original fibers.
 
 The legal lifting order is
 `[x2,x6,x7,x5,x1,x4,x0]`. Write, without changing any variable,
@@ -130,6 +131,48 @@ sign at `x1=K/T`; above `zK`, `a<0`. This identity is recorded for further
 analysis; the first experiment uses an ordinary complete sign arrangement of
 `a,b,c` and does not assume this specialized base schedule.
 
+## Opt-in production certificate
+
+The `bilinear_positive` engine implements this table for a generic supplied
+guide, with the last two axes of an explicit/given legal order playing `y,x`.
+It accepts one strict target `F>0`, literal positive-coordinate constraints
+for every variable, and optional positive constants. Extra domain restrictions,
+homogeneous transport, and identically zero `a,b,c` are currently inapplicable.
+In particular, the inference `a>0 => c>0` uses arbitrarily large positive `y`;
+it must not be reused unchanged on a bounded `y` domain.
+
+Set `solver.bilinear_positive_guide` to the guide expression and
+`solver.bilinear_positive_base_engine` to `baseline`, `optimized` (default),
+or `local`. The wrapper's seven strict certificates are for
+`d,C0,D0,W0,C4,D4,W4`, on the full coordinate orthant with the original target
+explicitly excluded. It never assumes `F>0` when proving its own exhaustive
+fiber classification. Baseline delegated solves clear optimized pruning
+flags; this does not weaken the wrapper's mandatory certificates.
+
+The production proof does **not** need the extra Rayleigh-square identity.
+When `a<0,b>0,c<0`, evaluate `W0` at the positive root `rA` of `A0`:
+`W0(rA)=B0(rA)*C0(rA)>0`, so `B0(rA)>0` and `rA<rB`. Similarly, `a>0`
+forces `b>0` via `W4`; if `c<0`, sufficiently large positive `y` would give
+`A0>0,B0<0`, contradicting `W0>0`. This is a strictly smaller set of
+obligations than the initial research helper's independent checks.
+
+Evidence stores the seven exact domain certificates and the full delegated
+base proof. Verification reconstructs the expected base problem/options,
+verifies its exhaustive coverage, and streams the expected original cells
+against the supplied inventory. It independently checks the complete
+polynomial/boundary table, exceptional seams, samples, linear root selectors,
+raw-cell count, and any compatibility merge. A failed or partial base cannot
+yield original completion; restoration also enforces wall and cell limits.
+No second complete restored-cell vector is allocated during verification.
+
+Integration regressions cover all five coefficient-sign patterns through
+exact common refinement against the baseline, all three delegated engines,
+original group/order preservation, malformed guides and domain premises,
+zero-width and zero-coefficient exclusions, cell/exception/sample/certificate
+tampering, incomplete bases, late restoration limits, and serialized replay.
+This establishes the general wrapper on the tested problems; the full
+positive Gluza 30 base remains unresolved in the bounded trials below.
+
 ## Reproduction and scope
 
 `examples/gluza_positive_ladder.rs` checks the original target, all seven
@@ -196,3 +239,41 @@ with a larger bound. They also do not show that merely putting coordinate
 thresholds first reduces global projection size. All five reduced problems
 above remain incomplete, and the original positive problem receives no new
 completion credit.
+
+## Coordinate threshold chambers
+
+A separate research preparation splits the five-coordinate base at `x6=1`
+and `x7=1`. Put `p=x5`, `q=x6`, `r=x7`, `u=x1`, `v=x2` and
+`T=p+q+r-1`. The exact coefficient identities are
+
+\[
+a=1-(1+p)(q+r)-T(u+v),
+\]
+\[
+b=(1-q)((1+v)(p+r)+pr)
+  +u(1-(1+r)(p+q)-vT),
+\]
+\[
+c=(1-r)(q+p(1+q))+v(1-(1+q)(p+r))
+  +u((1-r)(p+q)-vT).
+\]
+
+Consequently `q>1` forces `a,b<0`, and `r>1` forces `a,c<0`.
+The helper checks the identities, obtains exact domain certificates for each
+known negative sign, and independently replays those certificates against
+the chamber's strict coordinate bounds. The remaining arrangements are:
+
+| Chamber | Known negative coefficients | Remaining split polynomials |
+| --- | --- | --- |
+| `x6>1, x7>1` | `a,b,c` | none |
+| `x6>1, 0<x7<1` | `a,b` | `c` |
+| `0<x6<1, x7>1` | `a,c` | `b` |
+| `0<x6<1, 0<x7<1` | none | `a,b,c` |
+
+The four open chambers cover the base away from the two explicitly excluded
+threshold hyperplanes. They are prepared in the common order
+`[x6,x7,x5,x2,x1]`. Separately completed chamber CADs may still introduce
+different lower-dimensional cuts, so their union is not automatically a
+globally cylindrical decomposition. A common ancestor refinement and the
+original-fiber replay remain necessary before claiming an original
+completion. This preparation adds no new production pruning rule.

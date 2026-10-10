@@ -1,6 +1,7 @@
 //! Exact generic cylindrical algebraic decomposition.
 pub mod algebra;
 pub mod benchmark;
+pub mod bilinear_positive;
 pub mod campaign;
 pub mod comparison;
 pub mod config;
