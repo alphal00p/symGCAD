@@ -101,3 +101,47 @@ checked `x7` homogeneous reduction. The release worker is
 Inputs, durable journals and outcomes are retained under
 `artifacts/research/gluza33-generic-order-01/`. An ordering trial's completion
 alone is not an independently verified base proof or an original completion.
+
+Both searches finished within their declared bounds, with **no completed
+trial**. The six-axis search recorded 49 timeouts in 150.029 seconds; the
+`x7`-anchor search recorded 53 timeouts in 150.034 seconds. The total measured
+order-command time was 300.063 seconds, excluding the separately reported
+preparation. Inputs and a compact final summary are retained in that directory.
+
+The largest retained six-axis progress snapshot had only 770 speculative
+nodes and 13 refinements. It had already spent 13.59 seconds on discriminants
+versus 0.65 seconds on factoring, at 15.63 seconds elapsed, before a promoted
+60-second attempt timed out. The anchored snapshots likewise showed small
+trees, with none newer than 0.87 seconds in the final records. These are stale
+snapshots before expensive operations, not measurements of the final active
+operation. They do not support blaming initial factorization merely because
+an earlier snapshot retained that phase name. This experiment establishes
+no completion and no general impossibility; it gives no reason yet to add a
+new production wrapper around this particular full base arrangement.
+
+## Conditional guide alternative
+
+The original guide still supplies `C0,D0,C4,D4>0` and nonnegative square
+comparisons `W0,W4`, although the comparisons need not be strict. This can
+reduce the required base arrangement on some sign chambers. In particular,
+on `d<0`, take the limit `y -> 0+` in
+
+\[
+(c y+d)C_0(y)-(a y+b)D_0(y)\geq0.
+\]
+
+Since `C0(0)=D4>0` and `D0(0)>=0` by continuity, this forces `D0(0)>0`
+and `b<0`. Then `b*C4-a*D4>=0` forces `a<0`. Hence `A(y)<0` for every
+`y>0`, and the only positive fibers are
+
+\[
+c>0,\qquad y>-d/c,\qquad 0<x<-(c y+d)/(a y+b).
+\]
+
+The `d<0,c<=0` region has no admissible positive fiber. Thus this branch
+needs only a base for the strict inequalities `d<0,c>0`, without any
+`H` root-order cut. For `d>0`, a coincident `rA=rB` can still occur in the
+`a<0,b>0,c<0` case and must be handled explicitly. Separate completed branch
+CADs also need common ancestor refinement before their union is globally
+cylindrical. This conditional route is a mathematical proposal, not a new
+implemented rule or a credited completion.
