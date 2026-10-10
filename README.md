@@ -63,6 +63,21 @@ For an unsplit problem (`split = []`), `engine = "monotone"` transfers the first
 
 For an unsplit monotone problem, the opt-in `solver.monotone_negative_target = true` can solve a strict constraint `Q > 0` directly by orienting `F = -Q`. A certified increasing positive-ray peel reduces the required negative fiber to its strict endpoint inequality, then restores only the interval below its positive root. Separate target evidence verifies the original inequality and exhaustive coverage. Requested homogeneous reduction applies to the original constrained problem before this target transfer. If no admissible target peel exists, the ordinary sign-filter arrangement remains the fallback. Existing split-polynomial arrangements are unchanged. The research campaign helper exposes the same option as `--monotone-negative-target`.
 
+The opt-in `linear_negative` engine handles an unsplit problem with exactly one non-coordinate strict target and all variables strictly positive. For a target linear in `z`, `q=A*z+B<0`, an optional `negative_linear_guide = "..."` proposes `U=C*z+D`: the engine must independently prove `C,D>0` and the exact identity `B*C-A*D = k*H^2` with rational `k>=0`. The guide adds no domain assumption. These checks reduce the target to `A<0` and restore `z>max(0,-B/A)`. A globally certified negative `A` also permits this restoration without a guide. Fixed orders and variable groups remain binding; additional non-coordinate constraints and homogeneous anchors are currently unsupported.
+
+```toml
+variables = ["x", "z"]
+constraints = ["x>0", "z>0", "(x-1)*z+x<0"]
+split = []
+
+[solver]
+engine = "linear_negative"
+ordering = "given"
+negative_linear_guide = "z+1"
+```
+
+Restored lower boundaries use the polynomial `z*q` with `index_domain = "real_descending"` and index zero: the largest **distinct** real root, including zero. This represents the continuous boundary `max(0,-B/A)` even when its two roots coincide at `B=0`. A dedicated `linear_negative` certificate proves the identities, exact base problem and exhaustive restoration; the selector itself does not assert ordinary simple-root delineability. Verify its exported JSON with the same `symgcad verify` command.
+
 The experimental `local` engine uses a generic-open stack-saturation adaptation of Strzeboński's local projection. Descendant guards refine their owning ancestors, all sibling boundary sets are projected jointly, and the verifier checks the resulting exhaustive tree independently. It supports explicit/given orders and inexpensive Brown/sparsity orders; MCTS supplies explicit trial orders. Other ordering requests have an explicit global fallback. Persistent algebra caches and progress snapshots survive interrupted discovery. With `positivity = true`, exact domain certificates can replace generated guards; their original bound factors remain protected ancestor obligations, proving the certificate's premises throughout the cell. Input factors and singular seams remain protected. The exceptional polynomial list is a global algebraic superset; the local tree records where each excluded section actually applies.
 
 On an axis with an original strict positivity constraint, local projection can use exact quadratic sign cases or Descartes sign variations to avoid unnecessary discriminants. Zero variations imply no positive roots; one variation implies exactly one simple positive root. The latter boundary uses `index_domain = "positive"` and index zero, so collisions among negative roots cannot change its meaning. Other boundaries retain indices among all distinct real roots (the default `index_domain = "real"`). Typed evidence rejects the negative half-line explicitly and propagates every coefficient-sign premise to the ancestors. Inconclusive higher-degree cases retain the ordinary projection obligations. `solver.local_descartes_one = false` disables the one-variation shortcut; `LocalOptions::positive_ray = false` retains the full-real-line path for library ablations.
