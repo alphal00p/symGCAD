@@ -720,6 +720,12 @@ fn affine_replace(
     if bound > limit {
         return Ok(None);
     }
+    // Positive orthants already use these coordinates. Reconstructing the
+    // same sparse polynomial through substitution can be quadratic in its
+    // support size; retain the identical value and variable map directly.
+    if offset.is_zero() && *scale == Rational::one() {
+        return Ok(Some(p.clone()));
+    }
     let replacement = algebra
         .parse(&algebra.names[variable])?
         .mul_coeff(scale.clone())
@@ -1584,4 +1590,59 @@ pub fn restore_homogeneous_bound(
         result.append_monomial(coefficient.clone(), &exponent);
     }
     Ok(result)
+}
+
+#[cfg(test)]
+mod affine_identity_tests {
+    use super::*;
+
+    #[test]
+    fn identity_shift_preserves_polynomial_map_and_existing_term_cap() {
+        let algebra = Algebra::new(&["x".into(), "y".into()]).unwrap();
+        let p = algebra.parse("x^20-x*y+3/7").unwrap();
+        let result = affine_replace(
+            &algebra,
+            &p,
+            0,
+            &Rational::zero(),
+            &Rational::one(),
+            p.nterms(),
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!(result, p);
+        assert_eq!(result.variables(), &algebra.variables);
+        assert!(
+            affine_replace(
+                &algebra,
+                &p,
+                0,
+                &Rational::zero(),
+                &Rational::one(),
+                p.nterms() - 1,
+            )
+            .unwrap()
+            .is_none()
+        );
+    }
+
+    #[test]
+    fn nonidentity_affine_transforms_keep_their_exact_effect() {
+        let algebra = Algebra::new(&["x".into(), "y".into()]).unwrap();
+        let p = algebra.parse("x^2-x*y+3/7").unwrap();
+        for (offset, scale, expected) in [(0, 2, "4*x^2-2*x*y+3/7"), (2, -1, "(2-x)^2-(2-x)*y+3/7")]
+        {
+            let actual = affine_replace(
+                &algebra,
+                &p,
+                0,
+                &Rational::from(offset),
+                &Rational::from(scale),
+                32,
+            )
+            .unwrap()
+            .unwrap();
+            assert_eq!(actual, algebra.parse(expected).unwrap());
+        }
+    }
 }
