@@ -38,3 +38,21 @@ The `campaign/initial-x2-0/` hashes are:
 
 The complementary positive-t region remains unresolved. This subdomain result
 does not change the original-corpus completion count.
+
+Two complementary `t>0` trials with the same release worker and Feynman order
+both timed out at 60 seconds: one used outer order `[s,t]`, the other `[t,s]`.
+A later `e8e1cd4` debug trial with interval and pair witnesses enabled also
+timed out at 300.065 seconds. Its final captured discriminant operand has
+degree eight and 4,467 terms, exceeding the interval rule's 4,096-term input
+cap. The bounded research interval probe correctly declined at that cap;
+no enlarged-cap certificate or speedup is claimed.
+
+Records are under `artifacts/research/ax12-446-positive-t-01`, in
+`s-t-order`, `t-s-order`, and `interval-s-t-order`. Their `initial-x2-0/record.json`
+SHA-256 values are respectively
+`6811cddc1d9feef2de29b3e3fbea4901740b4805182acde7799577842c1593a3`,
+`fbf2962130218d6ff5a87209e1237b45edffd831410ed12ff77264f576e09e5e`, and
+`58f0b44c7ef74fe4a9edd4f6abb26d625170fc485234834a29ccc7b626a6e529`.
+The immutable last operand is retained at
+`artifacts/profile/ax12-positive-t-interval-capture-01/capture.json`, SHA-256
+`e3cd17f95b37630962b525579d51c3e4f980f2970d22bbff8ad12c677510a0d8`.
