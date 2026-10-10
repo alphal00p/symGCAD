@@ -143,6 +143,42 @@ fn given_order(problem: &Problem) -> Vec<String> {
     }
 }
 
+/// A conservative, projection-free orientation heuristic for sign filtering.
+/// Test the complete unscaled domain, excluding the transferred inequality.
+/// A homogeneous solve may have additional candidates after reduction, but
+/// this probe never needs to plan its order or solve its endpoint problem.
+pub(crate) fn has_first_peel(problem: &Problem) -> Result<bool> {
+    ensure!(
+        problem.split.len() == 1,
+        "first-peel probe requires one split"
+    );
+    let normalized = normalize(problem, &problem.variables)?;
+    let fixed = !problem.solver.order.is_empty() || problem.solver.ordering == "given";
+    let axes = if fixed {
+        given_order(problem)
+            .last()
+            .cloned()
+            .into_iter()
+            .collect::<Vec<_>>()
+    } else {
+        problem
+            .variable_groups
+            .last()
+            .cloned()
+            .unwrap_or_else(|| problem.variables.clone())
+    };
+    for name in axes {
+        if problem.solver.homogeneous_anchor.as_ref() == Some(&name) {
+            continue;
+        }
+        let variable = problem.variables.iter().position(|v| v == &name).unwrap();
+        if candidate(&normalized, &normalized.split[0], variable)?.is_some() {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
 fn check_order(problem: &Problem, order: &[String]) -> Result<()> {
     ensure!(
         order.len() == problem.variables.len(),

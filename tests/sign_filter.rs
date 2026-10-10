@@ -47,6 +47,14 @@ fn both_strict_orientations_match_the_baseline_by_exact_common_refinement() {
         let target = format!("z^2+z+t {relation} 0");
         let p = problem(&["t", "z"], &["t>-2", "t<1", "z>0", &target]);
         let restricted = solve(&p).unwrap();
+        let evidence = restricted.sign_filter.as_ref().unwrap();
+        let expected_sign = if relation == ">" { 1 } else { -1 };
+        assert_eq!(evidence.orientation, expected_sign);
+        assert_eq!(evidence.selected_sign, expected_sign);
+        assert_eq!(
+            evidence.arrangement.monotone.as_ref().unwrap().steps.len(),
+            1
+        );
         let mut baseline = p.clone();
         baseline.solver.engine = "baseline".into();
         let baseline = solve(&baseline).unwrap();
@@ -195,4 +203,90 @@ fn compatibility_merge_is_recomputed_after_sign_selection() {
     let mut bad = result;
     bad.merged_cells = Some(vec![]);
     assert!(verify(&bad).is_err());
+}
+
+#[test]
+fn negative_original_constraint_peels_increasing_split_and_selects_negative_cells() {
+    let p = problem(&["z"], &["z>0", "-3/7*(z^2+z-1)>0"]);
+    let result = solve(&p).unwrap();
+    assert_eq!(selected_order(&p).unwrap(), result.order);
+    let evidence = result.sign_filter.as_ref().unwrap();
+    assert_eq!(evidence.orientation, -1);
+    assert_eq!(evidence.selected_sign, -1);
+    assert_eq!(evidence.selected_cells, [0]);
+    assert_eq!(
+        evidence.arrangement.monotone.as_ref().unwrap().steps.len(),
+        1
+    );
+    assert_eq!(evidence.arrangement.cells[0].signs, [-1]);
+    assert_eq!(result.cells[0].axes, evidence.arrangement.cells[0].axes);
+    assert!(verify(&result).unwrap().verified);
+    let restored = serde_json::from_slice(&serde_json::to_vec(&result).unwrap()).unwrap();
+    assert!(verify(&restored).unwrap().verified);
+    for which in 0..7 {
+        let mut bad = result.clone();
+        let evidence = bad.sign_filter.as_mut().unwrap();
+        match which {
+            0 => evidence.orientation = 0,
+            1 => evidence.orientation = 2,
+            2 => evidence.orientation = 1,
+            3 => evidence.selected_sign = 0,
+            4 => evidence.selected_sign = 1,
+            5 => {
+                evidence.orientation = 1;
+                evidence.selected_sign = 1;
+            }
+            _ => evidence.arrangement.problem.split = vec![evidence.normalized_target.clone()],
+        }
+        assert!(verify(&bad).is_err(), "tamper{which}");
+    }
+    let mut incomplete = p;
+    incomplete.limits.max_cells = Some(1);
+    let incomplete = solve(&incomplete).unwrap();
+    assert_eq!(incomplete.status, Status::Incomplete);
+    assert!(verify(&incomplete).is_err());
+}
+
+#[test]
+fn orientation_probes_respect_fixed_orders_and_group_constraints() {
+    let mut p = problem(&["z", "w"], &["z>0", "w>0", "z^2+z-1<0"]);
+    p.solver.order = vec!["z".into(), "w".into()];
+    let fixed = solve(&p).unwrap();
+    assert_eq!(fixed.sign_filter.as_ref().unwrap().orientation, 1);
+    assert_eq!(fixed.order, p.solver.order);
+    assert!(verify(&fixed).unwrap().verified);
+    p.solver.order.reverse();
+    let legal = solve(&p).unwrap();
+    assert_eq!(legal.sign_filter.as_ref().unwrap().orientation, -1);
+    assert_eq!(legal.order, p.solver.order);
+    assert!(verify(&legal).unwrap().verified);
+    p.solver.order.clear();
+    p.solver.ordering = "brown".into();
+    p.variable_groups = vec![vec!["z".into()], vec!["w".into()]];
+    let grouped = solve(&p).unwrap();
+    assert_eq!(grouped.sign_filter.as_ref().unwrap().orientation, 1);
+    assert_eq!(grouped.order, vec!["z", "w"]);
+    assert!(verify(&grouped).unwrap().verified);
+}
+
+#[test]
+fn negative_selection_composes_with_homogeneous_and_local_endpoint_proofs() {
+    let mut p = problem(
+        &["r", "x", "z"],
+        &["r>0", "x>0", "z>0", "a*z^2+r*z+x^2-r^2<0"],
+    );
+    p.parameters.insert("a".into(), "3/2".into());
+    p.solver.homogeneous_anchor = Some("r".into());
+    p.solver.homogeneous_block = p.variables.clone();
+    p.solver.monotone_base_engine = "local".into();
+    let result = solve(&p).unwrap();
+    let evidence = result.sign_filter.as_ref().unwrap();
+    assert_eq!(evidence.orientation, -1);
+    assert_eq!(evidence.selected_sign, -1);
+    assert_eq!(evidence.arrangement.problem.parameters, p.parameters);
+    let reduced = &evidence.arrangement.homogeneous.as_ref().unwrap().reduced;
+    assert!(!reduced.monotone.as_ref().unwrap().steps.is_empty());
+    assert!(reduced.monotone.as_ref().unwrap().base.local.is_some());
+    assert!(verify(&result).unwrap().verified);
+    assert_eq!(result.problem.constraints, p.constraints);
 }

@@ -5,6 +5,173 @@ use symgcad::domain::{
     verify_certificate,
 };
 
+const PHYSICAL_LINEAR: &str = "(x3-x6)^2+(4-pp4)*x3*x6+2*(x0+x1)*(x3+x5+x6)+2*x3*x5+(2-t)*x5*x6";
+
+#[test]
+fn square_residual_certifies_physical_box_with_exact_upper_orientation() {
+    let (a, constraints) = setup(
+        &["pp4", "t", "x0", "x1", "x3", "x5", "x6"],
+        &["pp4", "4-pp4", "-t", "x0", "x1", "x3", "x5", "x6"],
+    );
+    let p = a.parse(PHYSICAL_LINEAR).unwrap();
+    let domain = derive_domain(&a, &constraints, &[]).unwrap();
+    let mut options = CertificateOptions::default();
+    options.square_residual_candidates = 0;
+    assert!(
+        certify_nonzero(&a, &p, &domain, &options)
+            .unwrap()
+            .is_none()
+    );
+    options.square_residual_candidates = 16;
+    for (p, sign) in [
+        (p.clone(), 1),
+        (a.parse(&format!("-({PHYSICAL_LINEAR})")).unwrap(), -1),
+    ] {
+        let c = certify_nonzero(&a, &p, &domain, &options).unwrap().unwrap();
+        assert_eq!(c.sign, sign);
+        assert_eq!(c.domain, domain);
+        let CertificateMethod::SquarePlusPositiveResidual {
+            upper_variables,
+            variables,
+            weight,
+            residual,
+        } = &c.method
+        else {
+            panic!("expected square residual proof")
+        };
+        assert_eq!(upper_variables, &[0]);
+        assert_eq!(variables, &[4, 6]);
+        assert_eq!(weight, "1");
+        assert_eq!(
+            a.parse(residual).unwrap(),
+            a.parse("pp4*x3*x6+2*(x0+x1)*(x3+x5+x6)+2*x3*x5+(2+t)*x5*x6")
+                .unwrap()
+        );
+        verify_certificate(&a, &p, &constraints, &[], &c).unwrap();
+        let serialized = serde_json::to_string(&c).unwrap();
+        let decoded = serde_json::from_str(&serialized).unwrap();
+        verify_certificate(&a, &p, &constraints, &[], &decoded).unwrap();
+    }
+}
+
+#[test]
+fn square_residual_replay_checks_identity_strictness_and_bound_premises() {
+    let (a, constraints) = setup(
+        &["pp4", "t", "x0", "x1", "x3", "x5", "x6"],
+        &["pp4", "4-pp4", "-t", "x0", "x1", "x3", "x5", "x6"],
+    );
+    let p = a.parse(PHYSICAL_LINEAR).unwrap();
+    let domain = derive_domain(&a, &constraints, &[]).unwrap();
+    let c = certify_nonzero(&a, &p, &domain, &CertificateOptions::default())
+        .unwrap()
+        .unwrap();
+    let alter = |change: &dyn Fn(&mut CertificateMethod)| {
+        let mut wrong = c.clone();
+        change(&mut wrong.method);
+        assert!(verify_certificate(&a, &p, &constraints, &[], &wrong).is_err());
+    };
+    for axes in [vec![0, 0], vec![999], vec![2], vec![]] {
+        alter(&|m| {
+            if let CertificateMethod::SquarePlusPositiveResidual {
+                upper_variables, ..
+            } = m
+            {
+                *upper_variables = axes.clone();
+            }
+        });
+    }
+    for indices in [[4, 4], [6, 4], [4, 999]] {
+        alter(&|m| {
+            if let CertificateMethod::SquarePlusPositiveResidual { variables, .. } = m {
+                *variables = indices;
+            }
+        });
+    }
+    for value in ["0", "-1", "2"] {
+        alter(&|m| {
+            if let CertificateMethod::SquarePlusPositiveResidual { weight, .. } = m {
+                *weight = value.into();
+            }
+        });
+    }
+    alter(&|m| {
+        if let CertificateMethod::SquarePlusPositiveResidual { residual, .. } = m {
+            *residual = "1".into();
+        }
+    });
+    let mut weakened = constraints.clone();
+    weakened.remove(1);
+    assert!(verify_certificate(&a, &p, &weakened, &[], &c).is_err());
+    let mut forged = c;
+    forged.domain = derive_domain(&a, &weakened, &[]).unwrap();
+    assert!(verify_certificate(&a, &p, &weakened, &[], &forged).is_err());
+    assert!(certify(&["x", "y"], &["x", "y"], "(x-y)^2").is_none());
+    assert!(certify(&["x", "y", "z"], &[], "(x-y)^2+z^2").is_none());
+}
+
+#[test]
+fn square_residual_replay_does_not_depend_on_discovery_weight() {
+    let (a, constraints) = setup(&["x", "y", "z"], &["x", "y", "z"]);
+    // Degree-three z*x*y makes rational LDL inapplicable. Both positive
+    // rational square weights 1 and 1/2 yield valid strict residual proofs.
+    let p = a.parse("x^2-x*y+y^2+z*x*y+1").unwrap();
+    let domain = derive_domain(&a, &constraints, &[]).unwrap();
+    let certificate = DomainCertificate {
+        version: 1,
+        polynomial: a.format(&p),
+        domain,
+        sign: 1,
+        method: CertificateMethod::SquarePlusPositiveResidual {
+            upper_variables: vec![],
+            variables: [0, 1],
+            weight: "1/2".into(),
+            residual: "x^2/2+y^2/2+z*x*y+1".into(),
+        },
+        limits: CertificateOptions::default(),
+    };
+    verify_certificate(&a, &p, &constraints, &[], &certificate).unwrap();
+}
+
+#[test]
+fn square_residual_identity_uses_shifted_not_original_coordinates() {
+    let c = certify(
+        &["x", "y", "z"],
+        &["x-1", "y-2", "z"],
+        "((x-1)-(y-2))^2+z*(x-1)*(y-2)+1",
+    )
+    .unwrap();
+    let CertificateMethod::SquarePlusPositiveResidual {
+        upper_variables,
+        variables,
+        residual,
+        ..
+    } = c.method
+    else {
+        panic!("expected shifted square residual")
+    };
+    assert!(upper_variables.is_empty());
+    assert_eq!(variables, [0, 1]);
+    let a = Algebra::new(&["x".into(), "y".into(), "z".into()]).unwrap();
+    assert_eq!(a.parse(&residual).unwrap(), a.parse("z*x*y+1").unwrap());
+}
+
+#[test]
+fn square_residual_option_preserves_historical_proofs_and_hard_caps() {
+    let mut old = serde_json::to_value(CertificateOptions::default()).unwrap();
+    old.as_object_mut()
+        .unwrap()
+        .remove("square_residual_candidates");
+    let old: CertificateOptions = serde_json::from_value(old).unwrap();
+    assert_eq!(old.square_residual_candidates, 0);
+    let (a, constraints) = setup(&["x", "y"], &["x", "y"]);
+    let domain = derive_domain(&a, &constraints, &[]).unwrap();
+    let invalid = CertificateOptions {
+        square_residual_candidates: 65,
+        ..Default::default()
+    };
+    assert!(certify_nonzero(&a, &a.parse("x+y").unwrap(), &domain, &invalid).is_err());
+}
+
 fn setup(names: &[&str], constraints: &[&str]) -> (Algebra, Vec<Poly>) {
     let a = Algebra::new(&names.iter().map(|s| (*s).into()).collect::<Vec<_>>()).unwrap();
     let constraints = constraints.iter().map(|s| a.parse(s).unwrap()).collect();

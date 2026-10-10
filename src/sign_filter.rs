@@ -1,6 +1,6 @@
 //! Exact restriction of a complete sign arrangement to an input inequality.
 //!
-//! Moving `p > 0` from the domain to a split lets the monotone engine inspect
+//! Moving `p > 0` from the domain to an oriented split lets the monotone engine inspect
 //! the whole fiber. The original problem is recovered by an exhaustive cell
 //! selection; its excluded algebraic seams remain those of the arrangement.
 use crate::{
@@ -18,17 +18,30 @@ use std::time::Instant;
 pub struct SignFilterEvidence {
     /// Index in the original, ordered strict constraint list.
     pub constraint_index: usize,
-    /// Positive primitive polynomial, expressed in the original variable map.
+    /// Primitive polynomial defining the original strict positive constraint,
+    /// expressed in the original variable map without changing its sign.
     pub normalized_target: String,
+    /// The arrangement split is exactly orientation * normalized_target.
+    #[serde(default = "positive_orientation")]
+    pub orientation: i8,
+    /// To recover target > 0, this must equal orientation. Retained explicitly
+    /// so the selected sign is visible without inferring it from a heuristic.
+    #[serde(default = "positive_orientation")]
+    pub selected_sign: i8,
     pub arrangement: Box<SolveResult>,
-    /// Every arrangement cell with target sign +1, in original cell order.
+    /// Every arrangement cell with selected_sign, in original cell order.
     pub selected_cells: Vec<usize>,
 }
 
 struct Plan {
     constraint_index: usize,
     normalized_target: String,
+    orientation: i8,
     arrangement: Problem,
+}
+
+fn positive_orientation() -> i8 {
+    1
 }
 
 fn coordinate_affine(polynomial: &Poly) -> bool {
@@ -45,7 +58,11 @@ fn coordinate_affine(polynomial: &Poly) -> bool {
     true
 }
 
-fn plan(problem: &Problem) -> Result<Plan> {
+fn oriented_plan(problem: &Problem, orientation: i8) -> Result<Plan> {
+    ensure!(
+        [-1, 1].contains(&orientation),
+        "sign-filter orientation must be +1 or -1"
+    );
     ensure!(
         problem.solver.engine == "monotone" && problem.split.is_empty(),
         "sign filtering requires an unsplit monotone problem"
@@ -64,27 +81,51 @@ fn plan(problem: &Problem) -> Result<Plan> {
     let normalized_target = normalized.algebra.format(target);
     let mut arrangement = problem.clone();
     arrangement.constraints.remove(constraint_index);
-    arrangement.split = vec![normalized_target.clone()];
+    arrangement.split = vec![if orientation == 1 {
+        normalized_target.clone()
+    } else {
+        normalized.algebra.format(&(-target.clone()))
+    }];
     arrangement.validate()?;
     Ok(Plan {
         constraint_index,
         normalized_target,
+        orientation,
         arrangement,
     })
+}
+
+fn plan(problem: &Problem) -> Result<Plan> {
+    let original = oriented_plan(problem, 1)?;
+    if crate::monotone::has_first_peel(&original.arrangement)? {
+        return Ok(original);
+    }
+    let reversed = oriented_plan(problem, -1)?;
+    if crate::monotone::has_first_peel(&reversed.arrangement)? {
+        Ok(reversed)
+    } else {
+        // Orientation never changes the mathematical problem. Preserve the
+        // original sign when neither conservative probe proves an advantage.
+        Ok(original)
+    }
 }
 
 pub fn selected_order(problem: &Problem) -> Result<Vec<String>> {
     crate::solver::selected_order(&plan(problem)?.arrangement)
 }
 
-fn selected_indices(arrangement: &SolveResult) -> Result<Vec<usize>> {
+fn selected_indices(arrangement: &SolveResult, selected_sign: i8) -> Result<Vec<usize>> {
+    ensure!(
+        [-1, 1].contains(&selected_sign),
+        "selected arrangement sign must be +1 or -1"
+    );
     let mut selected = Vec::new();
     for (index, cell) in arrangement.cells.iter().enumerate() {
         ensure!(
             cell.signs.as_slice() == [1] || cell.signs.as_slice() == [-1],
             "sign arrangement cell lacks one nonzero target sign"
         );
-        if cell.signs[0] == 1 {
+        if cell.signs[0] == selected_sign {
             selected.push(index);
         }
     }
@@ -104,6 +145,10 @@ fn filtered_cells(arrangement: &SolveResult, selected: &[usize]) -> Vec<Cell> {
 pub fn solve(problem: &Problem) -> Result<SolveResult> {
     let started = Instant::now();
     let plan = plan(problem)?;
+    solve_plan(problem, plan, started)
+}
+
+fn solve_plan(problem: &Problem, plan: Plan, started: Instant) -> Result<SolveResult> {
     let planning_seconds = started.elapsed().as_secs_f64();
     if planning_seconds >= problem.limits.wall_time_secs {
         let mut result = SolveResult::failure(
@@ -118,7 +163,7 @@ pub fn solve(problem: &Problem) -> Result<SolveResult> {
     let arrangement = crate::solver::solve(&plan.arrangement)?;
     // An incomplete arrangement may contain diagnostic partial cells, but its
     // selection must never turn that result into a completed decomposition.
-    let selected_cells = selected_indices(&arrangement)?;
+    let selected_cells = selected_indices(&arrangement, plan.orientation)?;
     let cells = filtered_cells(&arrangement, &selected_cells);
     let normalized = normalize(problem, &arrangement.order)?;
     let mut statistics = arrangement.statistics.clone();
@@ -153,6 +198,8 @@ pub fn solve(problem: &Problem) -> Result<SolveResult> {
         sign_filter: Some(Box::new(SignFilterEvidence {
             constraint_index: plan.constraint_index,
             normalized_target: plan.normalized_target,
+            orientation: plan.orientation,
+            selected_sign: plan.orientation,
             arrangement: Box::new(arrangement),
             selected_cells,
         })),
@@ -172,6 +219,31 @@ pub fn solve(problem: &Problem) -> Result<SolveResult> {
     Ok(result)
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn old_positive_selection_replays_even_when_new_heuristic_would_reverse() {
+        let mut p = Problem {
+            variables: vec!["z".into()],
+            constraints: vec!["z>0".into(), "z^2+z-1<0".into()],
+            ..Default::default()
+        };
+        p.solver.engine = "monotone".into();
+        assert_eq!(plan(&p).unwrap().orientation, -1);
+        let legacy = solve_plan(&p, oriented_plan(&p, 1).unwrap(), Instant::now()).unwrap();
+        assert!(verify(&legacy).unwrap().verified);
+        let mut encoded = serde_json::to_value(legacy).unwrap();
+        let evidence = encoded["sign_filter"].as_object_mut().unwrap();
+        evidence.remove("orientation");
+        evidence.remove("selected_sign");
+        let restored: SolveResult = serde_json::from_value(encoded).unwrap();
+        assert_eq!(restored.sign_filter.as_ref().unwrap().orientation, 1);
+        assert!(verify(&restored).unwrap().verified);
+    }
+}
+
 pub fn verify(result: &SolveResult) -> Result<Verification> {
     ensure!(
         result.schema_version == 1 && result.status == Status::CompleteGeneric,
@@ -188,7 +260,13 @@ pub fn verify(result: &SolveResult) -> Result<Verification> {
         .sign_filter
         .as_ref()
         .ok_or_else(|| anyhow!("missing sign-filter evidence"))?;
-    let plan = plan(&result.problem)?;
+    // Replay the recorded exact identity, never the evolving discovery
+    // heuristic. Historical evidence with absent fields means orientation+1.
+    let plan = oriented_plan(&result.problem, evidence.orientation)?;
+    ensure!(
+        evidence.selected_sign == evidence.orientation,
+        "selected sign does not recover the original strict constraint"
+    );
     ensure!(
         evidence.constraint_index == plan.constraint_index
             && evidence.normalized_target == plan.normalized_target,
@@ -224,14 +302,14 @@ pub fn verify(result: &SolveResult) -> Result<Verification> {
             && result.exceptional_polynomials == evidence.arrangement.exceptional_polynomials,
         "sign-filter boundary or exceptional-set metadata was modified"
     );
-    let expected_indices = selected_indices(&evidence.arrangement)?;
+    let expected_indices = selected_indices(&evidence.arrangement, evidence.selected_sign)?;
     ensure!(
         evidence.selected_cells == expected_indices,
-        "positive-cell selection is not exhaustive or was modified"
+        "signed-cell selection is not exhaustive or was modified"
     );
     ensure!(
         result.cells.len() == expected_indices.len(),
-        "positive cells are missing or duplicated"
+        "selected-sign cells are missing or duplicated"
     );
     for (cell, &index) in result.cells.iter().zip(&expected_indices) {
         ensure!(

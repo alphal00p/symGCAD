@@ -109,6 +109,9 @@ pub struct CertificateOptions {
     /// Zero disables this independent portfolio member for ablations.
     #[serde(default = "default_sturm_degree")]
     pub univariate_sturm_degree: usize,
+    /// Bounded binomial-square attempts; zero preserves the older portfolio.
+    #[serde(default)]
+    pub square_residual_candidates: usize,
 }
 
 fn default_sturm_degree() -> usize {
@@ -125,12 +128,17 @@ impl Default for CertificateOptions {
             bernstein_coefficients: 4096,
             work_limit: 1_000_000,
             univariate_sturm_degree: default_sturm_degree(),
+            square_residual_candidates: 16,
         }
     }
 }
 
 impl CertificateOptions {
     fn validate(&self) -> Result<()> {
+        ensure!(
+            self.square_residual_candidates <= 64,
+            "square residual candidates are capped at 64"
+        );
         ensure!(
             self.univariate_sturm_degree <= 64,
             "Sturm degree budget is capped at 64"
@@ -176,6 +184,15 @@ pub enum BernsteinProof {
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum CertificateMethod {
     ShiftedCoefficients,
+    /// After the recorded bound orientations, sign*p is exactly a positive
+    /// rational multiple of one binomial square plus a strictly positive
+    /// coefficient-sign residual. The original Domain is never weakened.
+    SquarePlusPositiveResidual {
+        upper_variables: Vec<usize>,
+        variables: [usize; 2],
+        weight: String,
+        residual: String,
+    },
     Polya {
         order: u32,
     },
@@ -296,6 +313,9 @@ pub fn certify_nonzero(
             sign,
             CertificateMethod::UnivariateSturm { variable },
         )));
+    }
+    if let Some((sign, method)) = square_residual(algebra, polynomial, domain, options)? {
+        return Ok(Some(make(sign, method)));
     }
     Ok(None)
 }
@@ -483,6 +503,47 @@ pub fn verify_certificate(
                     coefficient_sign(&p, &positive) == Some(certificate.sign)
                 })
         }
+        CertificateMethod::SquarePlusPositiveResidual {
+            upper_variables,
+            variables,
+            weight,
+            residual,
+        } => {
+            ensure!(
+                certificate.limits.square_residual_candidates > 0,
+                "square residual certificate is disabled"
+            );
+            ensure!(
+                variables[0] < variables[1] && variables[1] < algebra.names.len(),
+                "invalid square coordinate indices"
+            );
+            let weight = rational(weight)?;
+            ensure!(weight > Rational::zero(), "square weight must be positive");
+            let limit = certificate.limits.max_terms.min(SQUARE_MAX_TERMS);
+            ensure!(
+                polynomial.nterms() <= limit && support(polynomial).len() <= SQUARE_MAX_VARIABLES,
+                "square residual certificate exceeds its polynomial budget"
+            );
+            let signed = polynomial
+                .clone()
+                .mul_coeff(Rational::from(certificate.sign as i64));
+            let (shifted, positive) =
+                shift_to_positive_oriented(algebra, &signed, &domain, upper_variables, limit)?
+                    .ok_or_else(|| {
+                        anyhow::anyhow!("square residual affine transform exceeds budget")
+                    })?;
+            let square = binomial_square(algebra, *variables, &weight)?;
+            let residual = algebra.parse(residual)?;
+            ensure!(
+                residual.nterms() <= limit,
+                "square residual exceeds term budget"
+            );
+            ensure!(
+                &square + &residual == shifted,
+                "square residual identity does not reconstruct the polynomial"
+            );
+            coefficient_sign(&residual, &positive) == Some(1)
+        }
         CertificateMethod::Polya { order } => {
             ensure!(
                 *order > 0 && *order <= certificate.limits.polya_order,
@@ -609,10 +670,36 @@ fn shift_to_positive(
     domain: &Domain,
     limit: usize,
 ) -> Result<Option<(Poly, Vec<bool>)>> {
+    shift_to_positive_oriented(algebra, polynomial, domain, &[], limit)
+}
+
+fn shift_to_positive_oriented(
+    algebra: &Algebra,
+    polynomial: &Poly,
+    domain: &Domain,
+    upper_variables: &[usize],
+    limit: usize,
+) -> Result<Option<(Poly, Vec<bool>)>> {
+    ensure!(
+        upper_variables.len() <= SQUARE_MAX_VARIABLES
+            && upper_variables.windows(2).all(|w| w[0] < w[1])
+            && upper_variables
+                .iter()
+                .all(|&v| { v < domain.bounds.len() && domain.bounds[v].upper.is_some() }),
+        "invalid upper-bound orientation axes"
+    );
     let mut p = polynomial.clone();
     let mut positive = vec![false; algebra.names.len()];
     for (v, bounds) in domain.bounds.iter().enumerate() {
-        let transform = if let Some(lower) = &bounds.lower {
+        // Choosing an upper orientation ignores a simultaneous lower bound
+        // only in this proof's coefficient argument. Every original-domain
+        // point still maps to a strictly positive shifted coordinate.
+        let transform = if upper_variables.binary_search(&v).is_ok() {
+            Some((
+                rational(bounds.upper.as_ref().unwrap())?,
+                Rational::from(-1),
+            ))
+        } else if let Some(lower) = &bounds.lower {
             Some((rational(lower)?, Rational::one()))
         } else if let Some(upper) = &bounds.upper {
             Some((rational(upper)?, Rational::from(-1)))
@@ -628,6 +715,106 @@ fn shift_to_positive(
         }
     }
     Ok(Some((p, positive)))
+}
+
+const SQUARE_MAX_VARIABLES: usize = 16;
+const SQUARE_MAX_TERMS: usize = 128;
+const SQUARE_MAX_ORIENTATIONS: usize = 16;
+
+fn binomial_square(algebra: &Algebra, variables: [usize; 2], weight: &Rational) -> Result<Poly> {
+    let difference = &algebra.parse(&algebra.names[variables[0]])?
+        - &algebra.parse(&algebra.names[variables[1]])?;
+    Ok((&difference * &difference).mul_coeff(weight.clone()))
+}
+
+/// Conservative discovery, separate from proof replay. Candidate weights are
+/// rational minima of two positive constant diagonal coefficients; no square
+/// roots, fitted coefficients, or general SOS search enter the certificate.
+fn square_residual(
+    algebra: &Algebra,
+    polynomial: &Poly,
+    domain: &Domain,
+    options: &CertificateOptions,
+) -> Result<Option<(i8, CertificateMethod)>> {
+    let limit = options.max_terms.min(SQUARE_MAX_TERMS);
+    if options.square_residual_candidates == 0 || polynomial.nterms() > limit {
+        return Ok(None);
+    }
+    let active = support(polynomial);
+    if active.len() < 2 || active.len() > SQUARE_MAX_VARIABLES {
+        return Ok(None);
+    }
+    let alternatives: Vec<_> = active
+        .iter()
+        .copied()
+        .filter(|&v| domain.bounds[v].lower.is_some() && domain.bounds[v].upper.is_some())
+        .collect();
+    let mut orientations = vec![vec![]];
+    for &v in alternatives.iter().take(SQUARE_MAX_ORIENTATIONS - 2) {
+        orientations.push(vec![v]);
+    }
+    if alternatives.len() > 1 {
+        orientations.push(alternatives);
+    }
+    let mut attempts = 0usize;
+    let mut budget = ProofBudget::new(options);
+    for upper_variables in orientations {
+        if !budget.spend(polynomial.nterms().saturating_mul(algebra.names.len())) {
+            return Ok(None);
+        }
+        let Some((shifted, positive)) =
+            shift_to_positive_oriented(algebra, polynomial, domain, &upper_variables, limit)?
+        else {
+            continue;
+        };
+        for sign in [1i8, -1] {
+            let signed = shifted.clone().mul_coeff(Rational::from(sign as i64));
+            let mut diagonal = Vec::new();
+            for &v in &active {
+                let mut powers = vec![0; algebra.names.len()];
+                powers[v] = 2;
+                if let Some(c) = signed.coefficient(&powers) {
+                    if c > Rational::zero() {
+                        diagonal.push((v, c));
+                    }
+                }
+            }
+            for (i, (first, a)) in diagonal.iter().enumerate() {
+                for (second, b) in diagonal.iter().skip(i + 1) {
+                    let mut powers = vec![0; algebra.names.len()];
+                    powers[*first] = 1;
+                    powers[*second] = 1;
+                    if !signed.coefficient(&powers).is_some_and(|c| c.is_negative()) {
+                        continue;
+                    }
+                    if attempts >= options.square_residual_candidates
+                        || !budget.spend(signed.nterms().saturating_add(3))
+                    {
+                        return Ok(None);
+                    }
+                    attempts += 1;
+                    let variables = [*first, *second];
+                    let weight = a.min(b).clone();
+                    let square = binomial_square(algebra, variables, &weight)?;
+                    let residual = &signed - &square;
+                    if residual.nterms() <= limit
+                        && coefficient_sign(&residual, &positive) == Some(1)
+                    {
+                        return Ok(Some((
+                            sign,
+                            CertificateMethod::SquarePlusPositiveResidual {
+                                upper_variables,
+                                variables,
+                                weight: weight.to_string(),
+                                residual: algebra.format(&residual),
+                            },
+                        )));
+                    }
+                }
+            }
+        }
+    }
+    Ok(None)
 }
 
 /// Nonnegative monomials alone do not give strict positivity: at least one
