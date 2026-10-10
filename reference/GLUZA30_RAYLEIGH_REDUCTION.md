@@ -7,8 +7,9 @@ It requests `F<0` with all seven coordinates positive. Its only variable group
 is `[x0,x1,x2,x4,x5,x6,x7]`; there is no fixed order. The upstream test fixes
 the original homogeneous coordinate `x3=1`.
 
-This report establishes exact polynomial identities, not a completed solver
-certificate. No new original case is credited here.
+The identities below are now implemented by the generic `linear_negative`
+engine. A canonical cold debug campaign completed and independently verified
+the exact original negative problem in one cell; metadata appears below.
 
 ## Source graph and exact reconstruction
 
@@ -81,14 +82,14 @@ In the second row the square numerator is
 
 After the fourth derivative the endpoint problem is the constant `-1<0`
 over free positive coordinates `[x2,x6,x7]`. Reversing the chain gives the
-legal original lifting order `[x2,x6,x7,x5,x1,x4,x0]`. The theorem therefore
-supports one continuous cylindrical negative-domain cell with four
-largest-root lower boundaries, pending implementation and independent
-coverage replay. This is solely the original negative problem; a positive
+legal original lifting order `[x2,x6,x7,x5,x1,x4,x0]`. The theorem gives one
+continuous cylindrical negative-domain cell with four largest-root lower
+boundaries, as confirmed by the implementation and independent coverage
+replay. This is solely the original negative problem; a positive
 problem or a common `F±` arrangement needs its own coverage argument.
 
-A generic implementation could accept an optional polynomial guide `U` and
-check each supplied comparison identity independently. It must not trust
+The generic implementation accepts an optional polynomial guide `U` and
+checks each supplied comparison identity independently. It does not trust
 the graph name, a sampled sign, or the history of how the guide was found.
 The guide need not be a graph polynomial if the algebraic premises hold.
 
@@ -129,3 +130,38 @@ identities. Earlier failed screens are retained in
 `gluza30-corner-countersearch-03`; the first successful seven-minor identity
 check is in `gluza30-graph-rayleigh-04`. These are exploratory algebra
 measurements, not solver benchmark timings.
+
+## Canonical original-problem completion
+
+Production commit `18cd5d0` implements the supplied-guide comparison rule,
+the separate strictly-negative-leading rule, descending real-root indices,
+and independent exact reconstruction of all fibers. The original fixture's
+mathematical fields are preserved; the solver variant supplies the exact
+guide and legal order above. The output retains the original coordinates
+and domain and contains **one verified cell with four certified peels**.
+
+The cold campaign used one worker on CPU6, an 8 GiB cap and separate
+120-second solve/verification budgets. This was **one debug trial**:
+
+| Measurement | Result |
+|---|---:|
+| Public solve, including preparation/export | 0.265087003 s |
+| Fresh independent verification | 0.021131142 s |
+| Solve peak RSS | 20,908 KiB |
+| Verification peak RSS | 12,392 KiB |
+| Verified base stacks / rejected branches | 3 / 3 |
+
+The ledger is
+`artifacts/hard-campaigns/linear-negative-debug-01/gluza30/results/ledger.json`.
+The ledger SHA-256 is
+`dc29054bed2ac51d3dd788e705597e610498c0a73da56c83b54221113c94b095`.
+Its mathematical identity is
+`8897487deeecc7e1f37d796074efee71a9d00334096414bcf56392c78588dfd4`.
+The immutable worker SHA-256 is
+`4da623f39bc7f552fd3dbb716f85162d7000f92a3d0178b5685333362dd173af`;
+the result SHA-256 is
+`11998554e47fabfee080a4d8efb33f4d0d01e57e56d41ae00bb0d87791916aea`;
+the independent verification SHA-256 is
+`c046865fe529a60d75aefad6b999f68bbd22a4e8ff40533d7ba8059f8197b971`.
+These times demonstrate a completed original case. They are not a matched
+release speed comparison against upstream or the earlier local campaigns.

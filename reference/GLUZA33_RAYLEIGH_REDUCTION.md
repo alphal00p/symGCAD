@@ -5,7 +5,9 @@ The negative original fixture is
 `7c55d029c15b1816315785559d12e2cbab3677cec77fe5da6d5fc8f2779bdfed`.
 It has eight positive coordinates, one variable group and no fixed order.
 The following identities are independently expanded and checked with
-Symbolica; this report does not itself provide a completed original CAD.
+Symbolica. The generic `linear_negative` implementation has subsequently
+completed and independently verified the original negative problem in
+three cells; canonical campaign metadata appears below.
 
 ## Exact graph identity
 
@@ -90,7 +92,36 @@ These are research identity-check timings, not end-to-end solver results.
 * Frozen source SHA-256:
   `31c37527ea072b0d13176dedf8a34eae7a825d54724df70e304f824977e2f0b1`.
 
-The original negative problem needs a complete base solve, exact fiber
-restoration, and independent coverage verification before receiving
-completion credit. The positive fixture is a different problem and is not
-solved by these two negative-domain identities alone.
+## Canonical original-problem completion
+
+Production commit `18cd5d0` solved the original eight-variable negative
+problem with the exact guide and legal order above. Both massless axes were
+peeled, and the ordinary optimized engine solved the quadratic base. Exact
+fiber restoration and a fresh independent verifier produced **three cells**.
+The positive fixture remains a different problem; the negative proof makes
+no positive-domain coverage claim.
+
+The cold campaign used one worker on CPU5, an 8 GiB cap and separate
+120-second solve/verification budgets. This was **one debug trial**:
+
+| Measurement | Result |
+|---|---:|
+| Public solve, including preparation/export | 0.348312438 s |
+| Fresh independent verification | 0.041349322 s |
+| Solve peak RSS | 23,208 KiB |
+| Verification peak RSS | 15,596 KiB |
+| Verified base stacks / rejected branches | 13 / 31 |
+
+The ledger is
+`artifacts/hard-campaigns/linear-negative-debug-01/gluza33/results/ledger.json`.
+The ledger SHA-256 is
+`c9c5a0f5e1a934fd601f0794951c3c05d48d21bdae900b19c8d9e137586391f9`.
+Its mathematical identity is
+`2fca160a061f5167336220dc49346af1f10187fe6734b5ea51a303f9eac41542`.
+The immutable worker SHA-256 is
+`4da623f39bc7f552fd3dbb716f85162d7000f92a3d0178b5685333362dd173af`;
+the result SHA-256 is
+`7beb9347653d054a6af4d3d1f3edf91a858dc11024c9060d70ce1e7602f4a2bc`;
+the independent verification SHA-256 is
+`b369fad13d53cb6eb1475085debf2d42ded3af54dd135daf6c5e499661f42706`.
+These are completed-case measurements, not matched release benchmarks.
