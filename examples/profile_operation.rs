@@ -654,6 +654,7 @@ fn main() -> Result<()> {
         args.collapse_sum.is_empty() || capture.operation == AlgebraOperation::Factor,
         "sum collapse requires a factor capture"
     );
+    let mut discriminant_segmentation = None;
     let output = match capture.operation {
         AlgebraOperation::Factor => {
             ensure!(
@@ -726,6 +727,11 @@ fn main() -> Result<()> {
             let degree = p.degree(variable);
             if matches!(args.strategy, Strategy::Formula) {
                 vec![symgcad::projection::discriminant(p, variable)?]
+            } else if matches!(args.strategy, Strategy::BinarySegmentation) {
+                let (d, statistics) =
+                    symgcad::projection::discriminant_with_binary_statistics(p, variable)?;
+                discriminant_segmentation = statistics;
+                vec![d]
             } else if degree < 2 {
                 vec![if degree == 0 { p.zero() } else { p.one() }]
             } else {
@@ -765,6 +771,7 @@ fn main() -> Result<()> {
         "input_terms":polynomials.iter().map(Poly::nterms).collect::<Vec<_>>(),
         "input_degrees":polynomials.iter().map(|p|(0..p.nvars()).map(|v|p.degree(v)).collect::<Vec<_>>()).collect::<Vec<_>>(),
         "algebra_seconds":algebra_seconds,"output_terms":output.iter().map(Poly::nterms).sum::<usize>(),
+        "discriminant_segmentation":discriminant_segmentation,
         "expected_comparison":expected_comparison,"comparison_seconds":comparison_seconds,
         "canonical_output_hash":format!("{:x}",Sha256::digest(serde_json::to_vec(&canonical_output)?)),
         "maximum_coefficient_bits":output.iter().flat_map(|p|&p.coefficients).map(|c|c.numerator_ref().significant_bits().max(c.denominator_ref().significant_bits())).max().unwrap_or(0)

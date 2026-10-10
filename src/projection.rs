@@ -153,13 +153,96 @@ pub fn discriminant(polynomial: &Poly, variable: usize) -> Result<Poly> {
         return Ok(low_degree_discriminant(coefficients.coefficients()));
     }
     let resultant = exact_resultant(polynomial, &derivative, variable)?;
+    discriminant_from_resultant(polynomial, variable, resultant)
+}
+
+/// Opt-in exact discriminant backend. Low-degree identities are unchanged;
+/// ordinary bounded interpolation has priority. Only after its static decline
+/// may a one-parameter resultant use binary segmentation with the existing
+/// resource caps. No discovery cache or supplied polynomial is consulted.
+///
+/// Like the ordinary library backend, individual native calls require an
+/// external worker deadline. Runtime errors never trigger a second backend.
+pub fn discriminant_with_binary_statistics(
+    polynomial: &Poly,
+    variable: usize,
+) -> Result<(Poly, Option<crate::resultant_segmentation::Statistics>)> {
+    ensure!(
+        variable < polynomial.nvars(),
+        "projection variable out of range"
+    );
+    if polynomial.degree(variable) <= 4 {
+        return Ok((discriminant(polynomial, variable)?, None));
+    }
+    let derivative = polynomial.derivative(variable);
+    check_resultant_degrees(polynomial, &derivative, variable)?;
+    if let Some((resultant, _)) = crate::resultant_interpolation::try_resultant(
+        polynomial,
+        &derivative,
+        variable,
+        &crate::resultant_interpolation::Options::default(),
+        || Ok(()),
+    )? {
+        return Ok((
+            discriminant_from_resultant(polynomial, variable, resultant)?,
+            None,
+        ));
+    }
+    // This changes the parameter-count envelope only for discriminants.
+    // General pair-resultant dispatch retains its existing two-axis envelope.
+    let options = crate::resultant_segmentation::Options {
+        min_parameters: 1,
+        max_parameters: 1,
+        ..crate::resultant_segmentation::Options::default()
+    };
+    let (resultant, stats) = if let Some((resultant, stats)) =
+        crate::resultant_segmentation::try_resultant(
+            polynomial,
+            &derivative,
+            variable,
+            &options,
+            || Ok(()),
+        )? {
+        (resultant, Some(stats))
+    } else {
+        (
+            exact_resultant_ducos(polynomial, &derivative, variable)?,
+            None,
+        )
+    };
+    Ok((
+        discriminant_from_resultant(polynomial, variable, resultant)?,
+        stats,
+    ))
+}
+
+fn discriminant_from_resultant(
+    polynomial: &Poly,
+    variable: usize,
+    resultant: Poly,
+) -> Result<Poly> {
+    // Native Ducos may return a mapless ring constant (notably zero for
+    // repeated factors). Reattach that exact value before checking support.
+    let resultant = if resultant.is_constant() {
+        polynomial.constant(resultant.get_constant())
+    } else {
+        resultant
+    };
+    ensure!(
+        resultant.variables() == polynomial.variables(),
+        "discriminant resultant variable map changed"
+    );
+    ensure!(
+        resultant.degree(variable) == 0,
+        "discriminant resultant contains eliminated variable"
+    );
     let (mut quotient, remainder) =
         resultant.quot_rem(&polynomial.univariate_lcoeff(variable), false);
     ensure!(
         remainder.is_zero(),
         "discriminant leading-coefficient division was not exact"
     );
-    if degree % 4 == 2 || degree % 4 == 3 {
+    if polynomial.degree(variable) % 4 == 2 || polynomial.degree(variable) % 4 == 3 {
         quotient = -quotient;
     }
     Ok(quotient)

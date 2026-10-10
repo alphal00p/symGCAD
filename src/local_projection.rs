@@ -647,10 +647,17 @@ fn quadratic_discriminant_guard(
 mod quadratic_tests;
 
 /// The verifier never reads discovery or persistent operation caches.
-struct IndependentOperations;
+#[derive(Default)]
+struct IndependentOperations {
+    binary_resultants: bool,
+}
 impl ProjectionOperations for IndependentOperations {
     fn discriminant(&mut self, p: &Poly, variable: usize) -> Result<Poly> {
-        discriminant(p, variable)
+        if self.binary_resultants {
+            Ok(crate::projection::discriminant_with_binary_statistics(p, variable)?.0)
+        } else {
+            discriminant(p, variable)
+        }
     }
     fn resultant(&mut self, p: &Poly, q: &Poly, variable: usize) -> Result<Poly> {
         exact_resultant(p, q, variable)
@@ -2720,6 +2727,7 @@ struct Checker<'a> {
     descartes_intervals: bool,
     base_point_projection: bool,
     adjacent_pairs: bool,
+    binary_discriminants: bool,
 }
 impl Checker<'_> {
     fn check_registry(&self) -> Result<()> {
@@ -2896,7 +2904,9 @@ impl Checker<'_> {
                         self.adjacent_pairs,
                         &mut adjacent_pairs,
                         &mut 0.0,
-                        &mut IndependentOperations,
+                        &mut IndependentOperations {
+                            binary_resultants: self.binary_discriminants,
+                        },
                     )?;
                     ensure!(
                         *ray == expected,
@@ -2912,7 +2922,9 @@ impl Checker<'_> {
                         prefix,
                         self.adjacent_pairs,
                         &mut adjacent_pairs,
-                        &mut IndependentOperations,
+                        &mut IndependentOperations {
+                            binary_resultants: self.binary_discriminants,
+                        },
                     )?;
                     (bearing, raw)
                 };
@@ -3159,6 +3171,7 @@ pub fn verify_local_parts(
         );
     }
     let checker = Checker {
+        binary_discriminants: solution.problem.solver.binary_resultants,
         normalized: &normalized,
         polynomials: &polynomials,
         ids,

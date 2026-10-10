@@ -100,5 +100,59 @@ these are also signs of `D`; continuity forces zeros in `(10,16)` and
 `s>4`. Exact stripping and a native shift by four also identify an
 `(s-4)^8` boundary factor, with mixed signs in the remaining shifted
 coefficients. The separate bounded screen is retained under
-`artifacts/research/a377-discriminant-boundary-01/`; it supplies no complete
+`artifacts/research/a377-discriminant-boundary-02/`; the earlier `-01` supervisor
+parsing failure is retained separately. The screen supplies no complete
 root count, factorization or original-problem completion.
+
+The next ordinary factorization of this exact signed discriminant was also
+profiled independently. The frozen release helper
+`artifacts/bin/profile-operation-literature-bbb701b-release` did not finish
+within 60.024 seconds on CPU 3, at 55,872 KiB peak RSS and a 4 GiB limit.
+No factor list was accepted. The derived factor capture has SHA-256
+`46d5122f1f6320fcf98165b0a0382150071264923ff1eb259f83f1ed52ca744c`;
+its process report is
+`artifacts/research/a377-discriminant-factor-01/supervisor.json`, SHA-256
+`3ec1826852dc8019309e9ca3770dd2489a56b606485cbe5fce0fb39b7104c8d1`.
+This downstream timeout is retained as inconclusive evidence, not hidden by
+the successful discriminant computation.
+
+## Narrow opt-in production path
+
+`solver.binary_resultants=true` now permits this one-parameter discriminant
+strategy only after ordinary bounded interpolation statically declines.
+Pair-resultant applicability and all encoding caps remain unchanged;
+degree-at-most-four discriminant identities, baseline projection and default
+behavior remain unchanged. Exact leading-coefficient division checks its
+remainder, retains the conventional signed scale, and restores the original
+variable map for native constant results, including shared-factor zero.
+Errors from an attempted kernel propagate rather than triggering a second
+expensive computation. Cache reports count `segmented_discriminants`
+separately from pair resultants.
+
+The local proof checker reads the explicit problem option and freshly
+reconstructs each required discriminant through the same pure exact helper.
+It does not read discovery caches or trust operation statistics. Global
+verification and pair-resultant replay retain their ordinary backend, so they
+may still encounter algebra bottlenecks. No accelerated solve is accepted as
+a completion until independent full proof verification finishes.
+
+The frozen production profiler independently recomputed this captured
+operation with the default caps and compared its entire signed polynomial
+against the grid-certified candidate: **exactly equal**, 2,030 terms. Its
+encoding plan again reports 43,757,120 bits and one surviving parameter.
+Algebra took 146.381 seconds; the process took 147.307 seconds and 257,804 KiB
+peak RSS under the same CPU 0 / 4 GiB / 180-second allocation. These timings
+are diagnostics, not a speedup estimate. The frozen nonconstant replay
+predates only the native constant-result map compatibility fix.
+
+- Production profiler SHA-256: `fe37ba440b63b99d0c084e69e18fa226ad43fe7aaefe9b2f933fea3e066b9858`.
+- `production-replay.json`: `bdfb10d1a4449e6c6bc02a84b702849b6616fbd235d9790a8c2ed4ec83038e93`.
+- `production-supervisor.json`: `64f5a0185b2022e973d892d8c0d40a814284d07361eafee7150dd6a144c04541`.
+
+The focused bundle passed 265 tests before the additional native-zero
+regression. Coverage includes signed rational scale, parameter-dependent
+leading coefficients and degree drops, repeated factors, inactive variable
+maps, interpolation priority, default fallback, cache metrics, independently
+recomputed signed discriminants, and rejection of altered local cells. The
+subsequent six-test discriminant target also covers the ordinary mapless-zero
+backend result. No proof schema or exceptional-set obligation is removed.

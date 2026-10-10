@@ -1,5 +1,20 @@
 use super::*;
 
+#[test]
+fn independent_opt_in_discriminant_replay_preserves_the_signed_polynomial() {
+    let algebra = Algebra::new(&["s".into(), "x".into()]).unwrap();
+    let p = algebra.parse("x^10+(s+1)^120").unwrap();
+    let expected = algebra.parse("-10^10*(s+1)^1080").unwrap();
+    let (_, statistics) = crate::projection::discriminant_with_binary_statistics(&p, 1).unwrap();
+    assert!(statistics.is_some());
+    let mut independent = IndependentOperations {
+        binary_resultants: true,
+    };
+    let actual = independent.discriminant(&p, 1).unwrap();
+    assert_eq!(actual, expected);
+    assert_ne!(actual, canonical(&expected));
+}
+
 struct Cached<'a>(ProjectionCache<'a>);
 
 impl ProjectionOperations for Cached<'_> {
@@ -60,7 +75,7 @@ fn quadratic_guard_matches_independent_replay_with_rational_coefficients() {
         &algebra,
         &OptimizedProjectionOptions::default(),
     ));
-    let mut independent = IndependentOperations;
+    let mut independent = IndependentOperations::default();
     let (guard, value) = quadratic_discriminant_guard(&p, 2, &av, &bv, &cv, &mut cached).unwrap();
     let (checked_guard, checked_value) =
         quadratic_discriminant_guard(&p, 2, &av, &bv, &cv, &mut independent).unwrap();
@@ -73,7 +88,7 @@ fn quadratic_guard_matches_independent_replay_with_rational_coefficients() {
 fn identically_zero_quadratic_discriminants_are_rejected() {
     let algebra = Algebra::new(&["x".into(), "z".into()]).unwrap();
     let p = algebra.parse("(z-x)^2").unwrap();
-    let mut operations = IndependentOperations;
+    let mut operations = IndependentOperations::default();
     assert!(
         quadratic_discriminant_guard(
             &p,

@@ -29,13 +29,13 @@ would therefore be essential before considering a production path.
 `src/resultant_segmentation.rs` implements this exact method with bounded
 preflight before denominator clearing and integer encoding. Set
 `solver.binary_resultants = true` to try it for pair resultants in optimized
-or local projection. The default is false. Current limits admit exactly two
+or local projection. The default is false. Pair limits admit exactly two
 surviving active parameters, elimination-degree product at least 60,
 elimination degrees at most 64, at most 4,096
 combined input terms, 65,536 output digits, and 96 million encoded output bits.
 Separate coefficient, common-denominator and total encoded-input limits apply.
-The two captured successful pairs fit these limits; larger discriminants do
-not. This size bound does not bound intermediate native memory or runtime,
+The two captured successful pairs fit these limits; the earlier four-active-
+variable discriminants do not. This size bound does not bound intermediate native memory or runtime,
 so the usual killable worker limits remain necessary.
 
 The output limit was initially 64 million bits. A subsequently recovered
@@ -51,8 +51,20 @@ A static decline keeps the ordinary exact backend. Cancellation, runtime
 resource stops and failed exact reconstruction propagate without launching
 another expensive attempt. Completed results share the existing canonical
 operation caches; reports separately count segmented resultants and their
-largest output-bit bound. Baseline projection, low-degree discriminant
-identities and independent proof replay retain their existing backend.
+largest output-bit bound. Baseline projection and low-degree discriminant
+identities retain their existing backend.
+
+The same explicit flag also enables a narrow one-parameter discriminant path:
+try existing exact interpolation first, and only after a static decline try
+segmentation for `Res(p,dp/dx)` with the unchanged size caps. The signed result
+is divided exactly by the leading coefficient and receives the conventional
+discriminant sign. A separate `segmented_discriminants` counter records use.
+Local proof replay independently recomputes these opted-in discriminants using
+the same pure exact helper, without consulting discovery caches or supplied
+operation results. Global proof replay and pair-resultant replay are unchanged.
+The [A377 discriminant diagnostic](A377_BINARY_DISCRIMINANT_DIAGNOSTIC.md)
+records the independently grid-verified input, downstream factor timeout and
+scope limitations.
 
 Eight focused module regressions compare exact signed rational results with
 ordinary Ducos, exercise variable maps, repeated/shared factors, centered
@@ -72,8 +84,9 @@ Independent local and global replay currently reconstructs pair resultants
 through `projection::exact_resultant`: bounded one-parameter interpolation or
 ordinary Ducos. The two captured two-parameter operations therefore expose a
 possible replay bottleneck, but no completed hard-problem proof has yet shown
-that bottleneck end to end. Production verification remains unchanged until
-such evidence exists.
+that bottleneck end to end. Pair-resultant verification remains unchanged until
+such evidence exists. The narrow opted-in discriminant recomputation above is
+separate and introduces no operation witness or proof-schema change.
 
 The narrowest future option requires no proof-schema change: after independently
 reconstructing the operands and variable map, replay could freshly run the

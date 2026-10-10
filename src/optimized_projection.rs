@@ -56,7 +56,8 @@ pub struct OptimizedProjectionOptions {
     /// hard bound, including transient Symbolica allocations and the result.
     pub memory_cache_bytes: usize,
     pub max_checkpoint_bytes: usize,
-    /// Opt-in exact binary segmentation for statically bounded pair resultants.
+    /// Opt-in exact binary segmentation for bounded pair resultants and
+    /// one-parameter discriminants after interpolation statically declines.
     pub binary_resultants: bool,
     /// Include the complete normalized domain when domain certificates are
     /// enabled by the caller. The default algorithm does not use a domain.
@@ -91,6 +92,7 @@ pub struct CacheMetrics {
     pub interpolated_resultants: usize,
     pub interpolation_images: usize,
     pub segmented_resultants: usize,
+    pub segmented_discriminants: usize,
     pub maximum_segmented_output_bits: usize,
     pub discriminant_hits: usize,
     pub discriminant_misses: usize,
@@ -889,7 +891,22 @@ impl<'a> ProjectionCache<'a> {
             self.report.cache.discriminant_misses += 1;
             self.capture_operation(&request, None)?;
             let started = Instant::now();
-            let value = canonical(&discriminant(polynomial, variable)?);
+            let exact = if self.options.binary_resultants {
+                let (exact, segmentation) =
+                    crate::projection::discriminant_with_binary_statistics(polynomial, variable)?;
+                if let Some(statistics) = segmentation {
+                    self.report.cache.segmented_discriminants += 1;
+                    self.report.cache.maximum_segmented_output_bits = self
+                        .report
+                        .cache
+                        .maximum_segmented_output_bits
+                        .max(statistics.plan.output_bit_bound);
+                }
+                exact
+            } else {
+                discriminant(polynomial, variable)?
+            };
+            let value = canonical(&exact);
             let elapsed = started.elapsed().as_secs_f64();
             self.capture_operation(&request, Some((std::slice::from_ref(&value), elapsed)))?;
             self.save_operation(&request, std::slice::from_ref(&value), None, elapsed)?;

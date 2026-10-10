@@ -100,6 +100,7 @@ fn historical_optimized_results_without_interpolation_metadata_still_verify() {
     metrics.remove("interpolated_resultants");
     metrics.remove("interpolation_images");
     metrics.remove("segmented_resultants");
+    metrics.remove("segmented_discriminants");
     metrics.remove("maximum_segmented_output_bits");
     metrics.remove("primitive_linear_identities");
     let restored: symgcad::output::SolveResult = serde_json::from_value(json).unwrap();
