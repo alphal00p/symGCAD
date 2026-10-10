@@ -1,5 +1,11 @@
 # One-hour original-problem queue
 
+The first full queue is now audited: **all 28 unresolved originals timed
+out under their one-hour budgets**. None produced a complete result or
+verification, so coverage remains **303 / 331**. The finished campaign's
+evidence is recorded below; targeted continuations preserve completed work
+and remain separate from this cold campaign.
+
 `examples/slow_suite.rs` executes every case labelled `slow` in
 `tests/corpus_classification.json`. It retains aliases and exact original-file
 and normalized-mathematics hashes. The checked-in `tests/slow_options.json`
@@ -253,3 +259,40 @@ its queue snapshot has SHA-256
 Final ledger/input copies and `sixth-wave-outcomes.json` remain beside it;
 the outcomes digest is
 `d9b960340bc5243006ca12c5d0b92aed0f2f2c8e8b6af42e464d23a121e9864e`.
+
+## Final wave and completed queue audit
+
+The 13:30 UTC read-only audit on 10 October 2026 found all 28 attempts
+finished and incomplete. The final four also timed out with no result or
+verification file:
+
+| Original | Bounded solve, seconds | Peak RSS, MiB |
+| --- | ---: | ---: |
+| Ax12-C478 | 3600.024841 | 1143.2 |
+| D251 | 3600.026776 | 823.7 |
+| D375 | 3600.026507 | 219.7 |
+| Positive Gluza33 | 3600.024681 | 167.5 |
+
+All 28 final ledger hashes were rechecked. Each ledger records one timed-out
+trial, without a completed proof or verification; every referenced result
+and verification file is absent. The final four actual worker inputs also
+match their hashes and prepared mathematical fields. The auditor returned
+nonzero as required. This closes the campaign, not the unresolved problems:
+verified coverage remains **303 / 331**, and the objective remains unfinished.
+No timeout is used as a solved time or an upstream performance ratio.
+
+The final snapshot is `artifacts/slow-suite-one-hour-audit-09/audit.json`,
+SHA-256 `54e9a5d79b6d3c1a0abfe0c9ddcb57b8de5e1da831a239da94b58b0b7f850fa9`;
+its queue snapshot has SHA-256
+`29dd4105ea946ad85d3b25367332876e2c1904c348a2d3a98f651472bc667d01`.
+The retained final ledger/input copies are summarized in
+`seventh-wave-outcomes.json`, SHA-256
+`a56975af80e0c6cb458a5fd671474969db60c7089578f7130caab7f2bb37baa6`.
+Earlier snapshots and all completed operation caches remain intact.
+
+Targeted follow-ups include the
+[A377 algebra and support-basis continuation](A377_BINARY_DISCRIMINANT_DIAGNOSTIC.md),
+[crossed A318 segmentation continuation](CROSSED_DISCRIMINANT_CONTINUATION.md),
+and [Gluza33 affine-variable order](GLUZA33_AFFINE_ORDER_CONTINUATION.md).
+Their different settings and cache policies remain separate from this
+frozen cold queue.
