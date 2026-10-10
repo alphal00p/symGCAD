@@ -279,3 +279,84 @@ testing that existing rule, rather than increasing the timeout on the same
 discriminant. A valid numerical fiber count by itself does not certify an
 entire base cell: the production rule must still emit, propagate and replay
 all coefficient and separator-evaluation obligations.
+
+The resulting global-separator trial timed out after 120.035 seconds. It
+admitted four templates, reused them nine times and omitted thirteen
+discriminants, but exposed a different degree-13, 986-term discriminant.
+At its exact prefix `(x6,x1,x4)=(1,1,1/2)`, this new operand has five
+positive roots and nine coefficient-sign variations. Enabling the existing
+interval separator rule as well produced no interval templates and reached
+the same obstruction: 120.034 seconds, 119,716 KiB peak RSS. Both campaigns
+remain incomplete. Evidence is under
+`artifacts/research/gluza33-endpoint-witnesses-01/` and `-02/`.
+
+## Triangular box chart, research only
+
+The next exact chart preserves the original lifting order
+`[x0,x6,x4,x7,x1,x2]` and covers the whole six-coordinate positive orthant:
+
+\[
+\begin{aligned}
+x0&=s,& x6&=s\frac{u}{1-u},&x4&=sz,\\
+x7&=sz\frac{1-r}{r},&x1&=sv,&x2&=sw,
+\end{aligned}
+\]
+
+where `s,z,v,w>0` and `0<u,r<1`. Its inverse is
+
+\[
+s=x0,\quad u=\frac{x6}{x0+x6},\quad z=\frac{x4}{x0},\quad
+r=\frac{x4}{x4+x7},\quad v=\frac{x1}{x0},\quad w=\frac{x2}{x0}.
+\]
+
+All displayed denominators are strictly positive on their stated domains.
+The `x7` map decreases in `r`; every other fiber map increases. Each map
+depends only on preceding coordinates and the current coordinate. In
+particular, this chart has fixed interval endpoints and does not introduce
+a finite bound that becomes infinite inside a parent cell.
+
+For a homogeneous polynomial `p` of degree `h`, set
+`m=degree_x6(p)` and `n=degree_x7(p)`. The helper constructs the polynomial
+
+\[
+q=(1-u)^m r^n p\left(1,\frac{u}{1-u},z,
+                         z\frac{1-r}{r},v,w\right).
+\]
+
+Consequently `p(original)=s^h*q/((1-u)^m*r^n)`, so every sign is preserved.
+`examples/gluza33_box_chart.rs` independently substitutes the complete
+inverse and checks the resulting polynomial equality, accounting for
+degree drops. Optional removed factors are only products of the seven
+literal positive box factors `u,z,r,v,w,1-u,1-r`, and their multiplication
+identity is also checked. The endpoint inequality `d>0` and all four
+ordered sign cuts `a,b,c,H` are retained.
+
+The compact graph identity becomes
+`K/(A*D)=u+r-1`, so the endpoint boundary `(AD)^2-10K^2` reduces, up to a
+positive multiplier, to `1-10(u+r-1)^2`. Exact preparation took 0.020
+seconds. The transformed `d,a,b,c,H` have 50, 45, 48, 48 and 30 terms,
+respectively, and remain at most quadratic in each coordinate. Both
+regressions passed, covering full inverse identities, degree drops,
+positive factor removal, absent positivity, nonhomogeneity and conflicting
+fixed/group orders. Preparation evidence is retained under
+`artifacts/research/gluza33-box-chart-01/prepared/`; helper SHA-256 is
+`e484a2580127190d7a5cc22140a89f545b5c3fa852039a761b26730c15144083`.
+
+This is a full-domain research transformation, not a certified original
+decomposition. A completed transformed base would still require explicit
+original-bound reconstruction, reversal of `x7` intervals, root selectors
+restricted to the chart intervals, and replay of the positive two-fiber
+restoration. No original corpus completion is credited by this helper.
+
+The first cold chart trial also timed out: 120.035 seconds, 146,852 KiB
+peak RSS, on CPU 7 with a 4 GiB limit and release `6ef1d40`. It admitted
+two interval templates and four global separator templates, then reached
+an `r` resultant between degree-12 polynomials with 1,175 and 1,164 terms.
+The last snapshot at 0.749 seconds had 263 nodes and 15 refinements; the
+active-operation capture, not that stale snapshot, identifies the final
+bottleneck. At the exact prefix `(u,z)=(1/3,1)`, independent Sturm counts
+find five and eight positive roots, respectively. Their isolating
+intervals put only three and four of these roots in the chart's interval
+`0<r<1`. The current positive-ray rule still preserves ordering beyond
+that upper endpoint. These measurements motivate investigating a narrower
+pair certificate, but do not themselves justify dropping any pair guard.
