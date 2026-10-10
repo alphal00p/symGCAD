@@ -63,6 +63,8 @@ use std::{
 use symbolica::prelude::*;
 
 mod descartes;
+mod interval_descartes;
+pub use interval_descartes::{PositiveInterval, PositiveIntervalEndpoint, PositiveIntervalWitness};
 mod learned_cuts;
 mod pair_witnesses;
 mod stack_samples;
@@ -121,6 +123,10 @@ pub struct LocalOptions {
     /// Disabled by default; historical evidence retains discriminants.
     #[serde(default)]
     pub descartes_witnesses: bool,
+    /// Cover the positive ray with bounded rational Descartes intervals.
+    /// A separate permanent stock permits at most two covers per polynomial.
+    #[serde(default)]
+    pub descartes_intervals: bool,
     /// At level zero isolate the complete univariate root union directly.
     /// Missing historical evidence retains ordinary local projection replay.
     #[serde(default)]
@@ -156,6 +162,7 @@ impl Default for LocalOptions {
             stable_sector_samples: false,
             descartes_one: true,
             descartes_witnesses: false,
+            descartes_intervals: false,
             base_point_projection: true,
             adjacent_pairs: false,
             subtree_cache_mib: 32,
@@ -210,6 +217,10 @@ pub struct LocalReport {
     pub descartes_witness_templates: usize,
     pub descartes_witness_template_reuses: usize,
     pub descartes_witness_budget_fallbacks: usize,
+    pub descartes_interval_discriminants_omitted: usize,
+    pub descartes_interval_templates: usize,
+    pub descartes_interval_template_reuses: usize,
+    pub descartes_interval_budget_fallbacks: usize,
     pub pair_separation_candidates: usize,
     pub pair_resultants_omitted: usize,
     pub pair_witness_resultants_omitted: usize,
@@ -379,6 +390,12 @@ pub enum PositiveRayCase {
         separators: Vec<String>,
         /// Includes p(0), every p(separator), and the leading coefficient.
         evaluation_signs: Vec<i8>,
+    },
+    /// A complete rational partition of the positive ray has zero or one
+    /// Descartes variation in every interval after an exact Möbius transform.
+    /// Nonzero endpoint and coefficient guards certify all simple branches.
+    DescartesIntervals {
+        intervals: Vec<PositiveIntervalWitness>,
     },
     /// Higher degrees retain ordinary lc/discriminant guards plus p(0).
     FullReal,
@@ -553,6 +570,26 @@ trait ProjectionOperations {
     fn discriminant(&mut self, p: &Poly, variable: usize) -> Result<Poly>;
     fn resultant(&mut self, p: &Poly, q: &Poly, variable: usize) -> Result<Poly>;
 }
+
+/// Classification needs the signed value, while a projection guard needs only
+/// the zero set. Cached polynomials may have been multiplied by a negative
+/// scalar during canonicalization, so their sign cannot classify the roots.
+fn quadratic_discriminant_guard(
+    p: &Poly,
+    variable: usize,
+    leading_value: &Rational,
+    linear_value: &Rational,
+    constant_value: &Rational,
+    operations: &mut impl ProjectionOperations,
+) -> Result<(Poly, Rational)> {
+    let value = linear_value * linear_value - (leading_value * constant_value) * Rational::from(4);
+    let guard = operations.discriminant(p, variable)?;
+    ensure!(!guard.is_zero(), "local cut is not square-free");
+    Ok((guard, value))
+}
+
+#[cfg(test)]
+mod quadratic_tests;
 
 /// The verifier never reads discovery or persistent operation caches.
 struct IndependentOperations;
@@ -898,6 +935,9 @@ fn local_bounds(
             PositiveRayCase::DescartesWitnesses { separators, .. } => {
                 Some((r.polynomial, separators.len() + 1))
             }
+            PositiveRayCase::DescartesIntervals { intervals } => {
+                Some((r.polynomial, interval_descartes::positive_count(intervals)))
+            }
             _ => None,
         })
         .collect();
@@ -956,6 +996,8 @@ fn positive_projection_raw(
     descartes_one: bool,
     descartes_witnesses: bool,
     mut witness_stock: Option<&mut descartes::WitnessStock>,
+    descartes_intervals: bool,
+    mut interval_stock: Option<&mut interval_descartes::WitnessStock>,
     replay: Option<&PositiveRayProjection>,
     adjacent_pairs: bool,
     selection: &mut Option<AdjacentPairProjection>,
@@ -1034,11 +1076,8 @@ fn positive_projection_raw(
                         linear_zero: bv.is_zero(),
                     }
                 } else {
-                    // Preserve the signed discriminant: operation caches store
-                    // canonical zero-set representatives and discard its sign.
-                    let d = &b * &b - (&a * &c).mul_coeff(Rational::from(4));
-                    ensure!(!d.is_zero(), "local cut is not square-free");
-                    let dv = prefix_value(&d, prefix)?;
+                    let (d, dv) =
+                        quadratic_discriminant_guard(p, variable, &av, &bv, &cv, operations)?;
                     raw.push(d);
                     if dv.is_zero() {
                         break;
@@ -1058,8 +1097,8 @@ fn positive_projection_raw(
                 let supplied = replay
                     .and_then(|ray| ray.rules.iter().find(|rule| rule.polynomial == id))
                     .map(|rule| &rule.case);
-                let force_full =
-                    descartes_witnesses && matches!(supplied, Some(PositiveRayCase::FullReal));
+                let force_full = (descartes_witnesses || descartes_intervals)
+                    && matches!(supplied, Some(PositiveRayCase::FullReal));
                 let coefficients = p.to_univariate_polynomial_list(variable);
                 let values = coefficients
                     .iter()
@@ -1118,6 +1157,39 @@ fn positive_projection_raw(
                         raw.extend(coefficients.into_iter().map(|(coefficient, _)| coefficient));
                         raw.extend(guards);
                         bearing.push(id);
+                        rules.push(PositiveRayRule {
+                            polynomial: id,
+                            case,
+                        });
+                        continue;
+                    }
+                }
+                if descartes_intervals {
+                    let started = Instant::now();
+                    let attempt = if replay.is_some() {
+                        if let Some(case @ PositiveRayCase::DescartesIntervals { .. }) = supplied {
+                            Some((
+                                case.clone(),
+                                interval_descartes::verify_witness(p, variable, prefix, case)?,
+                            ))
+                        } else {
+                            None
+                        }
+                    } else {
+                        interval_stock
+                            .as_deref_mut()
+                            .ok_or_else(|| anyhow!("missing finite interval Descartes stock"))?
+                            .attempt(id, algebra, p, variable, prefix)?
+                    };
+                    root_seconds += started.elapsed().as_secs_f64();
+                    if let Some((case, guards)) = attempt {
+                        let PositiveRayCase::DescartesIntervals { intervals } = &case else {
+                            unreachable!()
+                        };
+                        if interval_descartes::positive_count(intervals) != 0 {
+                            bearing.push(id);
+                        }
+                        raw.extend(guards);
                         rules.push(PositiveRayRule {
                             polynomial: id,
                             case,
@@ -1459,6 +1531,7 @@ struct Builder<'a> {
     /// Incomplete discoveries are only hints; every seeded stack is rebuilt.
     learned_cuts: learned_cuts::LearnedCuts,
     descartes_stock: descartes::WitnessStock,
+    interval_stock: interval_descartes::WitnessStock,
     pair_witness_stock: pair_witnesses::WitnessStock,
 }
 #[derive(Serialize, Deserialize)]
@@ -1487,6 +1560,7 @@ impl Builder<'_> {
         self.completed_subtrees.report(&mut report);
         self.learned_cuts.report(&mut report);
         self.descartes_stock.report(&mut report);
+        self.interval_stock.report(&mut report);
         self.pair_witness_stock.report(&mut report);
         report
     }
@@ -1704,6 +1778,8 @@ impl Builder<'_> {
                     self.options.descartes_one,
                     self.options.descartes_witnesses,
                     Some(&mut self.descartes_stock),
+                    self.options.descartes_intervals,
+                    Some(&mut self.interval_stock),
                     None,
                     self.options.adjacent_pairs,
                     &mut adjacent_pairs,
@@ -1757,6 +1833,11 @@ impl Builder<'_> {
                     .rules
                     .iter()
                     .filter(|r| matches!(r.case, PositiveRayCase::DescartesWitnesses { .. }))
+                    .count();
+                self.report.descartes_interval_discriminants_omitted += ray
+                    .rules
+                    .iter()
+                    .filter(|r| matches!(r.case, PositiveRayCase::DescartesIntervals { .. }))
                     .count();
                 (bearing, raw, pairs, omitted, seconds, Some(ray))
             } else {
@@ -2217,6 +2298,7 @@ pub fn solve_local(problem: &Problem, options: &LocalOptions) -> Result<LocalSol
                 .min(options.learned_cut_cache_mib.saturating_mul(1024 * 1024)),
         ),
         descartes_stock: descartes::WitnessStock::default(),
+        interval_stock: interval_descartes::WitnessStock::default(),
         pair_witness_stock: pair_witnesses::WitnessStock::default(),
     };
     builder.report.active_phase = "input_factorization".into();
@@ -2360,6 +2442,7 @@ struct Checker<'a> {
     stable_sector_samples: bool,
     descartes_one: bool,
     descartes_witnesses: bool,
+    descartes_intervals: bool,
     base_point_projection: bool,
     adjacent_pairs: bool,
 }
@@ -2529,6 +2612,8 @@ impl Checker<'_> {
                         None,
                         self.descartes_one,
                         self.descartes_witnesses,
+                        None,
+                        self.descartes_intervals,
                         None,
                         Some(ray),
                         self.adjacent_pairs,
@@ -2806,6 +2891,7 @@ pub fn verify_local_parts(
         stable_sector_samples: options.stable_sector_samples,
         descartes_one: options.descartes_one,
         descartes_witnesses: options.descartes_witnesses,
+        descartes_intervals: options.descartes_intervals,
         base_point_projection: options.base_point_projection,
         adjacent_pairs: options.adjacent_pairs,
     };

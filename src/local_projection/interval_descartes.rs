@@ -1,0 +1,673 @@
+//! Bounded exact Descartes covers of the positive ray.
+use super::{PositiveRayCase, prefix_value};
+use crate::{
+    algebra::{Algebra, Poly, canonical, rational},
+    roots::{isolate_union, refine_once, sector_sample},
+    solver::sign,
+};
+use anyhow::{Result, ensure};
+use serde::{Deserialize, Serialize};
+use std::collections::{HashMap, HashSet, VecDeque};
+use symbolica::prelude::*;
+
+const MAX_DEGREE: usize = 32;
+const MAX_TERMS: usize = 4096;
+const MAX_COEFFICIENT_SLOTS: usize = 256;
+const MAX_GUARDS: usize = 256;
+const MAX_TOTAL_TERMS: usize = 65536;
+const MAX_COEFFICIENT_BITS: u64 = 512;
+const MAX_SEPARATOR_BITS: u64 = 256;
+const MAX_INTERVALS: usize = 64;
+const MAX_DEPTH: usize = 32;
+const MAX_ROOTS: usize = 8;
+const MAX_ZERO_REFINEMENTS: usize = 256;
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", content = "value", rename_all = "snake_case")]
+pub enum PositiveIntervalEndpoint {
+    Zero,
+    Rational(String),
+    PositiveInfinity,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PositiveInterval {
+    pub lower: PositiveIntervalEndpoint,
+    pub upper: PositiveIntervalEndpoint,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PositiveIntervalWitness {
+    pub interval: PositiveInterval,
+    /// All degree+1 transformed coefficients, in ascending exponent order.
+    /// Zero means identically zero, never a vanishing nonzero sample guard.
+    pub coefficient_signs: Vec<i8>,
+}
+
+/// A separate stock from global saturated witnesses: at most two interval
+/// templates plus two global templates per polynomial. Both are permanent
+/// for this Builder, including failed tentative stacks. Downward-variable
+/// induction therefore still gives a finite set of possible projection guards.
+#[derive(Default)]
+pub(super) struct WitnessStock {
+    entries: HashMap<usize, Vec<Vec<PositiveInterval>>>,
+    admitted: usize,
+    reused: usize,
+    budget_fallbacks: usize,
+}
+
+impl WitnessStock {
+    pub(super) fn attempt(
+        &mut self,
+        id: usize,
+        algebra: &Algebra,
+        p: &Poly,
+        variable: usize,
+        prefix: &[Rational],
+    ) -> Result<Option<(PositiveRayCase, Vec<Poly>)>> {
+        if !eligible(p, variable) {
+            return Ok(None);
+        }
+        let templates = self.entries.entry(id).or_default();
+        for template in templates.iter() {
+            if let Some(proof) = at_template(p, variable, prefix, template)? {
+                self.reused += 1;
+                return Ok(Some(proof));
+            }
+        }
+        if templates.len() >= 2 {
+            self.budget_fallbacks += 1;
+            return Ok(None);
+        }
+        let Some(template) = discover(algebra, p, variable, prefix)? else {
+            return Ok(None);
+        };
+        let proof = at_template(p, variable, prefix, &template)?;
+        if proof.is_some() {
+            templates.push(template);
+            self.admitted += 1;
+        }
+        Ok(proof)
+    }
+
+    pub(super) fn report(&self, report: &mut super::LocalReport) {
+        report.descartes_interval_templates = self.admitted;
+        report.descartes_interval_template_reuses = self.reused;
+        report.descartes_interval_budget_fallbacks = self.budget_fallbacks;
+    }
+}
+
+fn eligible(p: &Poly, variable: usize) -> bool {
+    (3..=MAX_DEGREE).contains(&(p.degree(variable) as usize)) && p.nterms() <= MAX_TERMS
+}
+fn height(x: &Rational) -> u64 {
+    x.numerator_ref().significant_bits() + x.denominator_ref().significant_bits()
+}
+fn variations(signs: &[i8]) -> usize {
+    signs
+        .iter()
+        .copied()
+        .filter(|&s| s != 0)
+        .fold((0, 0), |(last, n), s| {
+            (s, n + usize::from(last != 0 && last != s))
+        })
+        .1
+}
+fn choose(n: usize, k: usize) -> u64 {
+    if k > n {
+        return 0;
+    }
+    let mut c = 1;
+    for i in 1..=k.min(n - k) {
+        c = c * (n + 1 - i) as u64 / i as u64;
+    }
+    c
+}
+fn powers(x: &Rational, d: usize) -> Vec<Rational> {
+    let mut powers = vec![Rational::one()];
+    for i in 1..=d {
+        powers.push(&powers[i - 1] * x);
+    }
+    powers
+}
+/// Exact coefficient matrix for (1+u)^d p((a+b*u)/(1+u)), or p(a+u).
+fn weights(d: usize, a: &Rational, b: Option<&Rational>) -> Vec<Vec<Rational>> {
+    let ap = powers(a, d);
+    let bp = b.map(|b| powers(b, d));
+    let mut weights = vec![vec![Rational::zero(); d + 1]; d + 1];
+    for (k, row) in weights.iter_mut().enumerate() {
+        for (j, entry) in row.iter_mut().enumerate() {
+            if let Some(bp) = &bp {
+                for l in k.saturating_sub(d - j)..=j.min(k) {
+                    *entry +=
+                        (&ap[j - l] * &bp[l]) * Rational::from(choose(j, l) * choose(d - j, k - l));
+                }
+            } else if j >= k {
+                *entry = &ap[j - k] * &Rational::from(choose(j, k));
+            }
+        }
+    }
+    weights
+}
+
+/// Zero and infinity have unique typed representations. Finite rationals must
+/// be strictly positive; equality between neighbors is exact, not string-based.
+fn cover(
+    template: &[PositiveInterval],
+    degree: usize,
+) -> Result<Option<Vec<(Rational, Option<Rational>)>>> {
+    if template.is_empty()
+        || template.len() > MAX_INTERVALS
+        || template.len().saturating_mul(degree + 1) > MAX_COEFFICIENT_SLOTS
+    {
+        return Ok(None);
+    }
+    let mut out = Vec::new();
+    let mut previous = Rational::zero();
+    for (i, interval) in template.iter().enumerate() {
+        let a = match &interval.lower {
+            PositiveIntervalEndpoint::Zero if i == 0 => Rational::zero(),
+            PositiveIntervalEndpoint::Rational(s) if i != 0 => rational(s)?,
+            _ => return Ok(None),
+        };
+        if a != previous || (i != 0 && a <= Rational::zero()) || height(&a) > MAX_SEPARATOR_BITS {
+            return Ok(None);
+        }
+        let b = match &interval.upper {
+            PositiveIntervalEndpoint::PositiveInfinity if i + 1 == template.len() => None,
+            PositiveIntervalEndpoint::Rational(s) if i + 1 < template.len() => Some(rational(s)?),
+            _ => return Ok(None),
+        };
+        if let Some(b) = &b {
+            if *b <= a || height(b) > MAX_SEPARATOR_BITS {
+                return Ok(None);
+            }
+            previous = b.clone();
+        }
+        out.push((a, b));
+    }
+    Ok(Some(out))
+}
+
+#[derive(Default)]
+struct Guards {
+    polynomials: Vec<Poly>,
+    seen: HashSet<Poly>,
+    terms: usize,
+}
+impl Guards {
+    fn add(&mut self, p: &Poly) -> bool {
+        let p = canonical(p);
+        if self.seen.contains(&p) {
+            return true;
+        }
+        if p.nterms() > MAX_TERMS
+            || p.coefficients
+                .iter()
+                .any(|c| height(c) > MAX_COEFFICIENT_BITS)
+            || self.polynomials.len() >= MAX_GUARDS
+            || self.terms.saturating_add(p.nterms()) > MAX_TOTAL_TERMS
+        {
+            return false;
+        }
+        self.terms += p.nterms();
+        self.seen.insert(p.clone());
+        self.polynomials.push(p);
+        true
+    }
+}
+
+/// The checker invokes this on supplied intervals; it never reproduces the
+/// producer's isolation or its stock history. Every coefficient identity is
+/// reconstructed exactly from the original polynomial's coefficient list.
+fn at_template(
+    p: &Poly,
+    variable: usize,
+    prefix: &[Rational],
+    template: &[PositiveInterval],
+) -> Result<Option<(PositiveRayCase, Vec<Poly>)>> {
+    if !eligible(p, variable) {
+        return Ok(None);
+    }
+    let degree = p.degree(variable) as usize;
+    let Some(intervals) = cover(template, degree)? else {
+        return Ok(None);
+    };
+    let mut guards = Guards::default();
+    let endpoint = p.replace(variable, &Rational::zero());
+    let leading = p.univariate_lcoeff(variable);
+    // Keep these obligations explicit, including when coefficient collection
+    // or structural simplification could otherwise omit a degree/endpoint.
+    for guard in [&endpoint, &leading] {
+        if prefix_value(guard, prefix)?.is_zero() || !guards.add(guard) {
+            return Ok(None);
+        }
+    }
+    let zero = p.zero();
+    let mut coefficients = vec![zero.clone(); degree + 1];
+    for (coefficient, exponent) in p.to_univariate_polynomial_list(variable) {
+        coefficients[exponent as usize] = coefficient;
+    }
+    let mut witnesses = Vec::new();
+    let mut roots = 0;
+    for ((a, b), interval) in intervals.iter().zip(template) {
+        if let Some(b) = b {
+            let guard = p.replace(variable, b);
+            if prefix_value(&guard, prefix)?.is_zero() || !guards.add(&guard) {
+                return Ok(None);
+            }
+        }
+        let mut signs = Vec::new();
+        for row in weights(degree, a, b.as_ref()) {
+            let coefficient = row
+                .iter()
+                .zip(&coefficients)
+                .filter(|(w, _)| !w.is_zero())
+                .fold(zero.clone(), |sum, (w, c)| {
+                    sum + c.clone().mul_coeff(w.clone())
+                });
+            if coefficient.is_zero() {
+                signs.push(0);
+                continue;
+            }
+            let s = sign(&prefix_value(&coefficient, prefix)?);
+            if s == 0 || !guards.add(&coefficient) {
+                return Ok(None);
+            }
+            signs.push(s);
+        }
+        let count = variations(&signs);
+        if count > 1 {
+            return Ok(None);
+        }
+        roots += count;
+        if roots > MAX_ROOTS {
+            return Ok(None);
+        }
+        witnesses.push(PositiveIntervalWitness {
+            interval: interval.clone(),
+            coefficient_signs: signs,
+        });
+    }
+    Ok(Some((
+        PositiveRayCase::DescartesIntervals {
+            intervals: witnesses,
+        },
+        guards.polynomials,
+    )))
+}
+
+pub(super) fn positive_count(intervals: &[PositiveIntervalWitness]) -> usize {
+    intervals
+        .iter()
+        .map(|i| variations(&i.coefficient_signs))
+        .sum()
+}
+
+pub(super) fn verify_witness(
+    p: &Poly,
+    variable: usize,
+    prefix: &[Rational],
+    supplied: &PositiveRayCase,
+) -> Result<Vec<Poly>> {
+    let PositiveRayCase::DescartesIntervals { intervals } = supplied else {
+        anyhow::bail!("expected interval Descartes witness");
+    };
+    let template = intervals
+        .iter()
+        .map(|w| w.interval.clone())
+        .collect::<Vec<_>>();
+    let Some((expected, guards)) = at_template(p, variable, prefix, &template)? else {
+        anyhow::bail!("interval Descartes cover or coefficient signs are invalid");
+    };
+    ensure!(
+        supplied == &expected,
+        "interval Descartes coefficient signs were modified"
+    );
+    Ok(guards)
+}
+
+fn discover(
+    algebra: &Algebra,
+    p: &Poly,
+    variable: usize,
+    prefix: &[Rational],
+) -> Result<Option<Vec<PositiveInterval>>> {
+    if !eligible(p, variable) {
+        return Ok(None);
+    }
+    let f = algebra.specialize_univariate(p, variable, prefix)?;
+    let degree = p.degree(variable) as usize;
+    if f.is_zero() || f.degree() != degree || f.evaluate(&Rational::zero()).is_zero() {
+        return Ok(None);
+    }
+    let mut roots = isolate_union(vec![(0, f.clone())])?;
+    let mut zero_refinements = 0;
+    for root in &mut roots {
+        while root.interval.0 <= Rational::zero() && root.interval.1 >= Rational::zero() {
+            if zero_refinements == MAX_ZERO_REFINEMENTS {
+                return Ok(None);
+            }
+            refine_once(root);
+            zero_refinements += 1;
+        }
+    }
+    roots.retain(|r| r.interval.0 > Rational::zero());
+    if roots.len() > MAX_ROOTS {
+        return Ok(None);
+    }
+    let mut boundaries = vec![Rational::zero()];
+    boundaries.extend(
+        roots
+            .windows(2)
+            .map(|r| sector_sample(Some(&r[0]), Some(&r[1]))),
+    );
+    let mut pending = VecDeque::new();
+    for (i, a) in boundaries.iter().enumerate() {
+        pending.push_back((a.clone(), boundaries.get(i + 1).cloned(), 0));
+    }
+    let mut accepted = Vec::new();
+    let mut count = 0;
+    while let Some((a, b, depth)) = pending.pop_front() {
+        if height(&a) > MAX_SEPARATOR_BITS
+            || b.as_ref().is_some_and(|b| height(b) > MAX_SEPARATOR_BITS)
+        {
+            return Ok(None);
+        }
+        if (accepted.len() + pending.len() + 1) * (degree + 1) > MAX_COEFFICIENT_SLOTS {
+            return Ok(None);
+        }
+        let values = weights(degree, &a, b.as_ref())
+            .iter()
+            .map(|row| {
+                row.iter()
+                    .zip(f.coefficients())
+                    .fold(Rational::zero(), |sum, (w, c)| sum + w * c)
+            })
+            .collect::<Vec<_>>();
+        let signs = values.iter().map(sign).collect::<Vec<_>>();
+        let v = variations(&signs);
+        if v <= 1 {
+            count += v;
+            accepted.push((a, b));
+            continue;
+        }
+        if accepted.len() + pending.len() + 2 > MAX_INTERVALS || depth >= MAX_DEPTH {
+            return Ok(None);
+        }
+        let mut cut = if let Some(b) = &b {
+            (&a + b) / Rational::from(2)
+        } else {
+            let after = roots
+                .last()
+                .map(|r| sector_sample(Some(r), None))
+                .unwrap_or_else(Rational::one);
+            if after > a {
+                after
+            } else {
+                &a * &Rational::from(2) + Rational::one()
+            }
+        };
+        let mut shifts = 0;
+        while f.evaluate(&cut).is_zero() && shifts < MAX_DEPTH {
+            cut = (&a + &cut) / Rational::from(2);
+            shifts += 1;
+        }
+        if height(&cut) > MAX_SEPARATOR_BITS || f.evaluate(&cut).is_zero() {
+            return Ok(None);
+        }
+        pending.push_back((a, Some(cut.clone()), depth + 1));
+        pending.push_back((cut, b, depth + 1));
+    }
+    if count != roots.len() {
+        return Ok(None);
+    }
+    accepted.sort_by(|a, b| a.0.cmp(&b.0));
+    Ok(Some(
+        accepted
+            .into_iter()
+            .map(|(a, b)| PositiveInterval {
+                lower: if a.is_zero() {
+                    PositiveIntervalEndpoint::Zero
+                } else {
+                    PositiveIntervalEndpoint::Rational(a.to_string())
+                },
+                upper: b
+                    .map(|b| PositiveIntervalEndpoint::Rational(b.to_string()))
+                    .unwrap_or(PositiveIntervalEndpoint::PositiveInfinity),
+            })
+            .collect(),
+    ))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn setup(text: &str) -> (Algebra, Poly) {
+        let a = Algebra::new(&["s".into(), "z".into()]).unwrap();
+        let p = a.parse(text).unwrap();
+        (a, p)
+    }
+
+    #[test]
+    fn coefficient_matrices_satisfy_exact_symbolic_transform_identities() {
+        let algebra = Algebra::new(&["s".into(), "z".into(), "u".into()]).unwrap();
+        let p = algebra.parse("(s^2+1)*z^5-(s-2)*z^3+3/7*z-5").unwrap();
+        let u = algebra.parse("u").unwrap();
+        let one = algebra.parse("1").unwrap();
+        let coefficients = p.to_univariate_polynomial_list(1);
+        let a = Rational::from((2, 3));
+        for b in [None, Some(Rational::from((13, 5)))] {
+            let matrix = weights(5, &a, b.as_ref());
+            let actual = matrix.iter().enumerate().fold(p.zero(), |sum, (k, row)| {
+                let c = coefficients.iter().fold(p.zero(), |sum, (c, j)| {
+                    sum + c.clone().mul_coeff(row[*j as usize].clone())
+                });
+                sum + c * &u.pow(k)
+            });
+            let expected = coefficients.iter().fold(p.zero(), |sum, (c, j)| {
+                let numerator = one.clone().mul_coeff(a.clone())
+                    + u.clone().mul_coeff(b.clone().unwrap_or_else(Rational::one));
+                let mut term = c * &numerator.pow(*j as usize);
+                if b.is_some() {
+                    term = term * &(&one + &u).pow(5 - *j as usize);
+                }
+                sum + term
+            });
+            assert_eq!(actual, expected);
+        }
+    }
+
+    #[test]
+    fn unsaturated_and_rootless_fibers_have_exact_full_covers() {
+        for (text, count) in [
+            ("(z-1)*(z-2)*(z^2-z+s)", 2),
+            ("(z-1)*(z-2)*(z-3)*(z^2-z+s)", 3),
+            ("(z^2-z+s)*(z^2+1)", 0),
+            ("(z+1)^2*(z^2-z+1)", 0),
+            ("(z-1)*(z-2)*(z^2+3*z+9/4)", 2),
+        ] {
+            let (a, p) = setup(text);
+            let (case, _) = WitnessStock::default()
+                .attempt(0, &a, &p, 1, &[Rational::one()])
+                .unwrap()
+                .unwrap_or_else(|| panic!("unexpected fallback for {text}"));
+            let PositiveRayCase::DescartesIntervals { intervals } = &case else {
+                panic!()
+            };
+            assert_eq!(positive_count(intervals), count);
+            assert!(verify_witness(&p, 1, &[Rational::one()], &case).is_ok());
+        }
+    }
+
+    #[test]
+    fn provided_cover_rejects_gaps_seams_omissions_and_sign_tampering() {
+        let (a, p) = setup("(z-1)*(z-2)*(z^2-z+s)");
+        let (case, _) = WitnessStock::default()
+            .attempt(0, &a, &p, 1, &[Rational::one()])
+            .unwrap()
+            .unwrap();
+        for which in 0..7 {
+            let mut changed = case.clone();
+            let PositiveRayCase::DescartesIntervals { intervals } = &mut changed else {
+                panic!()
+            };
+            assert!(intervals.len() >= 2);
+            match which {
+                0 => {
+                    intervals.remove(0);
+                }
+                1 => intervals[1].interval.lower = PositiveIntervalEndpoint::Rational("999".into()),
+                2 => {
+                    // A seam exactly at the original root z=1 must be guarded
+                    // and rejected, even if the cover remains contiguous.
+                    intervals[0].interval.upper = PositiveIntervalEndpoint::Rational("1".into());
+                    intervals[1].interval.lower = PositiveIntervalEndpoint::Rational("1".into());
+                }
+                3 => intervals[0].coefficient_signs[0] *= -1,
+                4 => {
+                    intervals[0].coefficient_signs.pop();
+                }
+                5 => intervals[0].interval.lower = PositiveIntervalEndpoint::Rational("0".into()),
+                _ => {
+                    intervals.pop();
+                }
+            }
+            assert!(
+                verify_witness(&p, 1, &[Rational::one()], &changed).is_err(),
+                "tamper {which}"
+            );
+        }
+    }
+
+    #[test]
+    fn sample_zero_coefficients_degree_drop_and_repeated_positive_roots_decline() {
+        let template = vec![PositiveInterval {
+            lower: PositiveIntervalEndpoint::Zero,
+            upper: PositiveIntervalEndpoint::PositiveInfinity,
+        }];
+        let (_, p) = setup("z^3+(s-1)*z^2+z+1");
+        assert!(
+            at_template(&p, 1, &[Rational::one()], &template)
+                .unwrap()
+                .is_none()
+        );
+        let (_, p) = setup("z^3+z+1");
+        assert!(
+            at_template(&p, 1, &[Rational::one()], &template)
+                .unwrap()
+                .is_some()
+        );
+        for text in ["(s-1)*z^4+z^3+1", "(z-1)^2*(z^2+1)"] {
+            let (a, p) = setup(text);
+            assert!(
+                WitnessStock::default()
+                    .attempt(0, &a, &p, 1, &[Rational::one()])
+                    .unwrap()
+                    .is_none()
+            );
+        }
+    }
+
+    #[test]
+    fn permanent_stock_reuses_nearby_samples_then_falls_back_near_irrational_collision() {
+        let (a, p) = setup("(z^2-2)^2-s");
+        let mut stock = WitnessStock::default();
+        assert!(
+            stock
+                .attempt(0, &a, &p, 1, &[Rational::from((1, 2))])
+                .unwrap()
+                .is_some()
+        );
+        assert!(
+            stock
+                .attempt(0, &a, &p, 1, &[Rational::from((5001, 10000))])
+                .unwrap()
+                .is_some()
+        );
+        assert_eq!(stock.reused, 1);
+        let mut s = Rational::from((1, 2));
+        let mut fallback = false;
+        for _ in 0..32 {
+            s /= Rational::from(16);
+            if stock.attempt(0, &a, &p, 1, &[s.clone()]).unwrap().is_none() {
+                fallback = true;
+                break;
+            }
+        }
+        assert!(fallback);
+        assert_eq!(stock.entries[&0].len(), 2);
+        assert!(stock.budget_fallbacks > 0);
+    }
+
+    #[test]
+    fn guard_and_template_caps_decline_without_admission() {
+        let (a, p) = setup("z^33-z+1");
+        let mut stock = WitnessStock::default();
+        assert!(
+            stock
+                .attempt(0, &a, &p, 1, &[Rational::one()])
+                .unwrap()
+                .is_none()
+        );
+        assert_eq!(stock.admitted, 0);
+        let template = (0..9)
+            .map(|i| PositiveInterval {
+                lower: if i == 0 {
+                    PositiveIntervalEndpoint::Zero
+                } else {
+                    PositiveIntervalEndpoint::Rational(i.to_string())
+                },
+                upper: if i == 8 {
+                    PositiveIntervalEndpoint::PositiveInfinity
+                } else {
+                    PositiveIntervalEndpoint::Rational((i + 1).to_string())
+                },
+            })
+            .collect::<Vec<_>>();
+        assert!(cover(&template, 32).unwrap().is_none());
+        let (_, p) = setup("z^3-z+1");
+        let too_tall = Rational::from(2).pow(600);
+        let tall_guard = p.mul_coeff(too_tall) + a.parse("s").unwrap();
+        assert!(!Guards::default().add(&tall_guard));
+    }
+
+    #[test]
+    fn positive_ordinals_include_roots_owned_by_another_union_polynomial() {
+        let a = Algebra::new(&["z".into()]).unwrap();
+        let p = a.parse("(z-1)*(z-2)*(z-3)").unwrap();
+        let (case, _) = WitnessStock::default()
+            .attempt(1, &a, &p, 0, &[])
+            .unwrap()
+            .unwrap();
+        let first = a.parse("z-1").unwrap();
+        let roots = isolate_union(vec![
+            (0, a.specialize_univariate(&first, 0, &[]).unwrap()),
+            (1, a.specialize_univariate(&p, 0, &[]).unwrap()),
+        ])
+        .unwrap();
+        let ray = super::super::PositiveRayProjection {
+            constraint: 0,
+            coordinate: 99,
+            separations: vec![],
+            pair_witnesses: vec![],
+            rules: vec![super::super::PositiveRayRule {
+                polynomial: 1,
+                case,
+            }],
+        };
+        let bounds = super::super::local_bounds(&roots, Some(&ray)).unwrap();
+        assert_eq!(
+            bounds
+                .iter()
+                .filter(|b| b.polynomial == 1)
+                .map(|b| (b.index_domain, b.index))
+                .collect::<Vec<_>>(),
+            vec![
+                (crate::output::RootIndexDomain::Positive, 1),
+                (crate::output::RootIndexDomain::Positive, 2)
+            ]
+        );
+    }
+}

@@ -60,6 +60,9 @@ pub struct SolverOptions {
     /// strict rational-separator evaluation guards.
     #[serde(skip_serializing_if = "is_false")]
     pub local_descartes_witnesses: bool,
+    /// Exact finite rational interval covers with zero/one Descartes variation.
+    #[serde(skip_serializing_if = "is_false")]
+    pub local_descartes_intervals: bool,
     /// Separate positive roots of two delineable polynomials with exact
     /// rational-section guards, retaining resultant fallback.
     #[serde(skip_serializing_if = "is_false")]
@@ -106,6 +109,7 @@ impl Default for SolverOptions {
             local_pair_cancellations: 2,
             local_descartes_one: true,
             local_descartes_witnesses: false,
+            local_descartes_intervals: false,
             local_positive_pair_witnesses: false,
             local_base_point_projection: true,
             local_adjacent_pairs: false,

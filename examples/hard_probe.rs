@@ -88,6 +88,9 @@ struct Args {
     /// Experimental saturated Descartes bounds with rational root witnesses.
     #[arg(long)]
     descartes_witnesses: bool,
+    /// Experimental bounded rational interval Descartes covers.
+    #[arg(long)]
+    descartes_intervals: bool,
     /// Experimental rational separators for delineable positive-root pairs.
     #[arg(long)]
     positive_pair_witnesses: bool,
@@ -154,6 +157,7 @@ struct Campaign {
     stable_samples: bool,
     descartes_one: bool,
     descartes_witnesses: bool,
+    descartes_intervals: bool,
     positive_pair_witnesses: bool,
     base_point_projection: bool,
     adjacent_pairs: bool,
@@ -223,6 +227,7 @@ fn run_trial(campaign: &Campaign, trial: Trial) -> Result<Record> {
     problem.solver.local_reuse_learned_cuts = campaign.reuse_learned_cuts;
     problem.solver.local_descartes_one = campaign.descartes_one;
     problem.solver.local_descartes_witnesses = campaign.descartes_witnesses;
+    problem.solver.local_descartes_intervals = campaign.descartes_intervals;
     problem.solver.local_positive_pair_witnesses = campaign.positive_pair_witnesses;
     problem.solver.local_stable_samples = campaign.stable_samples;
     problem.solver.local_base_point_projection = campaign.base_point_projection;
@@ -505,6 +510,7 @@ fn main() -> Result<()> {
         stable_samples: args.stable_samples,
         descartes_one: !args.no_descartes_one,
         descartes_witnesses: args.descartes_witnesses,
+        descartes_intervals: args.descartes_intervals,
         positive_pair_witnesses: args.positive_pair_witnesses,
         base_point_projection: !args.no_base_point_projection,
         adjacent_pairs: args.adjacent_pairs,

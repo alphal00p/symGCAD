@@ -493,3 +493,36 @@ research helper chooses per-chart peel orders, which need not agree. A union
 of these outputs therefore also requires one common original lifting order
 or a certified common refinement, plus every chart seam. No production
 transport wrapper has been implemented.
+
+## Finite interval Descartes covers
+
+The opt-in interval rule extends the bounded rational-witness portfolio to
+fibers whose positive root count does not saturate their global Descartes
+variation. A supplied template partitions the entire positive ray into
+contiguous open intervals with rational seams. On `(a,b)`, the substitution
+`z=(a+b*u)/(1+u)` and positive multiplier `(1+u)^degree` give an exact
+polynomial in u>0; the final tail uses `z=a+u`. Zero or one coefficient-sign
+variation gives exactly zero or one positive root, counted with multiplicity.
+Thus every accepted root is simple. All nonzero transformed coefficient
+polynomials, the original leading coefficient, the value at zero, and the
+values at every finite seam become ancestor nonvanishing obligations.
+
+The checker reconstructs the coefficient identities and their signs from the
+supplied intervals. It verifies strict seam ordering and a complete contiguous
+cover from zero to infinity; it does not repeat discovery or trust a sampled
+root inventory. These obligations keep each root inside its own interval on
+the connected parent cell. Export uses the resulting positive-root ordinals,
+so negative-root collisions do not invalidate the certificate.
+
+Each canonical polynomial has a permanent stock of at most two interval
+templates per Builder, in addition to its separate stock of at most two global
+rational-separator templates. Admission consumes a slot before later stack
+construction can fail; neither eviction nor ancestor refinement resets it.
+Failed discovery adds no guards and uses the ordinary discriminant fallback.
+The existing downward-variable induction therefore remains finite: every
+polynomial contributes only finitely many coefficient/evaluation guards,
+and every pair only finitely many ordinary or separator obligations. Degree,
+interval count, rational height, transformed coefficient count and total guard
+size are independently bounded. A completed certificate remains valid without
+reconstructing this resource history; the stock restriction governs search
+termination rather than the mathematical meaning of an individual proof.
