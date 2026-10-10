@@ -1,5 +1,11 @@
 # Exact physical elliptic coefficient certificate
 
+The original symbolic physical fixture now has a verified decomposition of
+269,061 cells. The successful negative-target campaign and its exact input
+identity are recorded at the end of this report. The earlier experiments
+below explain the certificate and memory bottlenecks encountered before that
+completion; their incomplete results remain unchanged.
+
 For the untouched symbolic core fixture
 `test_elliptic2l_physical_symb/order/1`, let F denote the polynomial in its
 original strict inequality F<0. As a polynomial in positive x4,
@@ -181,3 +187,63 @@ The corresponding fresh-cache local-base trial in
 KiB peak RSS. Thus the new certificate has a measured global projection
 benefit but has not by itself resolved local refinement growth or completed
 the original problem.
+
+## Verified original negative-target decomposition
+
+The bounded campaign `physical-negative-target-m-first-12` completed the
+untouched fixture `test_elliptic2l_physical_symb/order/1` with 269,061 cells,
+then verified its full proof in a fresh worker. Its lifting order was
+`pp4,t,s,x6,x2,x3,x1,x0,x5,x4`, with x6 as the positive homogeneous anchor.
+The order respects both original variable groups; the fixture has no fixed
+order. Exact comparison preserves the name, variables, constraints, split
+polynomials, parameters and groups. Only solver options and resource limits
+are changed.
+
+The monotone engine uses the original inequality directly. After anchoring
+x6, the affine-square certificate proves the x4 quadratic strictly increases
+on x4>0. A negative fiber exists exactly when its endpoint is negative, and
+then consists of the single interval from zero to its unique positive root.
+The base therefore solves the strict negative endpoint constraint; positive
+endpoint cells are not needed for this inequality. This is a proof of the
+original F<0 domain, not a claim to have constructed both signs of F.
+
+The optimized base ends with 168 projection factors and 740 terms. Although
+the supplied directory already contained earlier completed checkpoints,
+the changed target context produced zero prefix, factor, discriminant or
+resultant disk hits. The successful run is therefore cold with respect to
+the persisted algebra cache. The proof independently checks all base cells,
+the monotone reconstruction and the homogeneous transport into the original
+coordinates, including the exceptional-set obligations.
+
+| Measurement | Observed value |
+| --- | ---: |
+| Original output cells | 269,061 |
+| Solve worker wall time | 156.427077 s |
+| Solve peak RSS | 3,593,444 KiB |
+| Fresh verification wall time | 338.804974 s |
+| Verification peak RSS | 7,741,384 KiB |
+| Whole supervised campaign | 556.965 s |
+| Proof JSON size | 1,393,759,825 bytes |
+
+Both workers used one CPU (CPU6) and a 16 GiB bound; solve and verification
+had separate 300 and 600 second bounds inside a 950 second campaign. This is
+one exploratory debug-build run, not a repeated release performance claim.
+The frozen production commit is `529e708`, with executable SHA-256
+`b5f3742b4b4faa68f0d02920ee43e033be4021e28bd38109ce4f817dd1c64ae2`.
+
+Evidence is under
+`artifacts/research/physical-negative-target-m-first-12/initial-x6-0`:
+
+- `original-identity.json` records exact original mathematical-field equality.
+- `record.json` preserves both bounded process outcomes and cache counters.
+- `verification.json` reports `verified=true`, 269,061 cells, 806,840 checked
+  stacks and 1,843,170 rejected branches.
+- `result.json` has SHA-256
+  `bc62bf55da7df70e60a9938b01cf32abeb5a40ddb6678c8bc2283be491d2d9b9`.
+
+For comparison, the earlier full-arrangement route emitted a separate
+5,878,358,378-byte original proof with 350,082 negative cells, but its debug
+verification timed out at 600 seconds. Its preserved campaign is
+`physical-quadratic-x6-global-10-large`; a fresh bounded release replay is
+being recorded separately in `physical-release-verification-13`. The
+negative-target completion above does not rely on that larger proof.
