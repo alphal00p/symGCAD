@@ -205,13 +205,27 @@ fn encode(p: &Poly, x: usize, layout: &Layout) -> Result<UnivariatePolynomial<Z>
 }
 
 fn integer_resultant(p: &UnivariatePolynomial<Z>, q: &UnivariatePolynomial<Z>) -> Integer {
-    let mut r = p.resultant(q);
-    // Match the production workaround for the reference backend's odd linear
-    // small-case sign convention. The higher-degree Ducos path is unchanged.
-    if (p.degree() == 1 || q.degree() == 1) && p.degree() % 2 == 1 && q.degree() % 2 == 1 {
-        r = -r;
+    fn linear_second(p: &UnivariatePolynomial<Z>, q: &UnivariatePolynomial<Z>) -> Integer {
+        let b0 = -q.coefficients()[0].clone();
+        let b1 = &q.coefficients()[1];
+        let mut power = b1.clone();
+        let mut result = p.lcoeff();
+        for coefficient in p.coefficients()[..p.degree()].iter().rev() {
+            result = result * &b0 + coefficient * &power;
+            power *= b1;
+        }
+        if p.degree() % 2 == 1 { -result } else { result }
     }
-    r
+    // Use the identity directly so pristine and patched dependency checkouts
+    // both have the same sign; do not compensate a backend result twice.
+    if q.degree() == 1 {
+        return linear_second(p, q);
+    }
+    if p.degree() == 1 {
+        let r = linear_second(q, p);
+        return if q.degree() % 2 == 1 { -r } else { r };
+    }
+    p.resultant(q)
 }
 
 fn decode(
