@@ -80,3 +80,43 @@ segmentation envelope and is not a first-axis univariate basis input. This
 is a captured pending operation, not a completed timing or a reason to
 discard any of its roots. No original completion is credited before a
 complete result and independent full proof verification.
+
+## Nonlinear-anchor alternative
+
+A separate cold campaign launched at **13:36:23 UTC**, CPU 0, 4 GiB, with
+the same frozen executable, proof options and shared one-hour budget. It
+uses anchor `x0` and lifting order `[x0,x2,x1,x7,x4,x6,x3,x5]`.
+Only the order, anchor and fresh checkpoint path change from the first
+campaign. The positive homogeneous quartic permits this scale choice;
+exact `x0=1` substitution leaves 143 terms and retains both affine axes,
+including terms `x1*x3` and `x2*x5` with coefficient +1.
+
+Retaining both affine axes is **not itself a new strategy**: earlier
+original-input Brown portfolios with anchors `x0`, `x1` and `x6` already
+eliminated `x3` then `x5`, and timed out at 20 seconds with selected
+60-second promotions. This alternative reverses their affine elimination
+order and preserves the first campaign's relative middle order. Its exact
+order/anchor pair was absent from the bounded audit of 178 retained TOMLs
+(50 matching the original mathematical fields) and the 99-trial
+`x3`-anchor search. This is not an exhaustive claim about unrecorded
+history or a prediction of lower projection cost. All earlier failures
+and all original boundary obligations remain retained.
+
+Files below are under `artifacts/research/gluza33-x0-anchor-hour-01/`:
+
+| Artifact | SHA-256 |
+| --- | --- |
+| `input.toml` | `f0932cf08e031bdcd15abcc7b9eaf94945ef7534bcc6ee21d6312c49d9656a99` |
+| `input-audit.json` | `bd554823c9a178c0d37f632d1d2321e29b0364183d729128a31875f454c3495e` |
+| `campaign.toml` | `a5b24d38d36ad511f689ad5407184621135e31307ed6c1691198103e050622e8` |
+| `launch.json` | `5aa65baa37376b6b7e249e5fce774187583b163f60907eca6bd8d2f92f05b1ea` |
+| `actual-worker-audit.json` | `6528638bfb5f8ad5a63a8107602dfefa9cfc96a05508b5e6048d0ef2f47f4fd1` |
+
+The independent live audit checked worker 3166062's original mathematical
+fields, explicit options, order, anchor, CPU affinity, memory/time limits
+and capture environment. The worker uses the campaign's fresh cold
+checkpoint path. Its first retained pending capture is a 224-term factor
+input with multidegrees `[9,9,6,0,0,0,0]` in reduced map
+`[x2,x1,x7,x4,x6,x3,x5]`, coefficient height 17 bits. This is an exact
+operand snapshot, not a completed operation timing or a proven bottleneck.
+Neither launch changes the verified original count, **303/331**.
