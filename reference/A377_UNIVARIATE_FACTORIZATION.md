@@ -4,8 +4,10 @@ The captured univariate discriminant has a complete native square-free
 decomposition within the 60-second diagnostic budget. Explicitly removing
 the known threshold factor does not show a total-time improvement. These
 measurements support testing root isolation of the square-free blocks before
-changing the final projection level; they do not establish a completed root
-inventory or an original A377 decomposition.
+changing the final projection level. A subsequent independent probe completed
+the 881-degree block's inventory and found 35 real roots above four, refuting
+its proposed nonvanishing. Neither result completes the original A377
+decomposition.
 
 The signed degree-2169 D and its independent 2,480-image verification are
 documented in [the boundary diagnostic](A377_DISCRIMINANT_BOUNDARY.md).
@@ -74,7 +76,35 @@ Their multiplicity-weighted degrees sum to 2021; their distinct degrees sum
 to 1010. Scalars remain in the checked product. The helper records each block
 hash, degree, term count, height and multiplicity, and checks both the residual
 and full original reconstruction. These blocks are not asserted to be
-irreducible. No real-root counts have been measured.
+irreducible. This square-free stage did not measure real-root counts.
+
+## Subsequent isolation closes the nonvanishing proposal
+
+The independent isolation adapter reconstructed the complete signed D from
+the exported factors before selecting entry 4. Native exact isolation of that
+881-degree block completed in 73.830 seconds, with 69 distinct real roots.
+Its ordered rational intervals put 34 roots strictly below four and 35
+strictly above four; none straddles four. The first interval above four is
+
+```
+16384/4077 < root < 16384/4045,   full-real root index 34.
+```
+
+Both endpoints exceed four. Thus this block has interior zeros in the
+original s domain even though it appears with even multiplicity in D.
+Sign changes of D reveal odd-multiplicity factors; they cannot rule out these
+additional even-multiplicity zeros. The 881-degree block therefore cannot be
+discarded by a whole-domain nonvanishing certificate. No positive-t collision
+or original-F singularity is inferred from these projection roots.
+
+The report is `artifacts/research/a377-isolation-01/block881.worker.json`,
+SHA-256 `216adf694d109953b0f5977d0f300d09d6adde214f251ca73ea2cfd07c6de5cc`.
+It binds the original candidate, factor bundle, selected block and interval
+inventory. This completed **block** inventory does not yet supply the union
+for all factors. The proposed shifted-coefficient screen is superseded by
+this exact result. Its unbuilt example-only draft is retained separately as
+`artifacts/research/a377-deflation-02/unbuilt-factor-screen.patch`; no factor
+was relabelled as a discriminant, and no extra screen or production change ran.
 
 ## Cache and proof implications
 
@@ -110,9 +140,10 @@ A future explicit base-univariate support-basis mode would therefore need:
 3. Separate cache typing/context, so composite support blocks never enter a
    factor cache as purported irreducibles or a later higher-dimensional
    pair projection. Historical proofs retain their current semantics.
-4. A measured complete isolation of the 881-degree block and remaining blocks
+4. A measured complete root union of the 881-degree block and remaining blocks
    before claiming that avoiding irreducible factorization solves this
-   bottleneck. Raw repeated D also causes `isolate_union` to compute another
+   bottleneck; completing the single block above is only one part. Raw
+   repeated D also causes `isolate_union` to compute another
    derivative GCD after isolation when a real multiplicity exceeds one.
    Exact product reconstruction is enough to justify a decomposition into
    support blocks; the unchanged root isolator does not need the checker to
