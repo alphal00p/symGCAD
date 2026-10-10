@@ -1,9 +1,9 @@
 # Acceptance obligations beyond mathematical completion
 
-Read-only audit at the 302/331 completion checkpoint. All 331 equivalence groups,
+Read-only audit at the 303/331 completion checkpoint. All 331 equivalence groups,
 579 sign-expanded baseline inputs, 277 fixture identifiers, 93 extracted core
 calls and three disabled core tests are accounted for. This note records
-assertion-level obligations separately from the 29 unresolved mathematical
+assertion-level obligations separately from the 28 unresolved mathematical
 problems. It does not alter either denominator.
 
 ## Ordering APIs

@@ -67,6 +67,7 @@ The release also reverified the historical eight-cell fixed-A446 proof and
 twelve-cell massless symbolic proof. These compatibility checks and hashes
 are in `gluza-rayleigh-release-01/historical/summary.json`.
 
-The original positive Gluza30/Gluza33 problems remain unresolved. These
-negative-domain proofs do not count as their solutions or as a complete sign
-arrangement of either polynomial.
+These negative-domain proofs do not count as positive-domain solutions or as a
+complete sign arrangement of either polynomial. Positive Gluza30 was solved
+subsequently by a separate [bilinear proof and release campaign](GLUZA30_BILINEAR_RELEASE_BENCHMARK.md);
+positive Gluza33 remains unresolved.
