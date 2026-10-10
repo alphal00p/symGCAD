@@ -160,3 +160,13 @@ exported root boundaries; SHA-256
 The immutable build manifest is
 `artifacts/shared-fibers-resource-release-build-01.json`, SHA-256
 `0374083b427c00c03693b7ce5205245f027472a59566e5219fa68832f8ca09a3`.
+
+The complete workspace fast suite subsequently passed **573 tests across 42
+targets**, with two intentional ignored tests and no failures. Execution took
+53.12 seconds after compilation. This count includes the separate workstream's
+uncommitted A381 mass-variant test, which was left untouched and is not an
+original-corpus completion. All checked source hashes stayed unchanged. The
+log SHA-256 is
+`2c20ab6bdc34e407190ec05b5343b66faca1a851497434538a801af308f61cb8`;
+metadata `artifacts/shared-fibers-resource-fast-tests-01.json` has SHA-256
+`75be8a3483135e6b5aaf3bd230150da37d0958aa99a7e8c3a31dc9e8e585142a`.
