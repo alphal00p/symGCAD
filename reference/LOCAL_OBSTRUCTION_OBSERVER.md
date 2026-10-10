@@ -155,3 +155,61 @@ Process wall times were 44.00 seconds off and 43.66 seconds on; peak RSS was
 fresh algebra caches but no filesystem-page-cache reset, and support no speed
 claim. `comparison.json` retains both input/result hashes, exact comparison
 results, all diagnostic counters and the final observer-file hash.
+
+## Successful-child reuse and a cache-budget diagnostic
+
+The current subtree cache does not invalidate entries when a parent adds cuts.
+Its key is the full exact rational prefix within one Builder, and a hit returns
+the complete conditional proof and every required polynomial unchanged.
+However, both ordinary and deferred refinement discard their temporary
+completed-child vectors when new obligations arrive. Subsequent reuse depends
+on retaining the same interior sample and finding its proof in the bounded
+global FIFO cache. Cache misses currently distinguish neither a fresh sample
+from an evicted entry nor an oversized proof from a never-completed prefix.
+
+A separate no-code release diagnostic therefore compared 32 and 128 MiB
+subtree budgets, leaving the learned-cut budget at 8 MiB. It reused the same
+original input/order/options, cold algebra caches and CPU9/4 GiB allocation,
+with a 25,000-refinement limit, 20-million-node ceiling, 55-second inner limit
+and 60-second outer watchdog. The frozen release was
+`artifacts/bin/symgcad-root-affine-875f537-release`, SHA-256
+`2887414c30abddd437da4a216f50f6bbddfdd176577dacbec75734df80e64d85`.
+The observer was disabled in both arms.
+
+| Measurement | 32 MiB | 128 MiB |
+| --- | ---: | ---: |
+| Final refinements | 25,001 | 25,001 |
+| Visited nodes | 101,375 | 185,985 |
+| Subtree hits / misses | 36,999 / 44,625 | 95,160 / 47,544 |
+| Subtree evictions | 38,320 | 22,173 |
+| Peak retained nodes | 32,768 | 131,072 |
+| Peak charged bytes | 13,563,556 | 51,951,850 |
+| Registry polynomials | 290 | 2,173 |
+| Completed operation records | 212 | 1,624 |
+| Process wall seconds | 6.79 | 34.43 |
+| Peak RSS, KiB | 39,940 | 104,452 |
+
+Both returned incomplete with zero exported cells. The smaller-cache final
+prefix was `[5,0,1/1536,2,1/4,1]`; the larger-cache prefix was
+`[5,-393217,1,542920/867,784259/2]`, in the reduced lifting order
+`[s,t,x1,x2,x3,x4,x7]`. All 212 common exact operation records agree, and the
+larger cache's record set contains the smaller set. Provenance, full counters,
+hashes and comparisons are in
+`artifacts/profile/a414-subtree-budget-release-01/comparison.json`.
+
+The larger cache changes traversal progress before the same refinement cap;
+it does not perform the same work more slowly. A hit skips a completed child's
+internal refinement increments, so equal refinement counts are not equal
+semantic work. Accordingly this one diagnostic pair supports no timing ratio
+or completion claim, and was not extended to three paired timing repetitions.
+Both caches still reached their scaled node ceiling below the byte budget.
+
+Before implementing another reuse mechanism, useful read-only counters would
+identify successful-child obligation additions, discarded completed frontier
+children, cache admission declines and eviction causes. A bounded exact-prefix
+shadow could then distinguish a cache miss revisiting a completed child in the
+same still-active parent visit from a genuinely new sample. Only if such misses
+are frequent would a bounded visit-local pool of unchanged children be worth
+testing. It must preserve exact samples, all transitive obligations and final
+parent projection/root-inventory checks; one old child cannot be copied to both
+sides of a new cut by silently changing its sample.
