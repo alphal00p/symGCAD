@@ -256,6 +256,10 @@ identity driven. No topology identifier is a proposed solver dispatch rule.
 
 The independent research helper `examples/profile_weighted_squares.rs`
 now implements the second proposal without graph data or topology dispatch.
+The earlier `examples/profile_monomial_squares.rs` instead proposes one
+constant-weight square of monomials with an existing certificate for the
+residual; its even-diagonal support does not include the six odd-degree,
+monomial-weighted squares required here.
 It accepts a JSON variable map, original strict positivity constraints, and
 labelled polynomial expressions. Exact affine coordinate bounds are derived
 from those constraints, then each active coordinate is translated/reflected
@@ -316,8 +320,12 @@ Retained artifacts are in `artifacts/research/weighted-squares-01/`:
 | `a446-b-u-below-4.json` (input) | `e5bfed73cac360a50886a06980e4bd2b48a8dd3390c32ae66efa9ff5ae518609` |
 | `endpoint.json` (proof and timings) | `11850cf9e41a80b35e683d3236e8e92b143c08fb1bed5ef4d7065664382ca6bd` |
 | `helper` (frozen executable) | `3377f82eeb6032c42101fac8e9885334446429e310b1e9ccba6f3180a88674b3` |
-| `examples/profile_weighted_squares.rs` (repository source) | `4584bdbff30a9e53bac814164244abfb667a50078ee6a9fa3fbd0e1a869b1d5e` |
+| `examples/profile_weighted_squares.rs` (source at `9d1db51`) | `4584bdbff30a9e53bac814164244abfb667a50078ee6a9fa3fbd0e1a869b1d5e` |
 
 The actual proof includes `u_original=4-u_positive` explicitly. Before/after
 hash checks bind the input, source, and frozen binary; build/test logs and
 separate process records are retained alongside the report.
+
+A subsequent, separate [quadratic-component experiment](QUADRATIC_COMPONENT_CERTIFICATE.md)
+now certifies C0 and the quadratic constant on `u<4` using a four-term linear
+square, while correctly retaining C0's interior zero seam at `u=4`.

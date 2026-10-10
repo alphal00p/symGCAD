@@ -42,7 +42,7 @@ struct NamedPolynomial {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-struct Shift {
+pub(crate) struct Shift {
     variable: usize,
     /// x_original = offset + orientation*x_positive.
     offset: String,
@@ -116,7 +116,7 @@ fn strict_residual(p: &Poly, positive: &[bool]) -> bool {
 
 /// Conservative scope: every active coordinate must have an exact affine bound.
 /// Other original constraints can only narrow the certified orthant superset.
-fn shift(
+pub(crate) fn shift(
     algebra: &Algebra,
     p: &Poly,
     constraints: &[Poly],
