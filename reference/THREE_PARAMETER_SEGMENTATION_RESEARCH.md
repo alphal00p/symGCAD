@@ -151,9 +151,36 @@ The outer limit is 7,320 seconds; the worker's computation budget remains
 7,200 seconds. Initial reservation alongside the separately bounded 8-GiB
 observer build was 58 GiB, within the aggregate campaign ceiling.
 
-The candidate directory and terminal process record will determine the
-outcome. At launch there is no result, independent resultant verification,
-cache insertion, root inventory, or original-problem completion credit.
+### User-interrupted terminal outcome
+
+The user requested wrap-up before the 7200-second limit. The supervised
+worker process group received SIGTERM, while its supervisor remained alive
+long enough to save the terminal process and audit records. The explicit
+outcome is **`user_interrupted` after 2580.882029 seconds**, with
+**3,897,228 KiB** reported peak RSS. The low-level process record says
+`failed` with no normal exit code, as expected for signal termination; this
+must not be relabeled a timeout or completed algebra.
+
+The last observable phase remained the composite
+`segmentation_encoding_native_decode`. It does not identify which private
+suboperation was active at interruption. All owned worker/supervisor PIDs
+and process groups were confirmed absent. The immutable input, binary and
+launch bindings rehashed successfully. No candidate was written, no cache
+entry was inserted, and no root inventory or original completion follows.
+
+The preserved evidence under the same trial directory includes:
+
+| Record | SHA256 |
+|---|---|
+| `interrupted-summary.json` | `e9472656de882d07c18e079c9d0e5a13defddf9d2d8994ff53d36330995db478` |
+| `run/process.json` | `22393a795907d4ec7f0e6a08c4715ffe1c70d603a5891c89ddffbe8417f1f49c` |
+| `run/audit.json` | `6c8c2a1fea96c54883b4f54be1a60a9d02f24b83ca36ded37777c4721fd80f51` |
+| `run/progress.json` | `19f66543653aced96b200c3327b60ab55b6ca27128f89704eb1fac9c828545ff` |
+
+The interruption request, before/after process snapshots, output-stream
+hashes and unchanged-binding check are retained alongside these records.
+This stopped trial supplies no completed runtime comparison and is not
+scheduled to restart.
 
 # Separate degree-84 frontier: static rejection only
 
@@ -195,4 +222,5 @@ This is a substantially different native integer-resultant degree from the
 Gluza degree-10 input. Static bit counts do not predict resultant transient
 memory or runtime. No degree/cap increase, D84 native computation, cache
 injection or original coverage claim follows. The smaller, already admitted
-Gluza three-parameter input remains the next bounded research candidate.
+Gluza three-parameter input was selected for the interrupted trial above;
+neither operand has a new trial scheduled.
