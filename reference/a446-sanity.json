@@ -23,7 +23,7 @@
   "original_sha256": "435291febcf3f9ffc2085d84242ce45b83b791c024233133d7dca424b41cd675",
   "result": "/common/dev/gcad/artifacts/completion-deterministic/fixed/results/00122-fcc950e632c0f6a7-1791579019095793168-0/0-result.json",
   "result_sha256": "bb36fe245b505736a1cfef618cecba38540b2d25a8afc95debbd98a84fe55b50",
-  "executable_sha256": "de7409a97f248743637717f1a983215f7de9e3ffebfb020c0fed98034a47e90f",
+  "executable_sha256": "f82e9a1f2eeef4b9f69f432e4d882ec1809cfabc457bb92af1d7e6288ebd386c",
   "parameters": {
     "mt2": "1",
     "mz2": "5/18",
@@ -39,7 +39,7 @@
     "x3",
     "x1"
   ],
-  "elapsed_seconds": 0.408572346,
+  "elapsed_seconds": 0.407046586,
   "diagnostic": null,
   "checks": [
     {

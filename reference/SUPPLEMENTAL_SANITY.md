@@ -85,10 +85,11 @@ nix develop -c cargo run --example sanity_sample -- \
 
 The output path must be fresh. A sibling `.process.json` records the supervisor
 outcome; only a successful worker and an exhaustive `passed` report exit zero.
-The six focused regressions run with
+The seven focused regressions run with
 `nix develop -c cargo test --example sanity_sample`. They cover changing
 prefix-dependent roots, deliberately false F labels and original constraints,
-exact parameter tokens, reproducibility and uniqueness, distinct-root selectors
+exact parameter tokens, legitimate constant-zero split annotations after parameter
+substitution, reproducibility and uniqueness, distinct-root selectors
 with multiplicity, invalid bounds, deadline failure, and rejection of candidates
 outside or exactly on a root by the separate membership check.
 
@@ -101,16 +102,19 @@ the large solver proof and external reference input:
 | --- | --- |
 | Original TOML | `435291febcf3f9ffc2085d84242ce45b83b791c024233133d7dca424b41cd675` |
 | Accepted eight-cell proof | `bb36fe245b505736a1cfef618cecba38540b2d25a8afc95debbd98a84fe55b50` |
-| Frozen checker executable | `de7409a97f248743637717f1a983215f7de9e3ffebfb020c0fed98034a47e90f` |
-| Checker source | `b9508ad6e09ccdbe2449c845e21f0febead4e56dd3fa38599b6ff83dbd3f103f` |
-| Full sampling report | `4f46c4ffaa8056543c5892957706feaf7e503e31b8fd63882a3eb1850f89dead` |
+| Frozen checker executable | `f82e9a1f2eeef4b9f69f432e4d882ec1809cfabc457bb92af1d7e6288ebd386c` |
+| Checker source | `e21c2c23b2aec2d6e261b788d80ff8b2fca48fdc00285537f9aea8d0dac58d0d` |
+| Full sampling report | `77a733abe2e670124ff2f7a557691b6610a8e0cf2283e66559dd16260767210a` |
 
 The original accepted proof is the fixed A446 entry in the audited 303/331
 completion aggregate. Its preserved local source is
 `artifacts/completion-deterministic/fixed/results/00122-fcc950e632c0f6a7-1791579019095793168-0/0-result.json`.
 The complete run and resource report are under
-`artifacts/sanity-fixed-a446-02/`; these private artifact paths are provenance,
+`artifacts/sanity-fixed-a446-03/`; these private artifact paths are provenance,
 not fresh-clone requirements.
+This report refresh includes the zero-label compatibility correction. Earlier
+successful A446 reports remain under the distinct `-01` and `-02` artifact
+directories and were not overwritten.
 
 A deliberately corrupted copy changed cell index 2's F label from negative to
 positive. The same seed still checked all eight cells and 16 points, found

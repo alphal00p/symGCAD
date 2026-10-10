@@ -257,7 +257,7 @@ impl OriginalEvaluator {
             } else {
                 -1
             };
-            let passed = expected[i] != 0 && sign == expected[i];
+            let passed = sign == expected[i];
             point.splits.push(json!({"index":i,"value":value.to_string(),"sign":sign,"expected":expected[i],"passed":passed}));
             if !passed {
                 point.failures.push(format!(
@@ -796,6 +796,26 @@ mod tests {
             10.,
         )
         .0)
+    }
+    #[test]
+    fn constant_zero_split_after_parameter_substitution_matches_zero_annotation() -> Result<()> {
+        let p = Problem::from_toml(
+            "variables=['x']\nconstraints=['x>0']\nsplit=['m*x']\n[parameters]\nm='0'\n[solver]\nengine='local'\npositivity=true",
+        )?;
+        let result = symgcad::solver::solve(&p)?;
+        assert_eq!(result.status, Status::CompleteGeneric);
+        assert_eq!(result.cells.len(), 1);
+        assert_eq!(result.cells[0].signs, vec![0]);
+        let mut export: Export = serde_json::from_value(serde_json::to_value(result)?)?;
+        validate_original(&export, &p)?;
+        let sampled = point(&export, &p, 42)?;
+        assert!(sampled.passed, "{:?}", sampled.failures);
+        assert_eq!(sampled.splits[0]["value"], "0");
+        assert_eq!(sampled.splits[0]["sign"], 0);
+        assert_eq!(sampled.splits[0]["expected"], 0);
+        export.cells[0].signs[0] = 1;
+        assert!(!point(&export, &p, 42)?.passed);
+        Ok(())
     }
     #[test]
     fn fresh_prefix_roots_ignore_stored_intervals_and_original_evaluation_is_exact() -> Result<()> {
