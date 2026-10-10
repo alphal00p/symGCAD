@@ -136,3 +136,65 @@ outside commits.
 | `local-on.toml` | `c9ee1e08188c06fe2d4177b9bd5b086b6c062eb2e8fce931038047844ece3642` |
 | Enabled endpoint result | `18e6a18a92a7bab4ee1abd6b6b3510abd9e3521307b20df0359bddf7021ada7b` |
 | Enabled local result | `7c2db769bb9e5798bc25973c1cd340653a8ae7b85aaf6c63147a680f7b2728fe` |
+
+## Full original-F conditional chamber: still incomplete
+
+The next gate used the exact original symbolic crossed fixture
+`0152_finiteAx12_7_446_11_0__0_5_1_1_1_1_0_1_1_symbolic.toml`, SHA-256
+`ca89810d876b2bcde20ffc86b18928380eb4b26a418b6ab0f1accbb382bf1e3d`.
+The full F split expression, both signs, original constraints, groups and
+`mt2=1,mz2=5/18` substitutions were preserved; only `t<4` was added.
+The authenticated crossed channel is already `u=t`, so there is no kinematic
+coordinate change. No endpoint B, C0 or other derived positivity premise was
+inserted. The `t>4` complement remains unresolved and is retained in its own
+TOML; `t-4` needs explicit exceptional-set accounting or specialization before
+any future original-domain composition.
+
+Both configurations use the local engine, fixed lifting order
+`s,t,x2,x1,x3,x5,x7,x4,x8`, and the existing exact homogeneity transform with
+positive anchor `x2` from the original domain. The scale block contains only
+Feynman parameters and its anchor precedes the other members. Existing
+homogeneity validation and cylindrical reconstruction are responsible for
+that reduction; no manual `x2=1` substitution is assumed. The inputs differ
+only by `weighted_square_positivity`, apart from the matched time limits.
+
+Each run is cold, uses the same frozen development CLI as above, CPU 3, one
+worker and a 2 GiB cap. The first stage allows ten seconds and the second
+sixty seconds. All four results are **incomplete**, so there is no complete
+chamber, final cell count, upstream ratio or original corpus credit.
+
+| Option | Limit, s | Wall, s | Peak process RSS, KiB | Outcome |
+|---|---:|---:|---:|---|
+| Off | 10 | 10.04 | 67,892 | Worker timeout |
+| On | 10 | 10.05 | 55,392 | Worker timeout |
+| Off | 60 | 60.04 | 150,532 | Worker timeout |
+| On | 60 | 14.14 | 55,476 | Local projection refinement limit |
+
+The baseline's final progress snapshot is stale at 2.20 seconds in the longer
+run: 389 speculative nodes, 133 refinements, 278 projected pairs, and prefix
+`(s,t,x1)=(5,7/2,1)`. It does not identify the subsequent algebra call; no
+specific resultant/discriminant diagnosis is inferred without an operation
+capture. The enabled ten-second snapshot is at 8.90 seconds: 18,322 nodes,
+6,616 refinements, 12,478 refinement cuts, 7,901 certified guard removals and
+5,997 projected pairs. Its prefix is `(s,t,x1,x3)=(5,13/6,1,1)` after scale
+reduction. Thus guards and traversal are active, but this count is not a
+fraction-of-domain completion measure.
+
+The enabled sixty-second run reaches the default 10,000-refinement cap and
+returns normally with an incomplete diagnostic. This path does not retain
+the final tree/progress report, so its final cut distribution cannot be
+reconstructed from the output. The ten-second snapshot already has 4,600
+subtree-cache evictions; neither that fact nor the higher node count predicts
+completion under a larger cap. No blind cap increase was run. The previously
+measured larger-support C0/A-constant proof gap remains a separate candidate
+for the proposed quadratic-component certificate.
+
+Inputs, unchanged split-line comparison, explicit complement, provenance,
+runner, full incomplete results and timing records are under
+`artifacts/research/full-f-chamber-01/`. Input and binary hashes match before
+and after all four runs. The compact `ablation-summary.json` SHA-256 is
+`90231fabbdeadbdd598a344574377298f4c4eb95832a9c63c40bb42c4814fb62`;
+`provenance.json` is
+`35f3c16a3e2384a8a5b72eea525e821ce690ea5c173d788b2cac430c9e98c3f3`.
+The sixty-second enabled result SHA-256 is
+`4dbc11edac878b6517aebdf5d5dad1319be6a9cd78893e1c9dcaf66bc16ebc18`.
