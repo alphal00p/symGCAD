@@ -68,9 +68,12 @@ pub use interval_descartes::{PositiveInterval, PositiveIntervalEndpoint, Positiv
 mod base_univariate;
 #[cfg(test)]
 mod base_univariate_replay;
+#[cfg(test)]
+mod base_univariate_report_tests;
 mod hint_archive;
 pub use base_univariate::{
-    BaseUnivariateBasis, BaseUnivariateBlock, BaseUnivariateReport, BaseUnivariateSource,
+    BaseUnivariateAttempt, BaseUnivariateBasis, BaseUnivariateBlock, BaseUnivariateDecline,
+    BaseUnivariateDeclines, BaseUnivariateReport, BaseUnivariateSource,
 };
 mod lazy_projection;
 mod learned_cuts;
@@ -1761,6 +1764,39 @@ impl Builder<'_> {
         self.polynomials.push(polynomial);
         id
     }
+    /// Metadata-only snapshots before potentially blocking optional algebra or
+    /// its ordinary fallback. A failed diagnostic write cannot alter the solve.
+    fn publish_base_progress(&mut self) {
+        if self.progress_path.is_none() && self.operations.progress_path.is_none() {
+            return;
+        }
+        let snapshot = self.snapshot();
+        if self.operations.progress_path.is_some() {
+            // A subsequent factor capture must not replace this snapshot with
+            // the older context from the start of the projection call.
+            self.operations.progress_context = Some(snapshot.clone());
+            // Keep the original same-prefix write/skip decision. Forcing a new
+            // capture could turn a best-effort write error into an algebra stop.
+        }
+        if let Some(path) = &self.progress_path {
+            let _ = write_progress(path, &snapshot);
+        }
+    }
+    fn observed_base_stop(&mut self, stop: Stop) -> Stop {
+        let report = self.report.base_univariate_basis.as_mut().unwrap();
+        match &stop {
+            Stop::Resource(_) => {
+                report.post_entry_resource_stops += 1;
+                report.phase("resource_stop");
+            }
+            _ => {
+                report.post_entry_failures += 1;
+                report.phase("failure");
+            }
+        }
+        self.publish_base_progress();
+        stop
+    }
     /// Only projection-generated guards enter this separate support registry.
     /// Initial inputs and the ordinary factor cache keep their old contracts.
     fn guard_basis(&mut self, raw: &[Poly]) -> Work<BTreeSet<usize>> {
@@ -1771,18 +1807,32 @@ impl Builder<'_> {
         let mut result = BTreeSet::new();
         for p in raw {
             self.check_budget()?;
-            let eligible = base_univariate::map_admissible(&self.normalized.algebra)
-                && p.variables() == &self.normalized.algebra.variables
-                && base_univariate::source_cost(p).is_some();
+            self.report
+                .base_univariate_basis
+                .as_mut()
+                .unwrap()
+                .begin(p, self.base_retained_bits);
+            let map_ok = base_univariate::map_admissible(&self.normalized.algebra)
+                && p.variables() == &self.normalized.algebra.variables;
+            let eligible = map_ok && base_univariate::source_cost(p).is_some();
             let source = eligible.then(|| canonical(p));
             if let Some(source) = &source {
                 if let Some(ids) = self.base_sources.get(source) {
                     result.extend(ids);
-                    self.report.base_univariate_basis.as_mut().unwrap().hits += 1;
+                    let report = self.report.base_univariate_basis.as_mut().unwrap();
+                    report.hits += 1;
+                    report.phase("hit");
                     continue;
                 }
             }
             let cost = source.as_ref().and_then(base_univariate::source_cost);
+            if let (Some(source), Some(bits)) = (&source, cost) {
+                self.report
+                    .base_univariate_basis
+                    .as_mut()
+                    .unwrap()
+                    .source(source, bits);
+            }
             if cost.is_none()
                 || self.base_records.len() >= base_univariate::MAX_SOURCES
                 || cost.is_some_and(|bits| {
@@ -1790,11 +1840,22 @@ impl Builder<'_> {
                         > base_univariate::MAX_RETAINED_BITS
                 })
             {
+                let reason = if !map_ok {
+                    BaseUnivariateDecline::MapOrSupport
+                } else if cost.is_none() {
+                    base_univariate::source_decline(source.as_ref().unwrap_or(p))
+                } else if self.base_records.len() >= base_univariate::MAX_SOURCES {
+                    BaseUnivariateDecline::SourceCount
+                } else {
+                    BaseUnivariateDecline::RegistryStorage
+                };
                 self.report
                     .base_univariate_basis
                     .as_mut()
                     .unwrap()
-                    .static_declines += 1;
+                    .decline(reason);
+                self.report.active_phase = "base_univariate_fallback".into();
+                self.publish_base_progress();
                 for factor in self.operations.factors(std::slice::from_ref(p))? {
                     result.insert(self.intern(factor));
                 }
@@ -1802,44 +1863,74 @@ impl Builder<'_> {
             }
             let source = source.unwrap();
             self.report.active_phase = "base_univariate_decomposition".into();
+            self.report
+                .base_univariate_basis
+                .as_mut()
+                .unwrap()
+                .phase("decomposition");
             self.publish(true)?;
             let mut timings = BaseUnivariateReport::default();
             let started = self.started;
             let limit = self.problem.limits.wall_time_secs;
-            let blocks = base_univariate::discover(&source, &mut timings, || {
-                if started.elapsed().as_secs_f64() >= limit {
-                    return Err(crate::resultant_interpolation::Stopped(
-                        "base support wall time limit".into(),
-                    )
-                    .into());
-                }
-                Ok(())
-            });
+            let previous = self.report.base_univariate_basis.as_ref().unwrap();
+            let old_decomposition = previous.decomposition_seconds;
+            let old_reconstruction = previous.reconstruction_seconds;
+            let blocks = base_univariate::discover_observed(
+                &source,
+                &mut timings,
+                || {
+                    if started.elapsed().as_secs_f64() >= limit {
+                        return Err(crate::resultant_interpolation::Stopped(
+                            "base support wall time limit".into(),
+                        )
+                        .into());
+                    }
+                    Ok(())
+                },
+                |timings, block_bits, phase| {
+                    let report = self.report.base_univariate_basis.as_mut().unwrap();
+                    report.decomposition_seconds =
+                        old_decomposition + timings.decomposition_seconds;
+                    report.reconstruction_seconds =
+                        old_reconstruction + timings.reconstruction_seconds;
+                    report.phase(phase);
+                    if let Some(bits) = block_bits {
+                        report.proposal(bits);
+                    }
+                    self.report.active_phase = format!("base_univariate_{phase}");
+                    self.publish_base_progress();
+                },
+            );
             let report = self.report.base_univariate_basis.as_mut().unwrap();
-            report.decomposition_seconds += timings.decomposition_seconds;
-            report.reconstruction_seconds += timings.reconstruction_seconds;
-            let blocks = blocks.map_err(base_stage_stop)?;
+            report.decomposition_seconds = old_decomposition + timings.decomposition_seconds;
+            report.reconstruction_seconds = old_reconstruction + timings.reconstruction_seconds;
+            let blocks = blocks.map_err(|error| self.observed_base_stop(base_stage_stop(error)))?;
             let retained_cost = blocks
                 .iter()
                 .try_fold(cost.unwrap(), |sum, (p, _)| {
                     sum.checked_add(base_univariate::cost(p)?)
                 })
-                .ok_or_else(|| Stop::Resource("base support storage bound overflow".into()))?;
+                .ok_or_else(|| {
+                    self.observed_base_stop(Stop::Resource(
+                        "base support storage bound overflow".into(),
+                    ))
+                })?;
             if self.base_retained_bits.saturating_add(retained_cost)
                 > base_univariate::MAX_RETAINED_BITS
             {
-                return Err(Stop::Resource(
+                return Err(self.observed_base_stop(Stop::Resource(
                     "base support retained source/block cap".into(),
-                ));
+                )));
             }
             // Primitive normalization keeps a signed nonzero rational unit.
             let scale = p.lcoeff() / source.lcoeff();
             if &source * &source.constant(scale) != *p {
-                return Err(Stop::Failed(
+                return Err(self.observed_base_stop(Stop::Failed(
                     "base support signed source normalization failed".into(),
-                ));
+                )));
             }
-            self.check_budget()?;
+            self.check_budget()
+                .map_err(|stop| self.observed_base_stop(stop))?;
             let mut references = Vec::new();
             for (block, multiplicity) in blocks {
                 let id = self.intern(block);
@@ -1854,14 +1945,24 @@ impl Builder<'_> {
             let ids = references.iter().map(|b| b.polynomial).collect();
             self.base_sources.insert(source.clone(), ids);
             self.base_retained_bits += retained_cost;
+            let text = self.normalized.algebra.format(&source);
+            let text_bytes = text.len();
             self.base_records.push(BaseUnivariateSource {
-                polynomial: self.normalized.algebra.format(&source),
+                polynomial: text,
                 blocks: references,
             });
             let report = self.report.base_univariate_basis.as_mut().unwrap();
             report.sources = self.base_records.len();
             report.blocks = self.base_typed.len();
-            self.check_budget()?;
+            report.retained_source_bits += cost.unwrap();
+            report.retained_block_bits += retained_cost - cost.unwrap();
+            report.retained_total_bits = self.base_retained_bits;
+            report.peak_source_text_bytes = report.peak_source_text_bytes.max(text_bytes);
+            report.phase("admitted");
+            self.report.active_phase = "base_univariate_admitted".into();
+            self.publish_base_progress();
+            self.check_budget()
+                .map_err(|stop| self.observed_base_stop(stop))?;
         }
         Ok(result)
     }
@@ -2296,7 +2397,7 @@ impl Builder<'_> {
             )
             .map_err(|e| {
                 if typed_base {
-                    base_stage_stop(e)
+                    self.observed_base_stop(base_stage_stop(e))
                 } else {
                     Stop::from(e)
                 }

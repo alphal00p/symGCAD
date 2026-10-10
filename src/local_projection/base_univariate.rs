@@ -54,6 +54,183 @@ pub struct BaseUnivariateReport {
     pub decomposition_seconds: f64,
     pub reconstruction_seconds: f64,
     pub root_union_seconds: f64,
+    /// Logical coefficient costs, charged once per source record (including
+    /// shared blocks again). These are not allocator or process-memory counts.
+    pub retained_source_bits: u64,
+    pub retained_block_bits: u64,
+    pub retained_total_bits: u64,
+    pub peak_source_bits: u64,
+    pub peak_source_height_bits: u64,
+    pub peak_source_terms: usize,
+    /// Measured only from the source string already needed for evidence.
+    pub peak_source_text_bytes: usize,
+    pub peak_proposed_block_bits: u64,
+    pub peak_proposed_total_bits: u64,
+    pub declines: BaseUnivariateDeclines,
+    pub post_entry_resource_stops: usize,
+    pub post_entry_failures: usize,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub last_attempt: Option<BaseUnivariateAttempt>,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(default)]
+pub struct BaseUnivariateDeclines {
+    pub map_or_support: usize,
+    pub degree: usize,
+    pub terms: usize,
+    pub coefficient_height: usize,
+    pub coefficient_storage: usize,
+    pub denominator_storage: usize,
+    pub source_count: usize,
+    pub registry_storage: usize,
+}
+
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum BaseUnivariateDecline {
+    MapOrSupport,
+    Degree,
+    Terms,
+    CoefficientHeight,
+    CoefficientStorage,
+    DenominatorStorage,
+    SourceCount,
+    RegistryStorage,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(default)]
+pub struct BaseUnivariateAttempt {
+    /// Raw caller shape; source costs below describe its canonical form only.
+    pub raw_degree: Option<u32>,
+    pub raw_terms: usize,
+    pub source_bits: Option<u64>,
+    pub proposed_block_bits: Option<u64>,
+    pub proposed_total_bits: Option<u64>,
+    pub retained_before_bits: u64,
+    /// A fixed internal phase label, never an expression or native error dump.
+    pub phase: String,
+    pub decline: Option<BaseUnivariateDecline>,
+}
+
+impl BaseUnivariateReport {
+    pub(super) fn begin(&mut self, p: &Poly, retained: u64) {
+        self.last_attempt = Some(BaseUnivariateAttempt {
+            raw_degree: (p.nvars() > 0 && p.nterms() <= MAX_TERMS).then(|| p.degree(0)),
+            raw_terms: p.nterms(),
+            retained_before_bits: retained,
+            phase: "preflight".into(),
+            ..Default::default()
+        });
+    }
+
+    pub(super) fn source(&mut self, p: &Poly, bits: u64) {
+        self.peak_source_bits = self.peak_source_bits.max(bits);
+        self.peak_source_terms = self.peak_source_terms.max(p.nterms());
+        self.peak_source_height_bits = self.peak_source_height_bits.max(
+            p.coefficients
+                .iter()
+                .map(|c| {
+                    c.numerator_ref()
+                        .significant_bits()
+                        .max(c.denominator_ref().significant_bits())
+                })
+                .max()
+                .unwrap_or(0),
+        );
+        if let Some(attempt) = &mut self.last_attempt {
+            attempt.source_bits = Some(bits);
+            let total = attempt.retained_before_bits.saturating_add(bits);
+            attempt.proposed_total_bits = Some(total);
+            self.peak_proposed_total_bits = self.peak_proposed_total_bits.max(total);
+        }
+    }
+
+    pub(super) fn proposal(&mut self, bits: u64) {
+        self.peak_proposed_block_bits = self.peak_proposed_block_bits.max(bits);
+        if let Some(attempt) = &mut self.last_attempt {
+            attempt.proposed_block_bits = Some(bits);
+            if let Some(source) = attempt.source_bits {
+                let total = attempt
+                    .retained_before_bits
+                    .saturating_add(source)
+                    .saturating_add(bits);
+                attempt.proposed_total_bits = Some(total);
+                self.peak_proposed_total_bits = self.peak_proposed_total_bits.max(total);
+            }
+        }
+    }
+
+    pub(super) fn phase(&mut self, phase: &str) {
+        if let Some(attempt) = &mut self.last_attempt {
+            attempt.phase = phase.into();
+        }
+    }
+
+    pub(super) fn decline(&mut self, reason: BaseUnivariateDecline) {
+        self.static_declines += 1;
+        let count = match reason {
+            BaseUnivariateDecline::MapOrSupport => &mut self.declines.map_or_support,
+            BaseUnivariateDecline::Degree => &mut self.declines.degree,
+            BaseUnivariateDecline::Terms => &mut self.declines.terms,
+            BaseUnivariateDecline::CoefficientHeight => &mut self.declines.coefficient_height,
+            BaseUnivariateDecline::CoefficientStorage => &mut self.declines.coefficient_storage,
+            BaseUnivariateDecline::DenominatorStorage => &mut self.declines.denominator_storage,
+            BaseUnivariateDecline::SourceCount => &mut self.declines.source_count,
+            BaseUnivariateDecline::RegistryStorage => &mut self.declines.registry_storage,
+        };
+        *count += 1;
+        if let Some(attempt) = &mut self.last_attempt {
+            attempt.decline = Some(reason);
+            attempt.phase = "ordinary_fallback".into();
+        }
+    }
+}
+
+/// Diagnostic classification of an existing static decline. This does not
+/// decide admission; source_cost remains the sole polynomial-size gate.
+pub(super) fn source_decline(p: &Poly) -> BaseUnivariateDecline {
+    use BaseUnivariateDecline::*;
+    if p.nvars() == 0 || p.degree(0) < 2 {
+        return Degree;
+    }
+    if p.nvars() > MAX_AXES {
+        return MapOrSupport;
+    }
+    if p.nterms() > MAX_TERMS {
+        return Terms;
+    }
+    if p.is_constant() || highest(p) != Some(0) {
+        return MapOrSupport;
+    }
+    if p.degree(0) > MAX_DEGREE {
+        return Degree;
+    }
+    let mut bits = 0u64;
+    let mut denominators = 0u64;
+    for c in &p.coefficients {
+        let n = c.numerator_ref().significant_bits();
+        let d = c.denominator_ref().significant_bits();
+        if n > MAX_HEIGHT || d > MAX_HEIGHT {
+            return CoefficientHeight;
+        }
+        let Some(next) = bits.checked_add(n).and_then(|x| x.checked_add(d)) else {
+            return CoefficientStorage;
+        };
+        bits = next;
+        let Some(next) = denominators.checked_add(d) else {
+            return DenominatorStorage;
+        };
+        denominators = next;
+    }
+    if bits > 64_000_000 {
+        CoefficientStorage
+    } else if denominators > 65_536 {
+        DenominatorStorage
+    } else {
+        MapOrSupport
+    }
 }
 
 /// Static admission is checked before primitive normalization or native work.
@@ -156,15 +333,28 @@ pub(super) fn check_product(
     Ok(())
 }
 
+#[cfg(test)]
 pub(super) fn discover(
     source: &Poly,
     report: &mut BaseUnivariateReport,
+    budget: impl FnMut() -> Result<()>,
+) -> Result<Vec<(Poly, u32)>> {
+    discover_observed(source, report, budget, |_, _, _| {})
+}
+
+/// The observer receives only bounded metadata and cannot affect algebra or
+/// failure routing. In particular it does not supply a budget or a factor.
+pub(super) fn discover_observed(
+    source: &Poly,
+    report: &mut BaseUnivariateReport,
     mut budget: impl FnMut() -> Result<()>,
+    mut observer: impl FnMut(&BaseUnivariateReport, Option<u64>, &'static str),
 ) -> Result<Vec<(Poly, u32)>> {
     budget()?;
     let started = Instant::now();
     let proposed = source.square_free_factorization();
     report.decomposition_seconds += started.elapsed().as_secs_f64();
+    observer(report, None, "proposal_check");
     budget()?;
     let started = Instant::now();
     bounded(
@@ -202,6 +392,10 @@ pub(super) fn discover(
     }
     let mut blocks: Vec<_> = blocks.into_iter().collect();
     blocks.sort_by(|a, b| a.0.internal_cmp(&b.0));
+    let block_bits = blocks
+        .iter()
+        .try_fold(0u64, |sum, (p, _)| sum.checked_add(cost(p)?));
+    observer(report, block_bits, "reconstruction");
     check_product(source, &blocks, &mut budget)?;
     report.reconstruction_seconds += started.elapsed().as_secs_f64();
     Ok(blocks)
@@ -365,6 +559,90 @@ pub(super) fn validate(
 mod tests {
     use super::*;
     use symbolica::domains::integer::Integer;
+
+    #[test]
+    fn diagnostic_decline_reasons_follow_existing_size_gates() {
+        let a = Algebra::new(&["x".into(), "z".into()]).unwrap();
+        for (text, reason) in [
+            ("x", BaseUnivariateDecline::Degree),
+            ("x^4097+1", BaseUnivariateDecline::Degree),
+            ("x^2+z", BaseUnivariateDecline::MapOrSupport),
+        ] {
+            let p = a.parse(text).unwrap();
+            assert!(source_cost(&p).is_none());
+            assert_eq!(source_decline(&p), reason);
+        }
+        let huge = Integer::from(2).pow(20_000);
+        let p = a.parse("x^2").unwrap().mul_coeff(Rational::from(huge)) + a.parse("1").unwrap();
+        assert!(source_cost(&p).is_none());
+        assert_eq!(source_decline(&p), BaseUnivariateDecline::CoefficientHeight);
+        let mut p = a.parse("0").unwrap();
+        for exponent in 0..=4096 {
+            p.append_monomial(Rational::from(1), &[exponent, 0]);
+        }
+        assert!(source_cost(&p).is_none());
+        assert_eq!(source_decline(&p), BaseUnivariateDecline::Terms);
+        let c = Rational::from((Integer::from(1), Integer::from(2).pow(14_000)));
+        let mut p = a.parse("0").unwrap();
+        for exponent in 2..7 {
+            p.append_monomial(c.clone(), &[exponent, 0]);
+        }
+        assert!(source_cost(&p).is_none());
+        assert_eq!(
+            source_decline(&p),
+            BaseUnivariateDecline::DenominatorStorage
+        );
+    }
+
+    #[test]
+    fn observer_sees_native_return_before_a_late_resource_stop() {
+        let a = Algebra::new(&["x".into()]).unwrap();
+        let p = a.parse("(x-1)^2*(x+2)").unwrap();
+        let mut calls = 0;
+        let mut events = Vec::new();
+        let mut report = BaseUnivariateReport::default();
+        let stopped = discover_observed(
+            &p,
+            &mut report,
+            || {
+                calls += 1;
+                if calls == 2 {
+                    Err(crate::resultant_interpolation::Stopped("after native".into()).into())
+                } else {
+                    Ok(())
+                }
+            },
+            |report, bits, phase| {
+                events.push((phase, bits, report.decomposition_seconds));
+            },
+        );
+        assert!(
+            stopped
+                .unwrap_err()
+                .downcast_ref::<crate::resultant_interpolation::Stopped>()
+                .is_some()
+        );
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].0, "proposal_check");
+        assert_eq!(events[0].1, None);
+        let mut events = Vec::new();
+        let blocks = discover_observed(
+            &p,
+            &mut BaseUnivariateReport::default(),
+            || Ok(()),
+            |_, bits, phase| events.push((phase, bits)),
+        )
+        .unwrap();
+        assert_eq!(
+            events.iter().map(|x| x.0).collect::<Vec<_>>(),
+            ["proposal_check", "reconstruction"]
+        );
+        assert_eq!(
+            events[1].1,
+            Some(blocks.iter().map(|(p, _)| cost(p).unwrap()).sum())
+        );
+        check_product(&p, &blocks, || Ok(())).unwrap();
+    }
 
     fn source_evidence(algebra: &Algebra, source: &Poly) -> BaseUnivariateBasis {
         BaseUnivariateBasis {
