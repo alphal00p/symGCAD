@@ -1,7 +1,7 @@
 //! Safe, non-executing import of the upstream corpus.
 //!
 //! Fixture files are data, not programs to run. Only literal arguments of the
-//! top-level `F = ExponentiatedPolynomial(...)` are accepted.
+//! top-level `U/F = ExponentiatedPolynomial(...)` are accepted.
 use crate::Problem;
 use anyhow::{Context, Result, bail, ensure};
 use serde::{Deserialize, Serialize};
@@ -299,11 +299,155 @@ fn identifiers(text: &str) -> impl Iterator<Item = &str> {
 }
 
 fn literal_f(source: &str) -> Result<(String, Vec<String>)> {
+    literal_polynomial(source, "F")
+}
+
+/// Literal fixture data for bounded research consumers. This parser never
+/// executes Python; generated one-loop fixtures are deliberately unsupported.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LiteralSymanzik {
+    pub expression: String,
+    pub variables: Vec<String>,
+    pub symbols: Vec<String>,
+    pub coefficients: Vec<String>,
+    pub exponents: Vec<Vec<u32>>,
+}
+
+pub const MAX_LITERAL_FIXTURE_BYTES: usize = 4 * 1024 * 1024;
+
+/// Bounded front end sharing the importer's literal grammar. The importer
+/// retains its historical path; these stricter research caps do not change it.
+pub fn parse_literal_symanzik(source: &str, name: &str) -> Result<LiteralSymanzik> {
+    ensure!(["U", "F"].contains(&name), "expected U or F");
+    ensure!(
+        source.len() <= MAX_LITERAL_FIXTURE_BYTES,
+        "fixture byte cap"
+    );
+    let prefix = format!("{name} = ExponentiatedPolynomial(");
+    let mut assignments = source.lines().filter(|line| line.starts_with(&prefix));
+    let line = assignments
+        .next()
+        .context("missing literal Symanzik assignment; generated inputs are unsupported")?;
+    ensure!(
+        assignments.next().is_none(),
+        "duplicate polynomial assignment"
+    );
+    // Bound recursive literal nesting before the recursive parser allocates.
+    let mut depth = 0usize;
+    let mut quote = None;
+    let mut escaped = false;
+    for (offset, byte) in line.bytes().enumerate() {
+        if let Some(q) = quote {
+            if escaped {
+                escaped = false;
+            } else if byte == b'\\' {
+                escaped = true;
+            } else if byte == q {
+                quote = None;
+            }
+        } else {
+            match byte {
+                b'\'' | b'"' => quote = Some(byte),
+                b'[' | b'(' => {
+                    depth += 1;
+                    ensure!(depth <= 8, "literal nesting cap");
+                }
+                b']' | b')' => {
+                    depth = depth.checked_sub(1).context("unbalanced literal")?;
+                    ensure!(
+                        depth != 0 || line[offset + 1..].trim().is_empty(),
+                        "trailing expression after assignment"
+                    );
+                }
+                _ => {}
+            }
+        }
+    }
+    ensure!(
+        quote.is_none() && depth == 0,
+        "unterminated literal assignment"
+    );
+    ensure!(
+        line.trim_end().ends_with(')'),
+        "trailing expression after assignment"
+    );
+    let fields = named_arguments(line.strip_prefix(&prefix).unwrap())?;
+    let symbols: Vec<String> = serde_json::from_value(
+        fields
+            .get("polysymbols")
+            .context("missing polysymbols")?
+            .clone(),
+    )?;
+    ensure!(symbols.len() <= 24, "literal symbol cap");
+    let unique = symbols.iter().collect::<std::collections::BTreeSet<_>>();
+    ensure!(unique.len() == symbols.len(), "duplicate symbol");
+    ensure!(
+        symbols.iter().all(|s| s.len() <= 64
+            && (s == "eps"
+                || s == "U"
+                || s == "F"
+                || (s.starts_with('x')
+                    && s.len() > 1
+                    && s[1..].bytes().all(|b| b.is_ascii_digit())))),
+        "unsupported symbol map"
+    );
+    let exponents: Vec<Vec<u32>> =
+        serde_json::from_value(fields.get("expolist").context("missing expolist")?.clone())?;
+    let coeffs = fields
+        .get("coeffs")
+        .and_then(Value::as_array)
+        .context("missing coeffs")?;
+    ensure!(
+        !exponents.is_empty() && exponents.len() <= 4096 && exponents.len() == coeffs.len(),
+        "literal term count/cap"
+    );
+    let coefficients = coeffs
+        .iter()
+        .map(|c| match c {
+            Value::String(s) => Ok(s.replace("**", "^")),
+            Value::Number(n) if n.is_i64() || n.is_u64() => Ok(n.to_string()),
+            _ => bail!("unsupported coefficient literal"),
+        })
+        .collect::<Result<Vec<_>>>()?;
+    ensure!(
+        coefficients.iter().all(|c| c.len() <= 4096),
+        "coefficient text cap"
+    );
+    for powers in &exponents {
+        ensure!(
+            powers.len() == symbols.len(),
+            "wrong exponent-vector length"
+        );
+        ensure!(
+            powers.iter().all(|e| *e <= 32) && powers.iter().sum::<u32>() <= 32,
+            "literal degree cap"
+        );
+        ensure!(
+            powers
+                .iter()
+                .zip(&symbols)
+                .all(|(e, s)| *e == 0 || s.starts_with('x')),
+            "active auxiliary symbol"
+        );
+    }
+    let (expression, variables) = literal_polynomial(source, name)?;
+    ensure!(expression.len() <= 8 * 1024 * 1024, "polynomial text cap");
+    Ok(LiteralSymanzik {
+        expression,
+        variables,
+        symbols,
+        coefficients,
+        exponents,
+    })
+}
+
+fn literal_polynomial(source: &str, name: &str) -> Result<(String, Vec<String>)> {
+    let prefix = format!("{name} = ExponentiatedPolynomial(");
     let start = source
         .lines()
-        .find(|l| l.starts_with("F = ExponentiatedPolynomial("))
-        .context("missing literal F assignment")?;
-    let fields = named_arguments(start.strip_prefix("F = ExponentiatedPolynomial(").unwrap())?;
+        .find(|l| l.starts_with(&prefix))
+        .context("missing literal polynomial assignment")?;
+    let fields = named_arguments(start.strip_prefix(&prefix).unwrap())?;
     let symbols = fields
         .get("polysymbols")
         .and_then(Value::as_array)
