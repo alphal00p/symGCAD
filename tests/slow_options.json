@@ -9,6 +9,8 @@
   "recipes": {
     "finiteA_6_317_7_0__2_0_1_1_1_1_0_0_1/symbolic": {
       "mathematical_sha256": "571fe589246add0b49ce786395faa2e911b9aeea741805111e18eed6ca5a5d88",
+      "original_name": "finiteA_6_317_7_0__2_0_1_1_1_1_0_0_1/symbolic",
+      "original_fixed_order": [],
       "solver": {
         "engine": "local",
         "ordering": "given",
@@ -52,6 +54,8 @@
     },
     "finiteA_6_318_7_0__0_2_1_1_1_1_0_0_1/symbolic": {
       "mathematical_sha256": "6faadc123614d010adeeeda20ad8dbc8918110a4a6f4200c7949e91c03341414",
+      "original_name": "finiteA_6_318_7_0__0_2_1_1_1_1_0_0_1/symbolic",
+      "original_fixed_order": [],
       "solver": {
         "engine": "local",
         "ordering": "given",
@@ -95,6 +99,8 @@
     },
     "finiteA_6_377_10_0__5_0_0_1_1_1_1_0_1/symbolic": {
       "mathematical_sha256": "3d7ead75ae14675b5ff72e7ee94b0039666e391b99f1260f28931a6d47572079",
+      "original_name": "finiteA_6_377_10_0__5_0_0_1_1_1_1_0_1/symbolic",
+      "original_fixed_order": [],
       "solver": {
         "engine": "local",
         "ordering": "given",
@@ -138,6 +144,8 @@
     },
     "finiteA_6_414_10_0__0_5_1_1_1_0_0_1_1/symbolic": {
       "mathematical_sha256": "58d2c6bb86583fa2227954ccdb03ba09e77d06f3571713696c4866b2d4e70255",
+      "original_name": "finiteA_6_414_10_0__0_5_1_1_1_0_0_1_1/symbolic",
+      "original_fixed_order": [],
       "solver": {
         "engine": "local",
         "ordering": "mcts",
@@ -172,6 +180,8 @@
     },
     "finiteA_7_381_10_0__4_0_1_1_1_1_1_0_1/symbolic": {
       "mathematical_sha256": "835a80d0324569221e3fdc823a438b5036b43777d04a323ad2bad0b404662e02",
+      "original_name": "finiteA_7_381_10_0__4_0_1_1_1_1_1_0_1/symbolic",
+      "original_fixed_order": [],
       "solver": {
         "engine": "local",
         "ordering": "mcts",
@@ -207,6 +217,8 @@
     },
     "finiteA_7_446_11_0__0_5_1_1_1_1_0_1_1/symbolic": {
       "mathematical_sha256": "4acb576982bcf35e00604945c8d1ac4191fa1cc00694c2b43aee6f20fca84b35",
+      "original_name": "finiteA_7_446_11_0__0_5_1_1_1_1_0_1_1/symbolic",
+      "original_fixed_order": [],
       "solver": {
         "engine": "local",
         "ordering": "given",
@@ -253,6 +265,8 @@
     },
     "finiteAx12_6_317_7_0__2_0_1_1_1_1_0_0_1/symbolic": {
       "mathematical_sha256": "8f1edb30ca8f8eb7e4ea5f36d5c9774316e4f139174c5405e6163d21ae6811af",
+      "original_name": "finiteAx12_6_317_7_0__2_0_1_1_1_1_0_0_1/symbolic",
+      "original_fixed_order": [],
       "solver": {
         "engine": "local",
         "ordering": "mcts",
@@ -287,6 +301,8 @@
     },
     "finiteAx12_6_318_7_0__0_2_1_1_1_1_0_0_1/symbolic": {
       "mathematical_sha256": "c263740a3e85326e5c2f2b0c9afc59c0607b508928e26af82c96e2dcb1705f77",
+      "original_name": "finiteAx12_6_318_7_0__0_2_1_1_1_1_0_0_1/symbolic",
+      "original_fixed_order": [],
       "solver": {
         "engine": "local",
         "ordering": "mcts",
@@ -321,6 +337,8 @@
     },
     "finiteAx12_6_377_10_0__5_0_0_1_1_1_1_0_1/symbolic": {
       "mathematical_sha256": "c64ad297dbe5e3cdc586e11a5639e367ba18464072a07209456b6762649d3470",
+      "original_name": "finiteAx12_6_377_10_0__5_0_0_1_1_1_1_0_1/symbolic",
+      "original_fixed_order": [],
       "solver": {
         "engine": "local",
         "ordering": "mcts",
@@ -355,6 +373,8 @@
     },
     "finiteAx12_6_414_10_0__0_5_1_1_1_0_0_1_1/symbolic": {
       "mathematical_sha256": "9392be6537e54ebc6dfc3991333010bede388e8a110e2d141991def4319775a3",
+      "original_name": "finiteAx12_6_414_10_0__0_5_1_1_1_0_0_1_1/symbolic",
+      "original_fixed_order": [],
       "solver": {
         "engine": "local",
         "ordering": "mcts",
@@ -389,6 +409,8 @@
     },
     "finiteAx12_7_381_10_0__4_0_1_1_1_1_1_0_1/symbolic": {
       "mathematical_sha256": "d32931d535fcfc35e965e00770bd2bd085b2e39800fe2b31e079d6df5a609864",
+      "original_name": "finiteAx12_7_381_10_0__4_0_1_1_1_1_1_0_1/symbolic",
+      "original_fixed_order": [],
       "solver": {
         "engine": "local",
         "ordering": "mcts",
@@ -424,6 +446,8 @@
     },
     "finiteAx12_7_446_11_0__0_5_1_1_1_1_0_1_1/symbolic": {
       "mathematical_sha256": "0b7d98a6bf463a26f6ac3cadb7647b21718d6549ab26c47320eac13238e470de",
+      "original_name": "finiteAx12_7_446_11_0__0_5_1_1_1_1_0_1_1/symbolic",
+      "original_fixed_order": [],
       "solver": {
         "engine": "local",
         "ordering": "mcts",
@@ -459,6 +483,8 @@
     },
     "finiteB_7_471_13_0__7_1_1_0_1_0_1_1_1/symbolic": {
       "mathematical_sha256": "84c411cd729f833d732d753e0d890a27b6178d8ab8ec64d1f99945d2480ce183",
+      "original_name": "finiteB_7_471_13_0__7_1_1_0_1_0_1_1_1/symbolic",
+      "original_fixed_order": [],
       "solver": {
         "engine": "local",
         "ordering": "mcts",
@@ -494,6 +520,8 @@
     },
     "finiteBx12_7_471_13_0__7_1_1_0_1_0_1_1_1/symbolic": {
       "mathematical_sha256": "107e3bef9e9cb774afe065420902581081bf82b968aceffbbd6a755d990640ef",
+      "original_name": "finiteBx12_7_471_13_0__7_1_1_0_1_0_1_1_1/symbolic",
+      "original_fixed_order": [],
       "solver": {
         "engine": "local",
         "ordering": "mcts",
@@ -529,6 +557,8 @@
     },
     "finiteC_6_215_11_0__6_1_1_0_1_0_1_1_0/symbolic": {
       "mathematical_sha256": "a0b91ed01489fc103fc304ec1b8c305c38893b3a51e217200e7eaf8ffd7be0e7",
+      "original_name": "finiteC_6_215_11_0__6_1_1_0_1_0_1_1_0/symbolic",
+      "original_fixed_order": [],
       "solver": {
         "engine": "local",
         "ordering": "mcts",
@@ -563,6 +593,8 @@
     },
     "finiteC_6_231_7_0__2_1_1_0_0_1_1_1_0/symbolic": {
       "mathematical_sha256": "0cab77702fd9a589d392b50dc5c6d8d9e9f987b8f5a6d26a2befe47441afaa77",
+      "original_name": "finiteC_6_231_7_0__2_1_1_0_0_1_1_1_0/symbolic",
+      "original_fixed_order": [],
       "solver": {
         "engine": "local",
         "ordering": "mcts",
@@ -597,6 +629,8 @@
     },
     "finiteC_6_470_10_0__0_5_1_0_1_0_1_1_1/symbolic": {
       "mathematical_sha256": "63c8a03aa397d39409b77f8e531051b9568387a42c963a8f36e3820737635286",
+      "original_name": "finiteC_6_470_10_0__0_5_1_0_1_0_1_1_1/symbolic",
+      "original_fixed_order": [],
       "solver": {
         "engine": "local",
         "ordering": "mcts",
@@ -631,6 +665,8 @@
     },
     "finiteC_6_476_10_0__0_0_5_1_1_0_1_1_1/symbolic": {
       "mathematical_sha256": "c2a5c3a0edab691e2b63fcafeeaa3dbdf5b934ccdf7dcc275d36d4b1e85e1548",
+      "original_name": "finiteC_6_476_10_0__0_0_5_1_1_0_1_1_1/symbolic",
+      "original_fixed_order": [],
       "solver": {
         "engine": "local",
         "ordering": "mcts",
@@ -665,6 +701,8 @@
     },
     "finiteC_7_247_10_0__4_1_1_0_1_1_1_1_0/symbolic": {
       "mathematical_sha256": "344cca991097fb240be0c86259b5941f8325fdaa909cb3e9323460762b5663f6",
+      "original_name": "finiteC_7_247_10_0__4_1_1_0_1_1_1_1_0/symbolic",
+      "original_fixed_order": [],
       "solver": {
         "engine": "local",
         "ordering": "mcts",
@@ -700,6 +738,8 @@
     },
     "finiteC_7_478_10_0__0_4_1_1_1_0_1_1_1/symbolic": {
       "mathematical_sha256": "d7b6d6f3fe58d274223bb7693e3d3c22cae30e2f5e995c66564612871a0be379",
+      "original_name": "finiteC_7_478_10_0__0_4_1_1_1_0_1_1_1/symbolic",
+      "original_fixed_order": [],
       "solver": {
         "engine": "local",
         "ordering": "mcts",
@@ -735,6 +775,8 @@
     },
     "finiteCx12_6_215_11_0__6_1_1_0_1_0_1_1_0/symbolic": {
       "mathematical_sha256": "f97b2b3c321a13e69fe6b9454843ea3b2a7a9027df22156631b14a0d97e3a071",
+      "original_name": "finiteCx12_6_215_11_0__6_1_1_0_1_0_1_1_0/symbolic",
+      "original_fixed_order": [],
       "solver": {
         "engine": "local",
         "ordering": "mcts",
@@ -769,6 +811,8 @@
     },
     "finiteCx12_6_231_7_0__2_1_1_0_0_1_1_1_0/symbolic": {
       "mathematical_sha256": "3dd9dbab3b04fe1a404d439fd48b1eb292802656d518df8ca3e70f7c716a98a9",
+      "original_name": "finiteCx12_6_231_7_0__2_1_1_0_0_1_1_1_0/symbolic",
+      "original_fixed_order": [],
       "solver": {
         "engine": "local",
         "ordering": "mcts",
@@ -803,6 +847,8 @@
     },
     "finiteCx12_6_476_10_0__0_0_5_1_1_0_1_1_1/symbolic": {
       "mathematical_sha256": "7935a07597d0a21e2e50c111eb7d15e6a59766aace66f41f681537922955095b",
+      "original_name": "finiteCx12_6_476_10_0__0_0_5_1_1_0_1_1_1/symbolic",
+      "original_fixed_order": [],
       "solver": {
         "engine": "local",
         "ordering": "mcts",
@@ -837,6 +883,8 @@
     },
     "finiteCx12_7_247_10_0__4_1_1_0_1_1_1_1_0/symbolic": {
       "mathematical_sha256": "0cf29c24bed6f1b33b6c4ceebbd30f5a0e6b81a2b8c8b2816b5f6958608d2182",
+      "original_name": "finiteCx12_7_247_10_0__4_1_1_0_1_1_1_1_0/symbolic",
+      "original_fixed_order": [],
       "solver": {
         "engine": "local",
         "ordering": "mcts",
@@ -872,6 +920,8 @@
     },
     "finiteCx12_7_478_10_0__0_4_1_1_1_0_1_1_1/symbolic": {
       "mathematical_sha256": "c7ec32209bc1a72d1df1432e8a08718cc6a16d0ebf0cc99ae79f6bda071a66f9",
+      "original_name": "finiteCx12_7_478_10_0__0_4_1_1_1_0_1_1_1/symbolic",
+      "original_fixed_order": [],
       "solver": {
         "engine": "local",
         "ordering": "mcts",
@@ -907,6 +957,8 @@
     },
     "finiteD_7_251_12_0__6_1_0_1_1_1_1_1_0/symbolic": {
       "mathematical_sha256": "f26bcbee86a5353dc13c9b8d377efcadd5d4ffbc5ff4eb18aa44fd1ab0b13dca",
+      "original_name": "finiteD_7_251_12_0__6_1_0_1_1_1_1_1_0/symbolic",
+      "original_fixed_order": [],
       "solver": {
         "engine": "local",
         "ordering": "mcts",
@@ -942,6 +994,8 @@
     },
     "finiteD_7_375_13_0__7_1_1_0_1_1_1_0_1/symbolic": {
       "mathematical_sha256": "175be59968a2ea76df051a488f0e0c7c7110de9a1b5c5dadc3e816cdbf22230b",
+      "original_name": "finiteD_7_375_13_0__7_1_1_0_1_1_1_0_1/symbolic",
+      "original_fixed_order": [],
       "solver": {
         "engine": "local",
         "ordering": "mcts",
@@ -977,6 +1031,8 @@
     },
     "test_gluza_ex33/solve/3": {
       "mathematical_sha256": "be8c1a63492b779b00404788ffdb86963f74328ced77e9b7a3bd018398d034df",
+      "original_name": "test_gluza_ex33/solve/3",
+      "original_fixed_order": [],
       "solver": {
         "engine": "local",
         "ordering": "mcts",

@@ -34,6 +34,9 @@ struct Args {
     /// Optional additional audit against the private completion aggregate.
     #[arg(long)]
     aggregate: Option<PathBuf>,
+    /// Root of a regenerated corpus containing fixed/ and symbolic/ directories.
+    #[arg(long)]
+    corpus_root: Option<PathBuf>,
     /// Portable solver recipes bound to exact classified mathematics.
     #[arg(long, default_value = "tests/slow_options.json")]
     options: PathBuf,
@@ -86,6 +89,8 @@ struct Recipes {
 #[derive(Serialize, Deserialize)]
 struct Recipe {
     mathematical_sha256: String,
+    original_name: Option<String>,
+    original_fixed_order: Vec<String>,
     solver: symgcad::config::SolverOptions,
 }
 #[derive(Clone, Serialize, Deserialize)]
@@ -94,6 +99,8 @@ struct Prepared {
     aliases: Vec<String>,
     original_input: PathBuf,
     original_input_sha256: String,
+    historical_original_input_sha256: String,
+    source_serialization_changed: bool,
     mathematical_sha256: String,
     prepared_input: PathBuf,
     prepared_input_sha256: String,
@@ -106,6 +113,8 @@ struct Prepared {
 struct Entry {
     identifier: String,
     status: String,
+    #[serde(default)]
+    verdict: Option<String>,
     cpu: Option<usize>,
     ledger: PathBuf,
     ledger_sha256: Option<String>,
@@ -254,6 +263,10 @@ fn apply_recipe(source: &Problem, c: &Classified, recipe: &Recipe) -> Result<Pro
         c.identifier
     );
     ensure!(
+        source.name == recipe.original_name && source.solver.order == recipe.original_fixed_order,
+        "regenerated original name/fixed order differs from recorded source"
+    );
+    ensure!(
         recipe.solver.checkpoint_dir.is_none(),
         "portable recipe contains a checkpoint path"
     );
@@ -369,17 +382,40 @@ fn prepare(
     );
     let mut prepared = Vec::new();
     for (index, c) in rows.iter().enumerate() {
-        let original = c.original_input.canonicalize()?;
-        ensure!(
-            hash(&original)? == c.original_input_sha256,
-            "original file changed: {}",
-            c.identifier
-        );
+        let original = if let Some(root) = &args.corpus_root {
+            root.join(
+                c.original_input
+                    .strip_prefix("artifacts/corpus")
+                    .context("classified source is outside the portable corpus layout")?,
+            )
+        } else {
+            c.original_input.clone()
+        }
+        .canonicalize()?;
+        let actual_source_hash = hash(&original)?;
         let source = Problem::from_toml(&fs::read_to_string(&original)?)?;
         ensure!(
             math_hash(&source)? == c.mathematical_sha256,
             "original mathematics mismatch"
         );
+        if let Some(book) = recipes {
+            // Name and explicit fixed order are not part of the normalized
+            // polynomial key. They must remain bound even if TOML defaults change.
+            let recipe = book
+                .recipes
+                .get(&c.identifier)
+                .context("missing classified slow-case recipe")?;
+            ensure!(
+                source.name == recipe.original_name
+                    && source.solver.order == recipe.original_fixed_order,
+                "regenerated original name/fixed order mismatch"
+            );
+        } else {
+            ensure!(
+                actual_source_hash == c.original_input_sha256,
+                "recipe export requires the historically hashed original source"
+            );
+        }
         let mut p = source.clone();
         let selection = if let Some(path) = overrides.get(&c.identifier) {
             let text = fs::read_to_string(path)?;
@@ -449,8 +485,11 @@ fn prepare(
             cases: vec![input.clone()],
             output_dir: dir.join("results"),
             equivalence_manifests: vec![
-                Path::new("artifacts/corpus/fixed/equivalence.json").canonicalize()?,
-                Path::new("artifacts/corpus/symbolic/equivalence.json").canonicalize()?,
+                original
+                    .parent()
+                    .context("source lacks corpus directory")?
+                    .join("equivalence.json")
+                    .canonicalize()?,
             ],
             variants: vec![Variant::default()],
             repeats: 1,
@@ -476,7 +515,9 @@ fn prepare(
             identifier: c.identifier.clone(),
             aliases: c.aliases.clone(),
             original_input: original,
-            original_input_sha256: c.original_input_sha256.clone(),
+            original_input_sha256: actual_source_hash.clone(),
+            historical_original_input_sha256: c.original_input_sha256.clone(),
+            source_serialization_changed: actual_source_hash != c.original_input_sha256,
             mathematical_sha256: c.mathematical_sha256.clone(),
             prepared_input: input.clone(),
             prepared_input_sha256: hash(&input)?,
@@ -564,6 +605,177 @@ fn late_verify(
         "proof_unchanged":same,"verified":verified,"process":process}}),
     )?;
     Ok(Some(path))
+}
+
+fn count_cells<'de, D: serde::Deserializer<'de>>(d: D) -> std::result::Result<usize, D::Error> {
+    struct Counter;
+    impl<'de> serde::de::Visitor<'de> for Counter {
+        type Value = usize;
+        fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+            f.write_str("cell array")
+        }
+        fn visit_seq<A: serde::de::SeqAccess<'de>>(
+            self,
+            mut a: A,
+        ) -> std::result::Result<usize, A::Error> {
+            let mut n = 0;
+            while a.next_element::<serde::de::IgnoredAny>()?.is_some() {
+                n += 1;
+            }
+            Ok(n)
+        }
+    }
+    d.deserialize_seq(Counter)
+}
+#[derive(Deserialize)]
+struct ProofHeader {
+    status: String,
+    problem: Problem,
+    order: Vec<String>,
+    #[serde(deserialize_with = "count_cells")]
+    cells: usize,
+}
+fn proof_and_check(
+    result: &Path,
+    result_hash: &str,
+    verification: &Path,
+    verification_hash: &str,
+    mathematical_hash: &str,
+    original: &Problem,
+) -> Result<bool> {
+    ensure!(hash(result)? == result_hash, "result hash mismatch");
+    ensure!(
+        hash(verification)? == verification_hash,
+        "verification hash mismatch"
+    );
+    let check: Value = serde_json::from_reader(fs::File::open(verification)?)?;
+    if check["verified"] != true {
+        return Ok(false);
+    }
+    let proof: ProofHeader =
+        serde_json::from_reader(std::io::BufReader::new(fs::File::open(result)?))?;
+    ensure!(
+        proof.status == "complete_generic",
+        "verification refers to incomplete result"
+    );
+    ensure!(
+        math_hash(&proof.problem)? == mathematical_hash && proof.problem.name == original.name,
+        "verified proof does not cover the original problem"
+    );
+    let mut ordered = proof.problem.clone();
+    ordered.solver.order = proof.order.clone();
+    ordered.validate()?;
+    ensure!(
+        proof.order.len() == original.variables.len()
+            && (original.solver.order.is_empty() || original.solver.order == proof.order),
+        "verified proof changes the original fixed order"
+    );
+    ensure!(
+        check["cells"].as_u64() == Some(proof.cells as u64),
+        "verification cell count mismatch"
+    );
+    Ok(true)
+}
+fn audit_verdict(prepared: &Prepared, entry: &Entry, executable_hash: &str) -> Result<String> {
+    if entry.status != "finished" {
+        return Ok("infrastructure_failed".into());
+    }
+    ensure!(
+        entry.ledger_sha256.as_deref() == Some(hash(&entry.ledger)?.as_str()),
+        "ledger hash mismatch"
+    );
+    let report: CompletionReport = serde_json::from_reader(fs::File::open(&entry.ledger)?)?;
+    let run = report.runs.last().context("campaign has no attempt")?;
+    ensure!(
+        run.executable_sha256 == executable_hash,
+        "ledger executable mismatch"
+    );
+    let Some(trial) = run.trials.last() else {
+        return Ok("incomplete".into());
+    };
+    if trial.result_status.as_deref() != Some("complete_generic") {
+        ensure!(
+            !trial.verified,
+            "ledger claims verification of incomplete result"
+        );
+        return Ok("incomplete".into());
+    }
+    let original = Problem::from_toml(&fs::read_to_string(&prepared.original_input)?)?;
+    ensure!(
+        hash(&prepared.original_input)? == prepared.original_input_sha256,
+        "original input changed after preparation"
+    );
+    let input = trial.input_file.as_ref().context("missing trial input")?;
+    ensure!(
+        trial.input_sha256.as_deref() == Some(hash(input)?.as_str()),
+        "trial input hash mismatch"
+    );
+    let input_problem = Problem::from_toml(&fs::read_to_string(input)?)?;
+    ensure!(
+        math_hash(&input_problem)? == prepared.mathematical_sha256
+            && input_problem.name == original.name
+            && (original.solver.order.is_empty()
+                || input_problem.solver.order == original.solver.order),
+        "trial changes original mathematics or fixed order"
+    );
+    let result_hash = trial
+        .result_sha256
+        .as_deref()
+        .context("missing result hash")?;
+    if trial.verified {
+        ensure!(
+            trial
+                .verification
+                .as_ref()
+                .is_some_and(|p| p.status == "completed" && p.exit_code == Some(0)),
+            "successful verification process missing"
+        );
+        if proof_and_check(
+            &trial.result_file,
+            result_hash,
+            &trial.verification_file,
+            trial
+                .verification_sha256
+                .as_deref()
+                .context("missing verification hash")?,
+            &prepared.mathematical_sha256,
+            &original,
+        )? {
+            return Ok("verified".into());
+        }
+    }
+    if let Some(path) = &entry.supplemental {
+        let v: Value = serde_json::from_reader(fs::File::open(path)?)?;
+        let s = &v["independent"];
+        if s["verified"] == true {
+            ensure!(
+                v["executable_sha256"] == executable_hash
+                    && s["proof_unchanged"] == true
+                    && s["process"]["status"] == "completed"
+                    && s["process"]["exit_code"] == 0
+                    && s["result"].as_str().map(Path::new) == Some(trial.result_file.as_path())
+                    && s["result_sha256"] == result_hash,
+                "supplemental provenance mismatch"
+            );
+            if proof_and_check(
+                &trial.result_file,
+                result_hash,
+                Path::new(
+                    s["verification"]
+                        .as_str()
+                        .context("missing supplemental verification")?,
+                ),
+                s["verification_sha256"]
+                    .as_str()
+                    .context("missing supplemental verification hash")?,
+                &prepared.mathematical_sha256,
+                &original,
+            )? {
+                return Ok("verified".into());
+            }
+        }
+    }
+    Ok("incomplete".into())
 }
 
 fn main() -> Result<()> {
@@ -659,6 +871,7 @@ fn main() -> Result<()> {
         let recipes = prepared
             .iter()
             .map(|p| -> Result<_> {
+                let source = Problem::from_toml(&fs::read_to_string(&p.original_input)?)?;
                 let mut solver =
                     Problem::from_toml(&fs::read_to_string(&p.prepared_input)?)?.solver;
                 solver.checkpoint_dir = None;
@@ -666,6 +879,8 @@ fn main() -> Result<()> {
                     p.identifier.clone(),
                     Recipe {
                         mathematical_sha256: p.mathematical_sha256.clone(),
+                        original_name: source.name,
+                        original_fixed_order: source.solver.order,
                         solver,
                     },
                 ))
@@ -728,6 +943,7 @@ fn main() -> Result<()> {
                 .map(|p| Entry {
                     identifier: p.identifier.clone(),
                     status: "pending".into(),
+                    verdict: None,
                     cpu: None,
                     ledger: p.ledger.clone(),
                     ledger_sha256: None,
@@ -752,10 +968,12 @@ fn main() -> Result<()> {
             );
         } else {
             e.status = "pending".into();
+            e.verdict = None;
         }
     }
     atomic(&journal_path, &journal)?;
     let queue = Arc::new(Mutex::new(journal));
+    let executable_digest = hash(&exe)?;
     let next = AtomicUsize::new(0);
     let started = Instant::now();
     std::thread::scope(|scope| {
@@ -765,6 +983,7 @@ fn main() -> Result<()> {
             let prepared = &prepared;
             let exe = &exe;
             let journal_path = &journal_path;
+            let executable_digest = &executable_digest;
             let seconds = args.verification_seconds;
             let memory = args.memory_mib;
             scope.spawn(move || {
@@ -810,13 +1029,24 @@ fn main() -> Result<()> {
                         }
                         Err(e) => {
                             entry.status = "infrastructure_failed".into();
+                            entry.verdict = Some("infrastructure_failed".into());
                             entry.error = Some(format!("{e:#}"));
                         }
                     }
+                    if entry.status == "finished" {
+                        match audit_verdict(&prepared[i], entry, executable_digest) {
+                            Ok(v) => entry.verdict = Some(v),
+                            Err(error) => {
+                                entry.verdict = Some("infrastructure_failed".into());
+                                entry.error = Some(format!("evidence audit failed: {error:#}"));
+                            }
+                        }
+                    }
                     println!(
-                        "{}: {} ({:.3}s)",
+                        "{}: {} / {} ({:.3}s)",
                         entry.identifier,
                         entry.status,
+                        entry.verdict.as_deref().unwrap_or("pending"),
                         t.elapsed().as_secs_f64()
                     );
                     if let Err(e) = atomic(journal_path, &*j) {
@@ -827,9 +1057,35 @@ fn main() -> Result<()> {
             });
         }
     });
+    let mut j = queue.lock().unwrap();
+    let mut counts = BTreeMap::<String, usize>::new();
+    for (p, e) in prepared.iter().zip(&mut j.entries) {
+        let verdict = match audit_verdict(p, e, &executable_digest) {
+            Ok(v) => v,
+            Err(error) => {
+                e.error = Some(format!("evidence audit failed: {error:#}"));
+                "infrastructure_failed".into()
+            }
+        };
+        *counts.entry(verdict.clone()).or_default() += 1;
+        e.verdict = Some(verdict);
+    }
+    atomic(&journal_path, &*j)?;
+    atomic(
+        &output.join("summary.json"),
+        &json!({"schema_version":1,"counts":counts,
+        "elapsed_seconds":started.elapsed().as_secs_f64(),"entries":j.entries}),
+    )?;
+    let verified = counts.get("verified").copied().unwrap_or(0);
     println!(
-        "queue finished in{:.3}s; mathematical completion is recorded only by independent verified ledger evidence",
-        started.elapsed().as_secs_f64()
+        "slow suite: {verified}/{} verified; {} incomplete; {} infrastructure failures",
+        prepared.len(),
+        counts.get("incomplete").unwrap_or(&0),
+        counts.get("infrastructure_failed").unwrap_or(&0)
+    );
+    ensure!(
+        verified == prepared.len(),
+        "slow suite has unverified original problems; preserved all attempt evidence"
     );
     Ok(())
 }
@@ -907,6 +1163,8 @@ mod tests {
         };
         let mut recipe = Recipe {
             mathematical_sha256: c.mathematical_sha256.clone(),
+            original_name: source.name.clone(),
+            original_fixed_order: source.solver.order.clone(),
             solver: p.solver,
         };
         let result = apply_recipe(&source, &c, &recipe)?;
@@ -921,12 +1179,143 @@ mod tests {
         recipe.solver.checkpoint_dir = Some("/private/cache".into());
         assert!(apply_recipe(&source, &c, &recipe).is_err());
         recipe.solver.checkpoint_dir = None;
+        let mut renamed = source.clone();
+        renamed.name = Some("different original".into());
+        assert!(apply_recipe(&renamed, &c, &recipe).is_err());
+        let mut unfixed = source.clone();
+        unfixed.solver.order.clear();
+        assert!(apply_recipe(&unfixed, &c, &recipe).is_err());
         let mut nonhomogeneous = source.clone();
         nonhomogeneous.split[0] = "x0-x1+1".into();
         let mut changed = c.clone();
         changed.mathematical_sha256 = math_hash(&nonhomogeneous)?;
         recipe.mathematical_sha256 = changed.mathematical_sha256.clone();
         assert!(apply_recipe(&nonhomogeneous, &changed, &recipe).is_err());
+        Ok(())
+    }
+    #[test]
+    fn evidence_audit_rejects_negative_checks_changed_hashes_counts_and_domains() -> Result<()> {
+        let dir = std::env::temp_dir().join(format!(
+            "symgcad-slow-evidence-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)?
+                .as_nanos()
+        ));
+        fs::create_dir(&dir)?;
+        let p = Problem::from_toml("name='original'\nvariables=['x']\nconstraints=['x>0']")?;
+        let result = dir.join("result.json");
+        let verification = dir.join("verification.json");
+        // Protocol test only: this is not a mathematical proof fixture.
+        atomic(
+            &result,
+            &json!({"status":"complete_generic","problem":p,"order":["x"],"cells":[{}]}),
+        )?;
+        let rh = hash(&result)?;
+        atomic(&verification, &json!({"verified":false,"cells":1}))?;
+        assert!(!proof_and_check(
+            &result,
+            &rh,
+            &verification,
+            &hash(&verification)?,
+            &math_hash(&p)?,
+            &p
+        )?);
+        atomic(&verification, &json!({"verified":true,"cells":2}))?;
+        assert!(
+            proof_and_check(
+                &result,
+                &rh,
+                &verification,
+                &hash(&verification)?,
+                &math_hash(&p)?,
+                &p
+            )
+            .is_err()
+        );
+        atomic(&verification, &json!({"verified":true,"cells":1}))?;
+        assert!(
+            proof_and_check(&result, &rh, &verification, "tampered", &math_hash(&p)?, &p).is_err()
+        );
+        assert!(
+            proof_and_check(
+                &result,
+                "tampered",
+                &verification,
+                &hash(&verification)?,
+                &math_hash(&p)?,
+                &p
+            )
+            .is_err()
+        );
+        assert!(
+            proof_and_check(
+                &result,
+                &rh,
+                &verification,
+                &hash(&verification)?,
+                "different domain",
+                &p
+            )
+            .is_err()
+        );
+        fs::remove_dir_all(dir)?;
+        Ok(())
+    }
+    #[test]
+    fn finished_attempt_with_incomplete_result_has_failing_verdict() -> Result<()> {
+        let dir = std::env::temp_dir().join(format!(
+            "symgcad-slow-incomplete-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)?
+                .as_nanos()
+        ));
+        fs::create_dir(&dir)?;
+        let ledger = dir.join("ledger.json");
+        let process = json!({"status":"timeout","wall_time_secs":3600.0,"peak_rss_kib":1,
+            "exit_code":null,"stdout":"","stderr":"","output_truncated":false});
+        let mut report = json!({"schema_version":1,"mode":"completion","provenance":{},"scheduled":[],
+            "complete_verified":0,"resumed":0,"campaign_exhausted":true,"elapsed_secs":3600.0,
+            "runs":[{"identity_sha256":"id","input_sha256":"input","executable_sha256":"exe",
+                "name":"toy","aliases":[],"equivalence_sha256":null,"source":"unused","input_file":"unused",
+                "variant":"default","mode":"completion","requested_repeats":1,"status":"incomplete",
+                "solve_median_secs":null,"peak_rss_kib":1,"trials":[{"repetition":0,"status":"incomplete",
+                    "solve":process,"result_file":"unused","result_sha256":null,"result_status":"incomplete",
+                    "statistics":null,"verification":null,"verification_file":"unused","verification_sha256":null,"verified":false}]}]});
+        atomic(&ledger, &report)?;
+        let p = Prepared {
+            identifier: "toy".into(),
+            aliases: vec![],
+            original_input: "unused".into(),
+            original_input_sha256: "unused".into(),
+            historical_original_input_sha256: "unused".into(),
+            source_serialization_changed: false,
+            mathematical_sha256: "unused".into(),
+            prepared_input: "unused".into(),
+            prepared_input_sha256: "unused".into(),
+            config: "unused".into(),
+            config_sha256: "unused".into(),
+            ledger: ledger.clone(),
+            selection: json!({}),
+        };
+        let mut e = Entry {
+            identifier: "toy".into(),
+            status: "finished".into(),
+            verdict: None,
+            cpu: None,
+            ledger: ledger.clone(),
+            ledger_sha256: Some(hash(&ledger)?),
+            supplemental: None,
+            error: None,
+            wall_time_secs: Some(3600.),
+        };
+        assert_eq!(audit_verdict(&p, &e, "exe")?, "incomplete");
+        report["runs"][0]["trials"][0]["verified"] = json!(true);
+        atomic(&ledger, &report)?;
+        e.ledger_sha256 = Some(hash(&ledger)?);
+        assert!(audit_verdict(&p, &e, "exe").is_err());
+        fs::remove_dir_all(dir)?;
         Ok(())
     }
 }
