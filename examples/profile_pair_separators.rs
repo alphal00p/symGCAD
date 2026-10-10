@@ -22,6 +22,9 @@ struct Args {
     output: PathBuf,
     #[arg(long)]
     factor_guards: bool,
+    /// Earlier-coordinate polynomial L: use c*L/L(sample) as each separator.
+    #[arg(long)]
+    scale: Option<String>,
     #[arg(long, default_value_t = 60.0)]
     seconds: f64,
     #[arg(long, default_value_t = 7)]
@@ -67,6 +70,7 @@ fn probe(
     polynomials: &[Poly],
     variable: usize,
     prefix: &[Rational],
+    scale: Option<&Poly>,
 ) -> Result<Probe> {
     ensure!(polynomials.len() == 2, "two operands required");
     ensure!(
@@ -76,6 +80,20 @@ fn probe(
         "research degree/term cap"
     );
     let started = Instant::now();
+    let scale_value = if let Some(scale) = scale {
+        ensure!(
+            (variable..scale.nvars()).all(|v| scale.degree(v) == 0),
+            "separator scale depends on current or later coordinates"
+        );
+        let value = scale.replace_all(prefix);
+        ensure!(
+            value > Rational::zero(),
+            "separator scale must be positive at sample"
+        );
+        value
+    } else {
+        Rational::one()
+    };
     let fibers = polynomials
         .iter()
         .map(|p| algebra.specialize_univariate(p, variable, prefix))
@@ -125,6 +143,14 @@ fn probe(
     let construction_started = Instant::now();
     let mut edges = Vec::new();
     let mut guards = Vec::new();
+    if let Some(scale) = scale {
+        guards.push(("positive_scale".into(), scale.clone()));
+        report["separator_scale"] = json!(algebra.format(scale));
+        report["separator_scale_sample"] = json!(scale_value.to_string());
+        report["scale_obligation"] = json!(
+            "The nonzero scale guard and its positive sample sign must hold on the connected parent cell. Moving separators then remain strictly positive and ordered."
+        );
+    }
     for (position, pair) in roots.windows(2).enumerate() {
         if pair[0].polynomial == pair[1].polynomial {
             continue;
@@ -138,8 +164,13 @@ fn probe(
             "separator height cap"
         );
         let mut values = Vec::new();
+        let section = scale.map(|p| p.clone().mul_coeff(&separator / &scale_value));
         for (owner, p) in polynomials.iter().enumerate() {
-            let guard = p.replace(variable, &separator);
+            let guard = if let Some(section) = &section {
+                p.replace_with_poly(variable, section)
+            } else {
+                p.replace(variable, &separator)
+            };
             let value = guard.replace_all(prefix);
             ensure!(
                 !guard.is_zero() && !value.is_zero(),
@@ -154,7 +185,7 @@ fn probe(
         }
         edges.push(json!({"position":position,"left_owner":pair[0].polynomial,"right_owner":pair[1].polynomial,
             "left_positive_index":ordinals[&(pair[0].polynomial,pair[0].index)],"right_positive_index":ordinals[&(pair[1].polynomial,pair[1].index)],
-            "separator":separator.to_string(),"evaluation_values":values,
+            "separator":separator.to_string(),"separator_section":section.as_ref().map(|p|algebra.format(p)),"evaluation_values":values,
             "evaluation_signs":fibers.iter().map(|f|sign(&f.evaluate(&separator))).collect::<Vec<_>>() }));
     }
     report["edges"] = json!(edges);
@@ -198,7 +229,9 @@ fn work(args: &Args) -> Result<Value> {
         .iter()
         .map(|s| rational(s))
         .collect::<Result<Vec<_>>>()?;
-    let Probe { mut report, guards } = probe(&algebra, &polynomials, variable, &prefix)?;
+    let scale = args.scale.as_ref().map(|p| algebra.parse(p)).transpose()?;
+    let Probe { mut report, guards } =
+        probe(&algebra, &polynomials, variable, &prefix, scale.as_ref())?;
     report["capture_sha256"] = json!(format!("{:x}", Sha256::digest(bytes)));
     report["operand_string_sha256"] = json!(
         operands
@@ -284,6 +317,7 @@ mod tests {
             &[a.parse(p).unwrap(), a.parse(q).unwrap()],
             1,
             &[rational(sample).unwrap()],
+            None,
         )
         .unwrap()
     }
@@ -327,5 +361,42 @@ mod tests {
         let p = case("x^2+1", "(x-1)*(x-2)", "0");
         assert_eq!(p.report["eligible"], true);
         assert_eq!(p.report["edges"], json!([]));
+    }
+    #[test]
+    fn homogeneous_moving_separator_introduces_only_the_scale_boundary() {
+        let a = Algebra::new(&["s".into(), "x".into()]).unwrap();
+        let p = probe(
+            &a,
+            &[
+                a.parse("(x-s)*(x-2*s)").unwrap(),
+                a.parse("(x-4*s)*(x-6*s)").unwrap(),
+            ],
+            1,
+            &[Rational::from(2)],
+            Some(&a.parse("s").unwrap()),
+        )
+        .unwrap();
+        assert_eq!(p.report["eligible"], true);
+        assert_eq!(p.guards.len(), 3);
+        let factors =
+            factors_checked(&p.guards.into_iter().map(|(_, p)| p).collect::<Vec<_>>()).unwrap();
+        assert_eq!(factors, vec![a.parse("s").unwrap()]);
+    }
+    #[test]
+    fn moving_separator_rejects_late_axes_and_nonpositive_scale() {
+        let a = Algebra::new(&["s".into(), "x".into()]).unwrap();
+        let p = [a.parse("x-1").unwrap(), a.parse("x-3").unwrap()];
+        for scale in ["x", "s-2", "-s"] {
+            assert!(
+                probe(
+                    &a,
+                    &p,
+                    1,
+                    &[Rational::from(2)],
+                    Some(&a.parse(scale).unwrap())
+                )
+                .is_err()
+            );
+        }
     }
 }

@@ -128,3 +128,39 @@ positive-rootless member.
 - Report and raw test log: `artifacts/profile/a446-pair-separators-01/cost.json` and `tests.log`.
 - Report SHA256: `4f7207d1e730715e6a3c26ded5e82e52551a216d7a473bf5816bddc6e941a5db`.
 - Test-log SHA256: `e6939743400d0fa4b1f3a4534e7f981c0ef74971a61708d5b8fda7803b9cfaf6`.
+# Moving polynomial sections (research diagnostic)
+
+The helper additionally accepts `--scale L`, where `L` is a polynomial in earlier
+coordinates, positive at the current sample. It replaces every constant separator
+`c` by `c*L/L(sample)` and adds `L` as a nonvanishing guard. On a connected parent
+cell, this guard keeps `L` positive, so all sections remain continuous, positive
+and ordered. Guards `p(c*L/L(sample))` and `q(c*L/L(sample))` prevent the already
+delineable positive branches from crossing their separating sections. This is a
+conditional certificate argument; the diagnostic neither solves the parent-cell
+guards nor produces an original GCAD.
+
+At the same frozen A446 pair and prefix, two debug trials completed:
+
+| Scale | Evaluation guard terms (quartic / octic) | Construction seconds | Checked factor seconds |
+| --- | --- | ---: | ---: |
+| `x1` | 28 / 305–307 | 0.0982 | 0.0243 |
+| `1+x1+x2` | 68 / 596 | 0.3162 | 0.0422 |
+
+Each trial includes four separator edges and the additional scale guard. The
+first has nine single-factor guards; the second quartic evaluations each have two
+factors. Construction is more expensive than the earlier constant substitutions;
+these measurements establish no overall speedup. `x1` reduces this operand's
+guard support, and moving sections can preserve an ordering over a scale family:
+the exact regression with roots `s,2s,4s,6s` introduces only the boundary `s=0`.
+No production moving-section option has been added.
+
+Eight helper tests pass, including exact substitution and rejection of a scale
+depending on the current/later coordinate or nonpositive at the sample. The
+immutable helper, source, reports and logs are under
+`artifacts/profile/moving-pair-separators-01/`. Source SHA-256:
+`8b20df7f43777382e659a40301e6ac3e0228e03c280594f125e0cedcf529150d`;
+executable SHA-256:
+`c17cfea4683f69dff4c5dcfbdf4644fa69c86028faf807d8f31b6ae81a5d2817`.
+Report hashes are `b2157ea8c8eb326fa9d93e4ea6b75ae54555ad18460dfdae23b57de618f99329`
+(`x1.json`) and `d5485e4cf427605f2ea5dd77861b3cd95507d70d548bcd391aa319ac202956c4`
+(`sum.json`). Both use CPU 1, a 60-second external deadline and 4 GiB memory cap.
