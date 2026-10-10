@@ -9,7 +9,7 @@ The audited checkpoint solves **303/331 distinct original problems**, including 
 Requires Git and Nix with flakes enabled. External dependencies are fetched at exact revisions; they are not included in this repository.
 
 ```sh
-git clone git@github.com:alphal00p/symGCAD.git
+git clone --branch codex/symgcad git@github.com:alphal00p/symGCAD.git
 cd symGCAD
 scripts/bootstrap-deps.sh
 nix develop
@@ -78,4 +78,4 @@ Later certified reductions complete fixed A381/Ax381 with 836 cells each, negati
 - [Reference reproduction](reference/README.md): corpus extraction, native adapter and audit protocols.
 - [Implementation plan](SYMGCAD_PLAN.MD) and [algorithm research](ALGORITHM_RESEARCH.md): design, evidence and remaining work.
 
-Run the fast regression suite with `scripts/test.sh fast --locked`. The separate slow corpus runner is `scripts/test.sh slow --help`; it retains unresolved original problems with explicit time and memory limits. The classification distinguishes historical verified completions from unresolved workloads; it does not promise that all historically completed cases run quickly. Research helpers under `examples/` have additional focused tests. Large proof files, private licenses and external source checkouts remain ignored by Git.
+Run the fast regression suite with `scripts/test.sh fast --locked`. The separate [slow corpus runner](reference/SLOW_SUITE.md) is `scripts/test.sh slow --help`; it gives each unresolved original up to one hour, with explicit memory limits and independent verification. The classification distinguishes historical verified completions from unresolved workloads; it does not promise that all historically completed cases run quickly. Research helpers under `examples/` have additional focused tests. Large proof files, private licenses and external source checkouts remain ignored by Git.
