@@ -286,3 +286,35 @@ discriminant capture; this is not a completed-operation timing. Gluza's
 binary-resultant and base-univariate-basis flags remain disabled, as in the
 previous run. The concurrent 12 GiB A377 continuation brings the declared
 native allocation to 62 GiB. This launch adds no completion credit.
+
+## Terminal 50 GiB, two-hour outcome
+
+The original continuation finished at **17:51:02.784 UTC** with a
+**7,200.039707-second timeout**, **3,995,344 KiB peak RSS**, no result and no
+verification. The supervised bench, public solver, worker and their known
+process groups were all gone before releasing the allocation. No restart
+followed this result.
+
+The final cache still contains **4,685 completed native records**, totaling
+**18,699,827 bytes**. Every inherited file is byte-identical; **zero new
+completed operations** were saved. The bounded terminal audit rechecked the
+original mathematics, order, anchor, explicit solver options, executable,
+native keys, output/multiplicity checksums, full map and domain fingerprint.
+The last published request remains the same 2,209-term `x4` discriminant,
+with no completed record for its key. Its stale 13.965687-second progress
+snapshot does not establish how long any particular native phase ran.
+
+Evidence under `artifacts/research/gluza33-x5-last-warm50g-two-hour-05/`:
+
+| Artifact | SHA-256 |
+| --- | --- |
+| `results/ledger.json` | `e37dbdb770cb4f8c12ad439aa7d8d6bf544ed5ae4b083e38ee51820539fadbbc` |
+| `final-audit.json` | `5acf6d1714c0e21a7aaff51b2a6ef85c1a4703654e0192f3a228aa3229aad400` |
+| `final-cache-manifest.json` | `a86a8e883aa8665975364d26290672a7c172b0210d2fcb8fd9e845cf0a1ef55b` |
+| `final-capture.json` | `aab900ab332f90a1d0c9d32ec73cdd65b88d64b22a45d20e23ef77e33aa70289` |
+| `terminal-process-audit.json` | `742450e977b3926bd7faffb7cbb4dad178d6bac2d28939e24d56a1d610ab2238` |
+
+This is an incomplete warm original-problem attempt with its earlier costs
+retained separately. The larger memory allowance did not produce a completed
+solve within two hours. It supplies no speed ratio, proof, or coverage credit;
+the original total remains **303/331 verified**.
