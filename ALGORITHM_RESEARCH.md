@@ -563,3 +563,31 @@ caps weight/center heights at 256 bits and coefficient heights at 512 bits.
 Replay validates the original bound orientations, valid variable index,
 positive weight, exact identity and strict residual independently of discovery.
 The earlier binomial certificate representation and replay remain unchanged.
+
+## Bounded parameterized quadratic nonvanishing
+
+A polynomial `p=a*z^2+b*z+c` has the sign of a on the entire real z axis if a
+is nonzero with known sign and `4*a*c-b^2` is strictly positive. The domain
+portfolio now records those two independent existing DomainCertificates in a
+typed `QuadraticNoRealRoots` proof. Replay extracts all three coefficients,
+reconstructs p exactly, recomputes the signed discriminant, and verifies both
+children against the same independently derived original box. A zero or merely
+nonnegative discriminant bound is insufficient.
+
+This is a single proof layer. Discovery disables the quadratic member in child
+options; replay rejects either child if it is another quadratic proof before
+recursing. All older methods run first. The fresh candidate limit is four, the
+hard limit is sixteen, and omitted historical options decode to zero. Input
+caps are 128 terms, sixteen active variables, degree 32 per axis and 512-bit
+rational coefficients. The product estimate and discriminant term count are
+capped at 4096; discriminant coefficients are capped at 2048 bits.
+
+The research scan of actual physical elliptic endpoint checkpoints found 1,904
+distinct factors. Of 58 eligible multivariate factors, the previous portfolio
+certified seven; this nonrecursive rule certified seven more, including four
+purely kinematic factors before pp4 projection. The additional 68 candidate
+axis attempts cost 0.0233 seconds in the retained debug scan, whose total wall
+time was 0.164 seconds. Full independently checked child certificates and source
+checkpoint paths are in `artifacts/research/physical-quadratic-guards-01/report.json`.
+These are prospective nonvanishing removals, not a completed original CAD or a
+runtime benchmark.

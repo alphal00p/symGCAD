@@ -110,3 +110,33 @@ strictly positive on the original domain. This enables the first reduction;
 the subsequent endpoint problem still requires a completed proof. The exact
 endpoint factor identities and the suggested x3,x1,x0,x5,x4 lifting order are
 documented in [the endpoint audit](PHYSICAL_ENDPOINT_FACTORS.md).
+
+The b8139e0 original-problem runs confirmed a real x4 peel. With x6 anchored,
+the global endpoint projection completed eight stages, but the process then
+exhausted 4 GiB after 145.95 seconds without an output. Its exact failure phase
+after projection is unknown because lifting progress was not enabled. The
+local-base counterpart timed out after 180.04 seconds, using 76 MiB and visiting
+566,945 speculative nodes. An x3-anchor alternative with larger caches also
+timed out: its release promotion reached 2,654,747 speculative nodes in 180.04
+seconds with no completed proof. That promotion reused completed algebra
+checkpoints, so it is not a cold runtime comparison. These failures remain in
+`artifacts/research/physical-affine-square-x6-global-04`,
+`physical-affine-square-x6-local-05`, `physical-affine-square-x3-local-06` and
+`physical-affine-square-x3-release-07` beneath `artifacts/research`.
+
+One exact remaining opportunity is the constant coefficient of A in x0:
+
+```text
+C = (x1+x3+1)^2 - pp4*(x1+x3)
+  = (x1+x3-1)^2 + (4-pp4)*(x1+x3).
+```
+
+The two forms are verified by a zero Symbolica difference in
+`core-structural-identities-01/physical-positive-endpoint-result.json`. Viewed
+as a quadratic in x1, C has leading coefficient 1 and discriminant
+`pp4*(pp4-4)<0` on the original box. The bounded nonrecursive quadratic rule
+proves this using the existing Bernstein certificate for the negative
+discriminant; it needs no new multi-variable square search. A scan of the
+actual retained factors found six further valid applications, four involving
+only s and pp4. This establishes concrete pruning opportunities; the original
+physical decomposition remains unresolved.

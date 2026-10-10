@@ -112,6 +112,9 @@ pub struct CertificateOptions {
     /// Bounded binomial/affine-square attempts; zero preserves the older portfolio.
     #[serde(default)]
     pub square_residual_candidates: usize,
+    /// Nonrecursive quadratic no-real-root attempts; historical proofs omit it.
+    #[serde(default)]
+    pub quadratic_no_real_roots_candidates: usize,
 }
 
 fn default_sturm_degree() -> usize {
@@ -129,12 +132,17 @@ impl Default for CertificateOptions {
             work_limit: 1_000_000,
             univariate_sturm_degree: default_sturm_degree(),
             square_residual_candidates: 16,
+            quadratic_no_real_roots_candidates: 4,
         }
     }
 }
 
 impl CertificateOptions {
     fn validate(&self) -> Result<()> {
+        ensure!(
+            self.quadratic_no_real_roots_candidates <= 16,
+            "quadratic no-real-root candidates are capped at 16"
+        );
         ensure!(
             self.square_residual_candidates <= 64,
             "square residual candidates are capped at 64"
@@ -201,6 +209,14 @@ pub enum CertificateMethod {
         weight: String,
         center: String,
         residual: String,
+    },
+    /// On the original box, a has the recorded sign and 4ac-b^2 is strictly
+    /// positive. Hence a*z^2+b*z+c has no real roots and has the sign of a.
+    /// Both children must use other methods: the maximum quadratic depth is one.
+    QuadraticNoRealRoots {
+        variable: usize,
+        leading: Box<DomainCertificate>,
+        negative_discriminant: Box<DomainCertificate>,
     },
     Polya {
         order: u32,
@@ -324,6 +340,9 @@ pub fn certify_nonzero(
         )));
     }
     if let Some((sign, method)) = square_residual(algebra, polynomial, domain, options)? {
+        return Ok(Some(make(sign, method)));
+    }
+    if let Some((sign, method)) = quadratic_no_real_roots(algebra, polynomial, domain, options)? {
         return Ok(Some(make(sign, method)));
     }
     Ok(None)
@@ -606,6 +625,59 @@ pub fn verify_certificate(
                 "affine square residual identity does not reconstruct the polynomial"
             );
             coefficient_sign(&residual, &positive) == Some(1)
+        }
+        CertificateMethod::QuadraticNoRealRoots {
+            variable,
+            leading,
+            negative_discriminant,
+        } => {
+            ensure!(
+                certificate.limits.quadratic_no_real_roots_candidates > 0,
+                "quadratic no-real-root certificate is disabled"
+            );
+            // Reject nested variants before recursing into either child. This
+            // enforces a proof-depth cap independently of discovery settings.
+            ensure!(
+                !matches!(
+                    leading.method,
+                    CertificateMethod::QuadraticNoRealRoots { .. }
+                ) && !matches!(
+                    negative_discriminant.method,
+                    CertificateMethod::QuadraticNoRealRoots { .. }
+                ),
+                "nested quadratic no-real-root certificates exceed depth one"
+            );
+            let (a, b, c, minus_d) =
+                quadratic_no_root_parts(polynomial, *variable, certificate.limits.max_terms)?
+                    .ok_or_else(|| {
+                        anyhow::anyhow!(
+                            "quadratic no-real-root polynomial exceeds degree or work caps"
+                        )
+                    })?;
+            let z = algebra.parse(&algebra.names[*variable])?;
+            ensure!(
+                &(&a * &z) * &z + &b * &z + c == *polynomial,
+                "quadratic coefficient identity does not reconstruct the polynomial"
+            );
+            ensure!(
+                a.degree(*variable) == 0 && minus_d.degree(*variable) == 0,
+                "quadratic coefficient proofs depend on their fiber axis"
+            );
+            verify_certificate(
+                algebra,
+                &a,
+                original_constraints,
+                excluded_sign_constraints,
+                leading,
+            )?;
+            verify_certificate(
+                algebra,
+                &minus_d,
+                original_constraints,
+                excluded_sign_constraints,
+                negative_discriminant,
+            )?;
+            leading.sign == certificate.sign && negative_discriminant.sign == 1
         }
         CertificateMethod::Polya { order } => {
             ensure!(
@@ -950,6 +1022,123 @@ fn square_residual(
                 }
             }
         }
+    }
+    Ok(None)
+}
+
+const QUADRATIC_NO_ROOT_MAX_TERMS: usize = 128;
+const QUADRATIC_NO_ROOT_MAX_VARIABLES: usize = 16;
+const QUADRATIC_NO_ROOT_MAX_AXIS_DEGREE: u32 = 32;
+const QUADRATIC_NO_ROOT_PRODUCT_BUDGET: usize = 4096;
+const QUADRATIC_NO_ROOT_INPUT_HEIGHT: u64 = 512;
+const QUADRATIC_NO_ROOT_OUTPUT_HEIGHT: u64 = 2048;
+
+fn quadratic_coefficient(p: &Poly, variable: usize, degree: u32) -> Poly {
+    let mut out = p.zero();
+    for (c, powers) in p.coefficients.iter().zip(p.exponents_iter()) {
+        if powers[variable] == degree {
+            let mut powers = powers.to_vec();
+            powers[variable] = 0;
+            out.append_monomial(c.clone(), &powers);
+        }
+    }
+    out
+}
+
+fn quadratic_no_root_input_bounded(p: &Poly, max_terms: usize) -> bool {
+    p.nterms() <= max_terms.min(QUADRATIC_NO_ROOT_MAX_TERMS)
+        && support(p).len() <= QUADRATIC_NO_ROOT_MAX_VARIABLES
+        && (0..p.nvars()).all(|v| p.degree(v) <= QUADRATIC_NO_ROOT_MAX_AXIS_DEGREE)
+        && p.coefficients
+            .iter()
+            .all(|c| rational_height(c) <= QUADRATIC_NO_ROOT_INPUT_HEIGHT)
+}
+
+/// Exact coefficient extraction and signed discriminant. The degree/product
+/// caps are checked before polynomial multiplication and by replay as well.
+fn quadratic_no_root_parts(
+    p: &Poly,
+    variable: usize,
+    max_terms: usize,
+) -> Result<Option<(Poly, Poly, Poly, Poly)>> {
+    ensure!(
+        variable < p.nvars(),
+        "invalid quadratic no-real-root coordinate"
+    );
+    if p.degree(variable) != 2 || !quadratic_no_root_input_bounded(p, max_terms) {
+        return Ok(None);
+    }
+    let a = quadratic_coefficient(p, variable, 2);
+    let b = quadratic_coefficient(p, variable, 1);
+    let c = quadratic_coefficient(p, variable, 0);
+    let products = a
+        .nterms()
+        .saturating_mul(c.nterms())
+        .saturating_add(b.nterms().saturating_mul(b.nterms()));
+    if products > QUADRATIC_NO_ROOT_PRODUCT_BUDGET {
+        return Ok(None);
+    }
+    let minus_d = (&a * &c).mul_coeff(Rational::from(4)) - &b * &b;
+    if minus_d.nterms() > max_terms.min(QUADRATIC_NO_ROOT_PRODUCT_BUDGET)
+        || minus_d
+            .coefficients
+            .iter()
+            .any(|c| rational_height(c) > QUADRATIC_NO_ROOT_OUTPUT_HEIGHT)
+    {
+        return Ok(None);
+    }
+    Ok(Some((a, b, c, minus_d)))
+}
+
+fn quadratic_no_real_roots(
+    algebra: &Algebra,
+    polynomial: &Poly,
+    domain: &Domain,
+    options: &CertificateOptions,
+) -> Result<Option<(i8, CertificateMethod)>> {
+    if options.quadratic_no_real_roots_candidates == 0
+        || !quadratic_no_root_input_bounded(polynomial, options.max_terms)
+    {
+        return Ok(None);
+    }
+    let mut leaf_options = options.clone();
+    leaf_options.quadratic_no_real_roots_candidates = 0;
+    let mut attempts = 0;
+    let mut budget = ProofBudget::new(options);
+    for variable in 0..algebra.names.len() {
+        if polynomial.degree(variable) != 2 {
+            continue;
+        }
+        if attempts >= options.quadratic_no_real_roots_candidates
+            || !budget.spend(polynomial.nterms().saturating_mul(polynomial.nterms()))
+        {
+            break;
+        }
+        attempts += 1;
+        let Some((a, _, _, minus_d)) =
+            quadratic_no_root_parts(polynomial, variable, options.max_terms)?
+        else {
+            continue;
+        };
+        let Some(leading) = certify_nonzero(algebra, &a, domain, &leaf_options)? else {
+            continue;
+        };
+        let Some(negative_discriminant) =
+            certify_nonzero(algebra, &minus_d, domain, &leaf_options)?
+        else {
+            continue;
+        };
+        if negative_discriminant.sign != 1 {
+            continue;
+        }
+        return Ok(Some((
+            leading.sign,
+            CertificateMethod::QuadraticNoRealRoots {
+                variable,
+                leading: Box::new(leading),
+                negative_discriminant: Box::new(negative_discriminant),
+            },
+        )));
     }
     Ok(None)
 }
