@@ -461,3 +461,110 @@ alone provide a reconstruction candidate or independent verification.
 Neither native arithmetic nor the bounded encoding attempts have yet
 completed `Disc(H0)`. The larger integer-index image benchmark remains a
 reviewed proposal only.
+
+## Exact integer image profiler: bounded negative result
+
+`examples/profile_collision_index.rs` now measures the proposed polynomial
+matrix at individual integer values of `s`. It imports the research gate's
+bounded parser and replay routines, authenticates the complete ancestry,
+capture and signed content bundle, then reconstructs both `H` and its
+content identity before every image. There is no production dependency on
+this example. Parameter magnitude is at most 64. Evaluation height and
+integer coefficient `l1` bounds are checked before powers and matrix
+allocation; dimension is at most 125, entries at most 15,625, entry height
+at most 4,096 bits, and a conservative minor/determinant bound at most
+600,000 bits. Two matrices at the worst minor height must fit a two-GiB
+integer-payload estimate; the four-GiB worker limit additionally bounds
+allocator and native arithmetic overhead.
+
+The determinant call is the existing Symbolica `Matrix<Z>::det`, using
+fraction-free Bareiss elimination, exact division and pivot-sign tracking.
+The helper retains the declared degree even at exceptional parameter
+points. It never cancels a numerical zero denominator. Small exact tests
+compare against independently computed native resultants/discriminants,
+including a collision square, a pivot swap, signed nonmonic input,
+rational column scaling, and leading-degree loss. An initial test wrongly
+declared degree two for a degree-one input; its failure is retained and
+the corrected comparisons explicitly assert the native input degree.
+
+The three authorized baseline images used one frozen helper, CPU12 and
+4 GiB, with a separate 60-second worker and 75-second outer deadline for
+each point. All seven source-file hashes remained unchanged.
+
+| Integer `s` | Outcome | Process seconds | Peak RSS, KiB |
+|---|---|---:|---:|
+| 5 | timeout during Bareiss; no index value | 60.032161190 | 127,100 |
+| 6 | timeout during Bareiss; no index value | 60.029359954 | 127,464 |
+| 10 | timeout during Bareiss; no index value | 60.033089569 | 129,632 |
+
+Reports are `artifacts/research/a377-collision-index-images-01/s{5,6,10}.json`,
+with respective SHA values
+`52adcab7e31e33d7fde9bbb16c329cf58396be91765867e41d14826b17629265`,
+`e5216304e1624d470df9024b2e194fe4a640e18b741c906ea7afc5a06c8b849d`,
+and `bb289b4c699857cc1fa7a971a978dddbcd201958842d7555a32cf55b28da78b7`.
+The baseline binary SHA is
+`220a5422b85a38f909a00481684bc240bac7051b504321d5e0ca417a792cefba`;
+`artifacts/research/collision-index-build-01/` preserves its source/library
+manifest, passing test log, and initial failed fixture log. Those baseline
+progress files retain the failed stage only. The next helper version also
+saves matrix bounds and construction timing before the determinant call.
+This result does not support a 4,341-image interpolation campaign using
+the measured native Bareiss route. It does not rule out other exact
+structured or modular determinant methods.
+
+## Checked constant-shift identity
+
+A separate algebra-only extension checks the proposed proportionality of
+`a(0,z),b(0,z)`, without altering any running input or evaluating a new
+discriminant. On the actual ancestors it found and reconstructed
+
+```
+theta0 = 5/18,
+-18*b - 5*a = s*B0,
+18^496*C0 = s^496*C_shift.
+```
+
+`B0` has 13 terms, degrees `(s,z)=(2,4)`, and maximum coefficient height
+55 bits. The shifted matrix's first 32 columns are
+`a^(31-j)*B0^j`; its `H0` columns remain unchanged. The column change
+before extracting the powers is upper triangular with diagonal one:
+
+```
+a^(31-j)*(-b-theta0*a)^j
+  = sum_{i<=j} binom(j,i)*(-theta0)^(j-i)*a^(31-i)*(-b)^i.
+```
+
+Consequently the complete proposed discriminant identity, still awaiting
+its expensive components, is
+
+```
+18^992*kappa^62*delta^372*Disc_t(p)
+  = c^248*s^992*C_shift^2*Disc_z(H0).
+```
+
+Every displayed factor remains. In particular this does **not** imply
+that the original operand `p(s,5/18+s*u)` has any assumed power of `s`
+as content; no such chart or content calculation was performed. The
+collision square cannot be discarded. The conservative degree bound of
+`C_shift` becomes 3,844, but no shifted determinant image was computed
+and no cost gain follows from this bound.
+
+The exact shift check took 0.000362121 seconds. The full source-replaying
+worker took 0.974289781 seconds and 25,636 KiB peak RSS; its CPU12/4-GiB/
+60-second envelope was separate from the completed baseline attempts.
+`artifacts/research/a377-collision-constant-shift-01/report.json` has SHA
+`a2f178bc79771ec50c23f95d9786e4c481ccc120ec154167e0209f9eb6ac2601`;
+the signed identity artifact SHA is
+`e2f89db6959c5aefff4ab2602bda8f5145d13a85f674251753721860b30cfd98`.
+
+Final helper tests passed: 14 in the image target (six new tests plus
+eight included gate tests), and eight standalone gate tests. The final
+frozen binary SHA is
+`d6d61f98299cc2c7bf7a5cd3b07242a7c2daa8090b3a81722f4f5f0dbce82a52`;
+its source SHA is
+`b6d94337e275fb44538e54c293f5e445266edbf216f8703c70a62c81fe0b3a88`.
+The second build manifest/logs preserve both the bounded integer-index
+and constant-shift implementation. Independent theorem/source review
+found no blocker. Only exact algebraic identities and failed bounded
+cost probes are established; no original-domain completion, polynomial
+interpolation, or production factor omission is claimed.

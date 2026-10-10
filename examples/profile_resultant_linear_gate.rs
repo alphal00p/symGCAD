@@ -43,7 +43,7 @@ struct Args {
 fn hash(b: &[u8]) -> String {
     format!("{:x}", Sha256::digest(b))
 }
-fn read(p: &Path) -> Result<Vec<u8>> {
+pub(crate) fn read(p: &Path) -> Result<Vec<u8>> {
     ensure!(fs::metadata(p)?.is_file(), "regular input required");
     let mut b = Vec::new();
     fs::File::open(p)?
@@ -61,7 +61,7 @@ fn write_new(p: &Path, v: &Value) -> Result<()> {
     Ok(())
 }
 // Sparse integer grammar only, with bounds before any expression/power conversion.
-fn parse(a: &Algebra, s: &str) -> Result<Poly> {
+pub(crate) fn parse(a: &Algebra, s: &str) -> Result<Poly> {
     ensure!(s.len() <= 1024 * 1024, "expression bytes");
     let mut p = a.parse("0")?;
     let mut seen = HashSet::new();
@@ -117,7 +117,7 @@ fn parse(a: &Algebra, s: &str) -> Result<Poly> {
     }
     Ok(p)
 }
-fn coeff(p: &Poly, v: usize, k: u32) -> Poly {
+pub(crate) fn coeff(p: &Poly, v: usize, k: u32) -> Poly {
     let mut q = p.zero();
     for (c, e) in p.coefficients.iter().zip(p.exponents_iter()) {
         if e[v] == k {
@@ -237,14 +237,14 @@ fn resultant(budget: &Budget, p: &Poly, q: &Poly, z: usize) -> Result<Poly> {
     budget.post(&r)?;
     Ok(r)
 }
-struct Gate {
+pub(crate) struct Gate {
     report: Value,
-    h: Poly,
+    pub(crate) h: Poly,
     delta: Option<Poly>,
     rho0: Option<Poly>,
-    raw: Option<Poly>,
+    pub(crate) raw: Option<Poly>,
 }
-fn gate(
+pub(crate) fn gate(
     a: &Algebra,
     p: &Poly,
     f: &Poly,
@@ -396,7 +396,12 @@ fn payload(a: &Algebra, p: &Poly) -> Value {
     let s = a.format(p);
     json!({"expression":s,"expression_sha256":hash(s.as_bytes()),"summary":summary(a,p)})
 }
-fn content_screen(a: &Algebra, h: &Poly, z: usize, expected_degree: u32) -> Result<Value> {
+pub(crate) fn content_screen(
+    a: &Algebra,
+    h: &Poly,
+    z: usize,
+    expected_degree: u32,
+) -> Result<Value> {
     let start = Instant::now();
     ensure!(
         z < h.nvars()
