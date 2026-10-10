@@ -1,0 +1,480 @@
+{
+  "kind": "deliberately_corrupted_label_negative_control",
+  "status": "failed",
+  "cells_checked": 8,
+  "cells_passed": 7,
+  "cells_unchecked": 0,
+  "points_checked": 16,
+  "failures": 2,
+  "untested_points": 0,
+  "seed": 20261010,
+  "original_sha256": "435291febcf3f9ffc2085d84242ce45b83b791c024233133d7dca424b41cd675",
+  "result_sha256": "ad15cb1a5a1d48cca10e6797eeee1f0e0ce7da4d953cf1a335019322e3eb9df5",
+  "executable_sha256": "de7409a97f248743637717f1a983215f7de9e3ffebfb020c0fed98034a47e90f",
+  "counterexamples": [
+    {
+      "collection": "raw",
+      "cell": 2,
+      "point_index": 0,
+      "coordinates": {
+        "x1": "15767/2097152",
+        "x2": "94829/24576",
+        "x3": "58621/1048576",
+        "x4": "25331/40205",
+        "x5": "7387/1048576",
+        "x7": "1589/262144",
+        "x8": "120431752042593136828416/33209697817176021201829"
+      },
+      "interior_bounds": [
+        {
+          "independent_sturm_membership": true,
+          "lower": {
+            "fresh_isolation": [
+              "0",
+              "0"
+            ],
+            "index": 0,
+            "index_domain": "real",
+            "polynomial": 0
+          },
+          "sample": "25331/40205",
+          "strict_interior": true,
+          "upper": null,
+          "variable": "x4"
+        },
+        {
+          "independent_sturm_membership": true,
+          "lower": {
+            "fresh_isolation": [
+              "0",
+              "2"
+            ],
+            "index": 0,
+            "index_domain": "real",
+            "polynomial": 1
+          },
+          "sample": "94829/24576",
+          "strict_interior": true,
+          "upper": {
+            "fresh_isolation": [
+              "14/3",
+              "16/3"
+            ],
+            "index": 1,
+            "index_domain": "real",
+            "polynomial": 1
+          },
+          "variable": "x2"
+        },
+        {
+          "independent_sturm_membership": true,
+          "lower": {
+            "fresh_isolation": [
+              "10653696251430618799/4064337023274509999",
+              "10653696251430618799/4064337023274509999"
+            ],
+            "index": 0,
+            "index_domain": "real",
+            "polynomial": 4
+          },
+          "sample": "120431752042593136828416/33209697817176021201829",
+          "strict_interior": true,
+          "upper": null,
+          "variable": "x8"
+        },
+        {
+          "independent_sturm_membership": true,
+          "lower": {
+            "fresh_isolation": [
+              "0",
+              "0"
+            ],
+            "index": 0,
+            "index_domain": "real",
+            "polynomial": 6
+          },
+          "sample": "1589/262144",
+          "strict_interior": true,
+          "upper": {
+            "fresh_isolation": [
+              "1/16",
+              "1/8"
+            ],
+            "index": 1,
+            "index_domain": "real",
+            "polynomial": 7
+          },
+          "variable": "x7"
+        },
+        {
+          "independent_sturm_membership": true,
+          "lower": {
+            "fresh_isolation": [
+              "0",
+              "0"
+            ],
+            "index": 0,
+            "index_domain": "real",
+            "polynomial": 8
+          },
+          "sample": "7387/1048576",
+          "strict_interior": true,
+          "upper": {
+            "fresh_isolation": [
+              "1/16",
+              "1/8"
+            ],
+            "index": 1,
+            "index_domain": "real",
+            "polynomial": 9
+          },
+          "variable": "x5"
+        },
+        {
+          "independent_sturm_membership": true,
+          "lower": {
+            "fresh_isolation": [
+              "0",
+              "0"
+            ],
+            "index": 0,
+            "index_domain": "real",
+            "polynomial": 10
+          },
+          "sample": "58621/1048576",
+          "strict_interior": true,
+          "upper": {
+            "fresh_isolation": [
+              "1/16",
+              "1/8"
+            ],
+            "index": 1,
+            "index_domain": "real",
+            "polynomial": 11
+          },
+          "variable": "x3"
+        },
+        {
+          "independent_sturm_membership": true,
+          "lower": {
+            "fresh_isolation": [
+              "0",
+              "0"
+            ],
+            "index": 0,
+            "index_domain": "real",
+            "polynomial": 12
+          },
+          "sample": "15767/2097152",
+          "strict_interior": true,
+          "upper": {
+            "fresh_isolation": [
+              "1/32",
+              "1/16"
+            ],
+            "index": 1,
+            "index_domain": "real",
+            "polynomial": 13
+          },
+          "variable": "x1"
+        }
+      ],
+      "constraints": [
+        {
+          "index": 0,
+          "left": "15767/2097152",
+          "passed": true,
+          "relation": ">",
+          "right": "0"
+        },
+        {
+          "index": 1,
+          "left": "94829/24576",
+          "passed": true,
+          "relation": ">",
+          "right": "0"
+        },
+        {
+          "index": 2,
+          "left": "58621/1048576",
+          "passed": true,
+          "relation": ">",
+          "right": "0"
+        },
+        {
+          "index": 3,
+          "left": "25331/40205",
+          "passed": true,
+          "relation": ">",
+          "right": "0"
+        },
+        {
+          "index": 4,
+          "left": "7387/1048576",
+          "passed": true,
+          "relation": ">",
+          "right": "0"
+        },
+        {
+          "index": 5,
+          "left": "1589/262144",
+          "passed": true,
+          "relation": ">",
+          "right": "0"
+        },
+        {
+          "index": 6,
+          "left": "120431752042593136828416/33209697817176021201829",
+          "passed": true,
+          "relation": ">",
+          "right": "0"
+        }
+      ],
+      "splits": [
+        {
+          "expected": 1,
+          "index": 0,
+          "passed": false,
+          "sign": -1,
+          "value": "-1828184900543295152773156384922587690733227628244353/1336837278961178778958330175189860637125003664424960"
+        }
+      ],
+      "passed": false,
+      "failures": [
+        "original split polynomial 0 sign mismatch: expected 1, got -1"
+      ]
+    },
+    {
+      "collection": "raw",
+      "cell": 2,
+      "point_index": 1,
+      "coordinates": {
+        "x1": "3955/524288",
+        "x2": "110117/5120",
+        "x3": "8149/524288",
+        "x4": "25601/7167",
+        "x5": "3973/4194304",
+        "x7": "8601/4194304",
+        "x8": "17269865249504082297856/1225989048895887236703"
+      },
+      "interior_bounds": [
+        {
+          "independent_sturm_membership": true,
+          "lower": {
+            "fresh_isolation": [
+              "0",
+              "0"
+            ],
+            "index": 0,
+            "index_domain": "real",
+            "polynomial": 0
+          },
+          "sample": "25601/7167",
+          "strict_interior": true,
+          "upper": null,
+          "variable": "x4"
+        },
+        {
+          "independent_sturm_membership": true,
+          "lower": {
+            "fresh_isolation": [
+              "0",
+              "64/5"
+            ],
+            "index": 0,
+            "index_domain": "real",
+            "polynomial": 1
+          },
+          "sample": "110117/5120",
+          "strict_interior": true,
+          "upper": {
+            "fresh_isolation": [
+              "128/5",
+              "144/5"
+            ],
+            "index": 1,
+            "index_domain": "real",
+            "polynomial": 1
+          },
+          "variable": "x2"
+        },
+        {
+          "independent_sturm_membership": true,
+          "lower": {
+            "fresh_isolation": [
+              "2594382194445748903/187546129554212519",
+              "2594382194445748903/187546129554212519"
+            ],
+            "index": 0,
+            "index_domain": "real",
+            "polynomial": 4
+          },
+          "sample": "17269865249504082297856/1225989048895887236703",
+          "strict_interior": true,
+          "upper": null,
+          "variable": "x8"
+        },
+        {
+          "independent_sturm_membership": true,
+          "lower": {
+            "fresh_isolation": [
+              "0",
+              "0"
+            ],
+            "index": 0,
+            "index_domain": "real",
+            "polynomial": 6
+          },
+          "sample": "8601/4194304",
+          "strict_interior": true,
+          "upper": {
+            "fresh_isolation": [
+              "1/64",
+              "1/32"
+            ],
+            "index": 1,
+            "index_domain": "real",
+            "polynomial": 7
+          },
+          "variable": "x7"
+        },
+        {
+          "independent_sturm_membership": true,
+          "lower": {
+            "fresh_isolation": [
+              "0",
+              "0"
+            ],
+            "index": 0,
+            "index_domain": "real",
+            "polynomial": 8
+          },
+          "sample": "3973/4194304",
+          "strict_interior": true,
+          "upper": {
+            "fresh_isolation": [
+              "1/64",
+              "1/32"
+            ],
+            "index": 1,
+            "index_domain": "real",
+            "polynomial": 9
+          },
+          "variable": "x5"
+        },
+        {
+          "independent_sturm_membership": true,
+          "lower": {
+            "fresh_isolation": [
+              "0",
+              "0"
+            ],
+            "index": 0,
+            "index_domain": "real",
+            "polynomial": 10
+          },
+          "sample": "8149/524288",
+          "strict_interior": true,
+          "upper": {
+            "fresh_isolation": [
+              "1/32",
+              "1/16"
+            ],
+            "index": 1,
+            "index_domain": "real",
+            "polynomial": 11
+          },
+          "variable": "x3"
+        },
+        {
+          "independent_sturm_membership": true,
+          "lower": {
+            "fresh_isolation": [
+              "0",
+              "0"
+            ],
+            "index": 0,
+            "index_domain": "real",
+            "polynomial": 12
+          },
+          "sample": "3955/524288",
+          "strict_interior": true,
+          "upper": {
+            "fresh_isolation": [
+              "1/64",
+              "1/32"
+            ],
+            "index": 1,
+            "index_domain": "real",
+            "polynomial": 13
+          },
+          "variable": "x1"
+        }
+      ],
+      "constraints": [
+        {
+          "index": 0,
+          "left": "3955/524288",
+          "passed": true,
+          "relation": ">",
+          "right": "0"
+        },
+        {
+          "index": 1,
+          "left": "110117/5120",
+          "passed": true,
+          "relation": ">",
+          "right": "0"
+        },
+        {
+          "index": 2,
+          "left": "8149/524288",
+          "passed": true,
+          "relation": ">",
+          "right": "0"
+        },
+        {
+          "index": 3,
+          "left": "25601/7167",
+          "passed": true,
+          "relation": ">",
+          "right": "0"
+        },
+        {
+          "index": 4,
+          "left": "3973/4194304",
+          "passed": true,
+          "relation": ">",
+          "right": "0"
+        },
+        {
+          "index": 5,
+          "left": "8601/4194304",
+          "passed": true,
+          "relation": ">",
+          "right": "0"
+        },
+        {
+          "index": 6,
+          "left": "17269865249504082297856/1225989048895887236703",
+          "passed": true,
+          "relation": ">",
+          "right": "0"
+        }
+      ],
+      "splits": [
+        {
+          "expected": 1,
+          "index": 0,
+          "passed": false,
+          "sign": -1,
+          "value": "-35976547366980711412184169335691843171950123219543/2722653708482627912037946082678951545696105267200"
+        }
+      ],
+      "passed": false,
+      "failures": [
+        "original split polynomial 0 sign mismatch: expected 1, got -1"
+      ]
+    }
+  ]
+}
