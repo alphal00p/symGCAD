@@ -1,6 +1,8 @@
 # Audit of a proposed positive-common-root projection rule for A446
 
-This is a conditional theorem and implementation audit, not an implemented projection rule or a completion claim. It concerns the `u>4,C0<0` region in [the exact quadratic ladder](A446_KINEMATIC_QUADRATIC_LADDER.md), with `x=x2`, `y=x4`, and `F=A*x8+B`. The full original problem also contains the complementary kinematic regions. The initially proposed monotonicity premise has an exact counterexample below. A different proof of Jacobian nonvanishing remains possible, but the existing solver must retain its ordinary projection obligations until that proof exists.
+This is a historical conditional theorem and implementation audit, not an implemented projection rule or a completion claim. It concerns the `u>4,C0<0` region in [the exact quadratic ladder](A446_KINEMATIC_QUADRATIC_LADDER.md), with `x=x2`, `y=x4`, and `F=A*x8+B`. The full original problem also contains the complementary kinematic regions.
+
+**Superseded sign conjecture:** the later [exact Jacobian research](A446_FILTERED_JACOBIAN_RESEARCH.md#a-positive-critical-point-refutation-of-universal-nonvanishing) proves a positive common root with a zero Jacobian strictly inside `s>4,u>4,C0<0`. Thus neither universal Jacobian nonvanishing nor universal `-Q*Jacobian>0` is available. The 1,303-point screen below is retained as historical evidence, not a reason to resume that false universal certificate search. The later report instead proves a [zero-or-one-critical-root stratification on one chart branch](A446_FILTERED_JACOBIAN_RESEARCH.md#a-checked-stratification-of-the-unbounded-chart-branch); its bounded branch and original-coordinate export remain unresolved. Ordinary projection obligations must remain unless a proof explicitly accounts for those critical sections.
 
 ## What the current evidence proves
 
@@ -38,7 +40,7 @@ s=9211/1260>4, u=3978697/103950>4,
 M=917488163954131/81000>0.
 ```
 
-The common-root parametrization gives `A=B=0` at this point. Strict monotonicity of `E/T` implies `B(0,0)<0`, hence the displayed endpoint identity also proves `C0<0`. Thus restricting to the intended complement does not repair the monotonicity argument. The cleared Jacobian is still negative here, `-3952165941293647/8100`, while `Q=10/3>0`. All 1,303 positive-`s` sampled points had `-Q*Jacobian>0`; this finite observation is not a universal certificate. It motivates investigating a direct conditional Jacobian identity rather than treating the false `M<0` premise as a proof.
+The common-root parametrization gives `A=B=0` at this point. Strict monotonicity of `E/T` implies `B(0,0)<0`, hence the displayed endpoint identity also proves `C0<0`. Thus restricting to the intended complement does not repair the monotonicity argument. The cleared Jacobian is still negative here, `-3952165941293647/8100`, while `Q=10/3>0`. All 1,303 positive-`s` sampled points had `-Q*Jacobian>0`; this finite observation is not a universal certificate, and the later exact critical-point construction supersedes its suggested universal direction.
 
 Evidence under `artifacts/research/a446-filtered-jacobian-01/`:
 
