@@ -61,7 +61,7 @@ impl Default for Options {
             max_cleared_coefficient_bits: 32768,
             max_coefficient_bound_bits: 1_000_000,
             max_digits: 65536,
-            max_output_bits: 64_000_000,
+            max_output_bits: 96_000_000,
             max_total_input_bits: 512_000_000,
             max_output_terms: 65536,
         }

@@ -29,14 +29,23 @@ would therefore be essential before considering a production path.
 `src/resultant_segmentation.rs` implements this exact method with bounded
 preflight before denominator clearing and integer encoding. Set
 `solver.binary_resultants = true` to try it for pair resultants in optimized
-or local projection. The default is false. Initial limits admit exactly two
+or local projection. The default is false. Current limits admit exactly two
 surviving active parameters, elimination-degree product at least 60,
 elimination degrees at most 64, at most 4,096
-combined input terms, 65,536 output digits, and 64 million encoded output bits.
+combined input terms, 65,536 output digits, and 96 million encoded output bits.
 Separate coefficient, common-denominator and total encoded-input limits apply.
 The two captured successful pairs fit these limits; larger discriminants do
 not. This size bound does not bound intermediate native memory or runtime,
 so the usual killable worker limits remain necessary.
+
+The output limit was initially 64 million bits. A subsequently recovered
+A377 pair needs a certified 83,605,434-bit bound: the research encoder completed
+it in 95.189 seconds at 327.5 MiB peak RSS, followed by a complete independent
+43,681-point signed identity check. This motivates the current 96-million-bit
+limit; all other applicability limits are unchanged. The
+[A377 diagnostic](A377_BINARY_RESULTANT_DIAGNOSTIC.md) records the exact input,
+output and verification evidence. This is an operation-level result, not
+an original-problem completion or matched end-to-end ratio.
 
 A static decline keeps the ordinary exact backend. Cancellation, runtime
 resource stops and failed exact reconstruction propagate without launching

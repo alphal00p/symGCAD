@@ -140,3 +140,66 @@ The immutable final evidence is retained under
 The final cache manifest binds the source factor records and all completed
 outputs. The original warm worker was not restarted; subsequent experiments
 must use separate outputs and explicitly describe any reuse of this cache.
+
+## The recovered large pair and the 96-million-bit limit
+
+The recovered pair has degrees 12 and 12 in x0, 1,009 and 590 input terms,
+and only s,t remaining. Its coefficient heights are at most 86 and 65 bits.
+Exact layout inspection gives output degree bounds 360 and 120, 43,681
+mixed-radix digits of 1,914 bits, and an encoded-output bound of **83,605,434
+bits**. This exceeds the former 64-million-bit production cap and explains
+its static fallback to the ordinary method.
+
+The frozen research helper recomputed the pair with a 96-million-bit cap on
+CPU8, under 120 seconds and 4 GiB. It completed in **95.188976 seconds** at
+335,356 KiB peak RSS: 90.080414 seconds for the integer resultant, 0.020201
+for encoding and 4.315338 for decoding. The full signed rational polynomial
+contains 30,095 terms. This is a single operation diagnostic; its build and
+CPU differ from the saved 3,041.788607-second ordinary operation.
+
+An independent verification process compared the signed polynomial against
+ordinary exact numeric Ducos resultants on a **complete 43,681-point nested
+degree grid**. It checks every accepted specialization's leading degrees,
+skips degree drops exactly, and checks candidate support against independently
+derived degree bounds. Every required point passed. Verification took
+70.768360 seconds at 82,964 KiB peak RSS, outside the operation timing.
+This proves the full polynomial identity, including scalar and sign;
+it does not depend on the old canonical cache's lost scalar.
+
+The opt-in production output cap is consequently raised to 96 million bits.
+The active-parameter, degree, term, coefficient, digit and encoded-input bounds
+are unchanged, as are the baseline and independent decomposition verifier.
+The existing worker deadline still bounds the indivisible integer operation.
+An encoded-output bound is not a bound on intermediate native memory or time.
+
+The first recovered JSON used an `input` field instead of the profiler's
+`operands` field and lacked capture flags. Two saved inspection attempts
+rejected it before algebra. A separate `capture-v2.json` fixes only that
+serialization, with the ordered operand hash rechecked; the original recovery
+evidence remains intact. The frozen research helper hash is
+`44428e764331e44d295eb4b8dae17201d39fe7b1a8573a240a499b1fea95ec09`.
+
+| File | SHA-256 |
+| --- | --- |
+| `ac6f3048ce62-capture-v2.json` | `9f52f643343aef0c9f7c445902f8a88e7ee7f5f7749b72193b987cba08e8f147` |
+| `ac6f3048ce62-layout-v2.json` | `4fc54f8a5b59c327db0a0d9c1a0eb367a897c15d9c4388d2a660352300a91711` |
+| `ac6f3048ce62-segmentation-96m.json` | `9d96d5dc96f3c7abf210cf7d634b588bce52687e271e5de93aa84c4023b95ac9` |
+| `ac6f3048ce62-segmentation-96m.process.json` | `606b855c0222e9a8c4ba2637001b7ef47e72ee9c58bb4ef6bc9292e237c69213` |
+| `ac6f3048ce62-grid-96m.json` | `e5f777c7ea4ab9ab654bd2689fb2fe964ce7ba1e3186a76ec62d03c1693c3896` |
+| `ac6f3048ce62-grid-96m.process.json` | `f96d348c47cdab5d1666879f468c53dcb0bd4c89876193e2c6349f1a9c0dc9eb` |
+
+A separate 60-second replay from a copy of all 1,880 warm records timed out
+after 60.023441 seconds at 352,560 KiB, without a new capture, result or proof.
+Its namespace is `artifacts/research/a377-warm-capture-replay-01/`.
+It did not identify the final hour's pending operation. The recovered completed
+pair and its independent identity check, rather than that replay, supply the
+evidence above. A377's original symbolic decomposition remains unresolved.
+
+All eight existing segmentation regressions pass with the new limit, covering
+exact signed rational identities, bounds, fallback and cancellation. The log
+`artifacts/support-seeds-segmentation-tests-01.log` has SHA-256
+`57e3b5f2db60df6a891ce81ebbd615e99a6bc3463c99e3493f277d210d3ec7bd`.
+Independent review also checked every unchanged production gate, including a
+conservative 87,121,452-bit total encoded-input bound below the 512-million-bit
+cap. The frozen production path will be measured separately from the research
+helper; the full signed candidate is available for that comparison.
