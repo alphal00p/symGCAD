@@ -152,6 +152,74 @@ At `q=B=Delta=0`, positive critical `z` requires `q_x<0`, since
 may still change the cylindrical order of `q` and `B`; they remain required
 for this classification even when they are not positive-`z` critical points.
 
+## A guarded sign certificate at the positive endpoint root
+
+A smaller generic subroutine can sometimes discharge an ordering or
+critical-point exclusion without projecting an additional resultant.
+The full sign-at-root formulation is hand-derived and independently
+reviewed; it has not been included in the replay measurements below.
+The existing `separate_positive_pair` production path already handles
+same-sign linear remainders with ancestor coefficient guards, independently
+recomputed by the checker, and does not require a unique positive root.
+The proposed extension is the structured opposite-sign norm rule and,
+where useful, a bounded higher-degree reduction identity.
+
+Suppose `B=a*x^2+E*x+C` has a unique simple positive root `beta`, with
+signs `-,+` on the positive ray. Require an exact reduction identity
+
+```text
+d*P=A*B+J_P*x+K_P,  d>0,
+R_P=a*K_P^2-E*J_P*K_P+C*J_P^2.
+```
+
+If `J_P,K_P` have the same weak sign and are not both zero, that sign is
+the strict sign of `P(beta)`. If `J_P=0`, use the sign of `K_P`. If
+`J_P*K_P<0`, then `w=-K_P/J_P>0` and
+
+```text
+R_P=J_P^2*B(w),
+sign P(beta) = -sign(J_P)*sign(R_P).
+```
+
+The formula includes `R_P=0`. If `J_P=K_P=0`, then `P(beta)=0`.
+Applying it to `P=q` and `P=q_x` can support joint root ordering; applying
+it to `P=D` can exclude stationary points on certified regions. Every
+premise is a whole-cell obligation, and the `J_P,K_P` boundary strata
+must remain. This is not a sampled sign rule or an exported root selector.
+The ordering application first requires `q` to have positive leading
+coefficient and a proved inventory of simple positive roots. Production
+integration must bind the actual canonical cut identifiers and scalar
+units, or prove the relation to parent polynomials when the cut registry
+has factored them; an expression identity alone supplies no such binding.
+
+For the authentic monic remainder `B=b*q+J*x+K`, direct coefficient
+comparison additionally gives
+
+```text
+J=(s-1)*y^2+(s-2)*r*y-(r^2-m*r*x7+u*x5*x7),
+K=-y^3+(l-r-W)*y^2+(G-r*W-C0)*y+H0-r*C0.
+```
+
+The sign-at-root specialization for `P=q` uses `d=b,A=1,J_P=-J,K_P=-K`:
+`q(beta)=-(J*beta+K)/b`. These signs must remain in a signed witness,
+even though a same-sign nonintersection test is insensitive to orientation.
+
+On `s>2,u>0,0<m<1` and positive outer coordinates, `J(0)<0` and
+`J'(y)>0` for `y>0`. Thus `J` has one simple positive root, with full-real
+ordinal 1. Also `l-r-W=-l-3*r+m*Y<-2*r`, so `K''(y)<0` on that ray and
+`K` has at most two distinct positive roots. These two hand-derived,
+independently reviewed observations have not yet been separately replayed.
+They suggest low-degree guards for `J*K<0`; they do not freeze the root
+count of `K` or a filtered resultant ordinal. The events `K=K'=0`,
+`J=K=0`, and coordinate contacts remain, together with `q`'s independent
+endpoint and repeated-root obligations.
+An admissible generic decomposition may cut `y` at the unique positive
+`J` root and record `J=0` as an auxiliary seam; the positive leading
+coefficient ensures that `J` is not identically zero. Then `x=-K/J` is a
+valid common-root chart on each open side, with every original `F=0`
+sheet retained. This does not claim to cover the `J=K=0` seam as an open
+full-dimensional cell or supply the missing whole-base filtered-root proof.
+
 ## What the physics literature contributes
 
 [Hannesdottir, McLeod, Schwartz and Vergu, *Constraints on Sequential
