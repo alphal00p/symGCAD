@@ -57,6 +57,45 @@ The [production comparison note](BINARY_SEGMENTATION_PRODUCTION_CHECK.md)
 records exact equality with both independently certified captured results,
 including the retained initial A318 static decline and its cutoff adjustment.
 
+## Proposed verifier backend, not implemented
+
+Independent local and global replay currently reconstructs pair resultants
+through `projection::exact_resultant`: bounded one-parameter interpolation or
+ordinary Ducos. The two captured two-parameter operations therefore expose a
+possible replay bottleneck, but no completed hard-problem proof has yet shown
+that bottleneck end to end. Production verification remains unchanged until
+such evidence exists.
+
+The narrowest future option requires no proof-schema change: after independently
+reconstructing the operands and variable map, replay could freshly run the
+bounded deterministic segmentation kernel. It would not read discovery caches
+or accept the supplied factor basis as authority. Exact sign, rational scale,
+degree bounds, decoding and reconstruction would retain the kernel's existing
+checks. This is another exact recomputation backend; algorithm diversity is
+provided by the existing captured full-grid checks, not assumed from running
+the same kernel twice.
+
+A separate candidate-witness design would need additional self-contained
+operation records containing the exact signed raw resultant, its ordered
+operands and eliminated axis. Current canonical cache values lose scalar/sign,
+and final factor tables also lose multiplicities, so neither is that witness.
+The verifier could instead validate each supplied raw candidate using the
+existing research helper's complete nested degree grid. At every recursion
+level it needs `D_i+1` distinct accepted values for a independently derived
+resultant degree bound `D_i`; adaptive node sets are valid by polynomial
+identity induction. Exact leading-degree drops are skipped, with the number
+of possible skips bounded by the two leading-coefficient degrees. Every leaf
+must compare against an ordinary exact numeric resultant with both original
+elimination degrees preserved. A total point count or partial successful grid
+alone cannot certify equality.
+
+Any extraction of that verifier would add input/degree/height and grid-size
+caps before denominator clearing, retain signed rational scaling, reject
+unknown support and perturbed candidates, and propagate interrupted grids as
+unverified. It would not trust stored sample values or a producer's claimed
+degree bounds. Witness plumbing is a larger change than fresh recomputation
+and is not justified solely by the current operation timings.
+
 ## Why reconstruction is exact
 
 Clear rational denominators to obtain integer polynomials P and Q of degrees
