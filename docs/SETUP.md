@@ -1,6 +1,6 @@
 # Reproducible setup
 
-The committed `flake.lock` supplies Rust 1.96 and native GMP/MPFR dependencies on Linux. Cargo's exact crate resolution is in `Cargo.lock`. Source dependencies are fetched separately; they are never vendored into this repository.
+The project requires Rust >=1.96. The committed `flake.lock` supplies Rust 1.98.1 and native GMP/MPFR dependencies on Linux. Cargo's exact crate resolution is in `Cargo.lock`. Source dependencies are fetched separately; they are never vendored into this repository.
 
 ```sh
 scripts/bootstrap-deps.sh
@@ -14,14 +14,14 @@ Symbolica has its own [license terms](../DO_NOT_PUSH_REFERENCES/symbolica/Licens
 
 ## Optional upstream fixes
 
-Production symGCAD contains exact workarounds for the two reported defects and the measured releases used pristine upstream sources. Optional patches are available for upstream testing:
+Production symGCAD handles the linear-resultant sign case with its own exact identity and does not call the affected primitive integer-shift path. The separate research Kronecker helper uses an explicit multiprecision-shift workaround. The measured releases used pristine upstream sources. Optional patches are available for upstream testing:
 
 ```sh
 scripts/bootstrap-deps.sh --apply-patches
 scripts/bootstrap-deps.sh --check --apply-patches
 ```
 
-Application is idempotent. Already-applied fixes are recognized and the complete source diff must match those fixes exactly. The bootstrap never removes applied patches; preserve a separate pristine checkout for reproducing historical measurements. [Patch descriptions and regression commands](../patches/README.md) identify the exact changes. Check the current source state without changing it with `scripts/bootstrap-deps.sh --check`.
+Application is idempotent. Already-applied fixes are recognized and the complete source diff must match those fixes exactly. The direct linear-resultant identities in the solver and research helper work with both pristine and patched dependencies; they do not apply an extra correction to a backend result. The bootstrap never removes applied patches; preserve a separate pristine checkout for reproducing historical measurements. [Patch descriptions and regression commands](../patches/README.md) identify the exact changes. Check the current source state without changing it with `scripts/bootstrap-deps.sh --check`.
 
 ## Independent upstream GCAD comparison
 

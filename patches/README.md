@@ -37,6 +37,10 @@ and otherwise calls deterministic integer Ducos. Its own scale/sign regression
 tests this behavior without modifying Symbolica. Projection zero sets were
 unaffected by the backend sign defect because scalar content and sign are
 discarded; the wrapper also makes the public exact resultant convention correct.
+This identity replaces the affected backend call rather than negating its
+return value. Applying the patch therefore does not double-correct any
+production path. The separate Kronecker research helper uses the same direct
+identity for its integer linear operands.
 
 The separate finding that `resultant_crt` can stop after probabilistic modular
 checks is not patched here. Production projection and verification explicitly
