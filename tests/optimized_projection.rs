@@ -101,6 +101,7 @@ fn historical_optimized_results_without_interpolation_metadata_still_verify() {
     metrics.remove("interpolation_images");
     metrics.remove("segmented_resultants");
     metrics.remove("maximum_segmented_output_bits");
+    metrics.remove("primitive_linear_identities");
     let restored: symgcad::output::SolveResult = serde_json::from_value(json).unwrap();
     assert!(
         restored
@@ -112,6 +113,16 @@ fn historical_optimized_results_without_interpolation_metadata_still_verify() {
             .is_empty()
     );
     assert!(symgcad::verify::verify(&restored).unwrap().verified);
+    assert_eq!(
+        restored
+            .statistics
+            .optimized_projection
+            .as_ref()
+            .unwrap()
+            .cache
+            .primitive_linear_identities,
+        0
+    );
 }
 
 #[test]
@@ -176,6 +187,147 @@ impl Drop for Directory {
 
 fn algebra() -> Algebra {
     Algebra::new(&["x".into(), "y".into(), "z".into()]).unwrap()
+}
+
+#[test]
+fn primitive_linear_identities_skip_persistence_but_preserve_memory_hits() {
+    let directory = Directory::new();
+    let a = Algebra::new(&["unused".into(), "x".into(), "y".into(), "z".into()]).unwrap();
+    let input = ["-7*(y+x^7+2*x^3+1)/13", "x^5*y+z^3+1", "z"]
+        .iter()
+        .map(|p| a.parse(p).unwrap())
+        .collect::<Vec<_>>();
+    let expected = symgcad::algebra::factors_checked(&input).unwrap();
+    let options = OptimizedProjectionOptions {
+        checkpoint_dir: Some(directory.0.join("checkpoints")),
+        capture_dir: Some(directory.0.join("captures")),
+        ..Default::default()
+    };
+    let mut cache = ProjectionCache::new(&a, &options);
+    assert_eq!(cache.factor_basis(&input).unwrap(), expected);
+    assert_eq!(cache.report.cache.primitive_linear_identities, 3);
+    assert!(cache.report.cache.retained_bytes_estimate > 0);
+    assert_eq!(cache.factor_basis(&input).unwrap(), expected);
+    assert_eq!(cache.report.cache.primitive_linear_identities, 3);
+    assert_eq!(cache.report.cache.factor_hits, 3);
+    assert_eq!(cache.report.cache.factor_misses, 0);
+    assert_eq!(cache.report.cache.written_operation_checkpoints, 0);
+    assert!(!options.checkpoint_dir.as_ref().unwrap().exists());
+    assert!(!options.capture_dir.as_ref().unwrap().exists());
+
+    // Zero and scalar inputs still disappear; rational rescaling and duplicate
+    // occurrences preserve the exact canonical square-free basis on restart.
+    let duplicates = [
+        "0",
+        "-5/11",
+        "y+x^7+2*x^3+1",
+        "2*(y+x^7+2*x^3+1)",
+        "-3*(x^5*y+z^3+1)",
+        "7*z",
+    ]
+    .iter()
+    .map(|p| a.parse(p).unwrap())
+    .collect::<Vec<_>>();
+    let mut restarted = ProjectionCache::new(
+        &a,
+        &OptimizedProjectionOptions {
+            memory_cache_bytes: 0,
+            ..options.clone()
+        },
+    );
+    assert_eq!(restarted.factor_basis(&duplicates).unwrap(), expected);
+    assert_eq!(restarted.report.cache.primitive_linear_identities, 4);
+    assert_eq!(restarted.report.cache.factor_hits, 0);
+    assert_eq!(restarted.report.cache.factor_disk_hits, 0);
+    assert_eq!(restarted.report.cache.retained_bytes_estimate, 0);
+    assert!(!options.checkpoint_dir.as_ref().unwrap().exists());
+    assert!(!options.capture_dir.as_ref().unwrap().exists());
+}
+
+#[test]
+fn reducible_linear_and_repeated_factors_still_use_validated_operation_cache() {
+    let directory = Directory::new();
+    let a = algebra();
+    let input = ["x*y+x", "-5*x^2*(y+1)^3/7", "(x-y)^2"]
+        .iter()
+        .map(|p| a.parse(p).unwrap())
+        .collect::<Vec<_>>();
+    let expected = symgcad::algebra::factors_checked(&input).unwrap();
+    let options = OptimizedProjectionOptions {
+        checkpoint_dir: Some(directory.0.clone()),
+        ..Default::default()
+    };
+    let mut cold = ProjectionCache::new(&a, &options);
+    assert_eq!(cold.factor_basis(&input).unwrap(), expected);
+    assert_eq!(cold.report.cache.primitive_linear_identities, 0);
+    assert_eq!(cold.report.cache.factor_misses, 3);
+    assert_eq!(cold.report.cache.written_operation_checkpoints, 3);
+    assert_eq!(cold.factor_basis(&input).unwrap(), expected);
+    assert_eq!(cold.report.cache.factor_hits, 3);
+    let mut warm = ProjectionCache::new(&a, &options);
+    assert_eq!(warm.factor_basis(&input).unwrap(), expected);
+    assert_eq!(warm.report.cache.factor_disk_hits, 3);
+    assert_eq!(warm.report.cache.factor_misses, 0);
+}
+
+#[test]
+fn primitive_linear_precheck_honors_inactive_axis_work_cap_and_map_validation() {
+    for (axes, identities, misses) in [(128, 1, 0), (129, 0, 1)] {
+        let directory = Directory::new();
+        let names = (0..axes).map(|i| format!("axis{i}")).collect::<Vec<_>>();
+        let a = Algebra::new(&names).unwrap();
+        let p = a.parse("axis0+axis1^7").unwrap();
+        assert_eq!(p.nterms() * p.nvars(), 2 * axes);
+        let options = OptimizedProjectionOptions {
+            checkpoint_dir: Some(directory.0.clone()),
+            ..Default::default()
+        };
+        let mut cache = ProjectionCache::new(&a, &options);
+        let expected = vec![canonical(&p)];
+        assert_eq!(cache.factor_basis(&[p.clone()]).unwrap(), expected);
+        assert_eq!(cache.report.cache.primitive_linear_identities, identities);
+        assert_eq!(cache.report.cache.factor_misses, misses);
+        assert_eq!(cache.report.cache.written_operation_checkpoints, misses);
+        assert_eq!(cache.factor_basis(&[p]).unwrap(), expected);
+        assert_eq!(cache.report.cache.factor_hits, 1);
+
+        let foreign = Algebra::new(&names.into_iter().rev().collect::<Vec<_>>()).unwrap();
+        assert!(
+            cache
+                .factor_basis(&[foreign.parse("axis0+axis1^7").unwrap()])
+                .is_err()
+        );
+    }
+}
+
+#[test]
+fn primitive_linear_cache_identity_preserves_complete_proofs() {
+    let mut problem = symgcad::Problem {
+        variables: vec!["x".into(), "y".into()],
+        constraints: vec!["x>0".into(), "y>0".into()],
+        split: vec!["y-x^3".into(), "y-x-1".into()],
+        ..Default::default()
+    };
+    problem.solver.ordering = "given".into();
+    problem.solver.engine = "baseline".into();
+    let baseline = symgcad::solver::solve(&problem).unwrap();
+    problem.solver.engine = "optimized".into();
+    let optimized = symgcad::solver::solve(&problem).unwrap();
+    assert_eq!(baseline.status, symgcad::output::Status::CompleteGeneric);
+    assert_eq!(optimized.status, baseline.status);
+    assert!(symgcad::verify::verify(&baseline).unwrap().verified);
+    assert!(symgcad::verify::verify(&optimized).unwrap().verified);
+    assert_eq!(optimized.cells, baseline.cells);
+    assert!(
+        optimized
+            .statistics
+            .optimized_projection
+            .as_ref()
+            .unwrap()
+            .cache
+            .primitive_linear_identities
+            > 0
+    );
 }
 
 #[test]
@@ -997,7 +1149,9 @@ fn whole_operation_certificates_skip_factoring_and_carry_original_faces() {
         .iter()
         .map(|p| a.parse(p).unwrap())
         .collect::<Vec<_>>();
-    let split = vec![a.parse("y^2+x+1").unwrap()];
+    // Its raw discriminant x^2+1 requires actual factoring/cache work;
+    // an affine discriminant would now use the exact identity shortcut.
+    let split = vec![a.parse("y^2+x^2+1").unwrap()];
     let (old, old_report) = project_ordered_certified(
         &a,
         &constraints,

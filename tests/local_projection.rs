@@ -424,7 +424,12 @@ fn operation_cache_reuses_exact_algebra_without_changing_the_proof_tree() {
         miss.cache.factor_hits + miss.cache.discriminant_hits + miss.cache.resultant_hits,
         0
     );
-    assert!(hit.cache.factor_misses < miss.cache.factor_misses);
+    // Both a backend factorization and a freshly proved primitive-linear
+    // identity are computations avoided by a memory-cache hit.
+    assert!(
+        hit.cache.factor_misses + hit.cache.primitive_linear_identities
+            < miss.cache.factor_misses + miss.cache.primitive_linear_identities
+    );
     assert!(hit.phases.factor_seconds >= 0.0 && hit.phases.resultant_seconds >= 0.0);
     assert!(hit.phases.root_isolation_seconds > 0.0);
     // Each proof is independently recomputed; no cache data is trusted here.
@@ -486,7 +491,7 @@ fn interrupted_local_work_retains_cache_and_phase_metrics_without_a_complete_pro
     else {
         panic!()
     };
-    assert!(report.cache.factor_misses > 0);
+    assert!(report.cache.factor_misses + report.cache.primitive_linear_identities > 0);
     assert!(report.elapsed_seconds > 0.0);
     assert_eq!(report.active_phase, "incomplete");
 }

@@ -21,7 +21,10 @@ use sha2::{Digest, Sha256};
 use symbolica::{domains::InternalOrdering, prelude::*};
 
 use crate::{
-    algebra::{Algebra, MAX_DEGREE, Poly, canonical, factor_polynomial, factors_checked},
+    algebra::{
+        Algebra, MAX_DEGREE, Poly, canonical, factor_polynomial, factors_checked,
+        primitive_linear_variable,
+    },
     domain::{
         CertificateOptions, DomainCertificate, certify_nonzero, derive_domain, verify_certificate,
     },
@@ -78,6 +81,9 @@ impl Default for OptimizedProjectionOptions {
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 #[serde(default)]
 pub struct CacheMetrics {
+    /// Exact primitive-linear identities computed without persisting an
+    /// operation. Historical reports deserialize this as zero.
+    pub primitive_linear_identities: usize,
     pub factor_hits: usize,
     pub factor_misses: usize,
     pub resultant_hits: usize,
@@ -720,26 +726,41 @@ impl<'a> ProjectionCache<'a> {
                 self.report.cache.factor_hits += 1;
                 fs.clone()
             } else {
-                let request =
-                    self.operation_request(AlgebraOperation::Factor, None, &[&polynomial])?;
-                let fs = if let Some(fs) = self.load_operation(&request, &[&polynomial])? {
-                    fs
+                // The independent factorization path proves this same exact
+                // irreducibility identity. Avoid formatting/persisting its
+                // trivial answer, but preserve ordinary warm memory hits and
+                // bounded retention. Limit the added work on nonlinear misses.
+                let fs = if polynomial
+                    .nterms()
+                    .checked_mul(polynomial.nvars())
+                    .is_some_and(|visits| visits <= 256)
+                    && primitive_linear_variable(&polynomial).is_some()
+                {
+                    self.report.cache.primitive_linear_identities += 1;
+                    vec![polynomial.clone()]
                 } else {
-                    self.report.cache.factor_misses += 1;
-                    self.capture_operation(&request, None)?;
-                    let started = Instant::now();
-                    let mut factorization = HashMap::<Poly, usize>::new();
-                    for (factor, multiplicity) in factor_polynomial(&polynomial, false)? {
-                        if !factor.is_constant() {
-                            *factorization.entry(canonical(&factor)).or_default() += multiplicity;
+                    let request =
+                        self.operation_request(AlgebraOperation::Factor, None, &[&polynomial])?;
+                    if let Some(fs) = self.load_operation(&request, &[&polynomial])? {
+                        fs
+                    } else {
+                        self.report.cache.factor_misses += 1;
+                        self.capture_operation(&request, None)?;
+                        let started = Instant::now();
+                        let mut factorization = HashMap::<Poly, usize>::new();
+                        for (factor, multiplicity) in factor_polynomial(&polynomial, false)? {
+                            if !factor.is_constant() {
+                                *factorization.entry(canonical(&factor)).or_default() +=
+                                    multiplicity;
+                            }
                         }
+                        let fs = sorted_unique(factorization.keys().cloned());
+                        let multiplicities = fs.iter().map(|p| factorization[p]).collect();
+                        let elapsed = started.elapsed().as_secs_f64();
+                        self.capture_operation(&request, Some((&fs, elapsed)))?;
+                        self.save_operation(&request, &fs, Some(multiplicities), elapsed)?;
+                        fs
                     }
-                    let fs = sorted_unique(factorization.keys().cloned());
-                    let multiplicities = fs.iter().map(|p| factorization[p]).collect();
-                    let elapsed = started.elapsed().as_secs_f64();
-                    self.capture_operation(&request, Some((&fs, elapsed)))?;
-                    self.save_operation(&request, &fs, Some(multiplicities), elapsed)?;
-                    fs
                 };
                 let bytes = 128usize
                     .saturating_add(polynomial_bytes(&polynomial))
@@ -1798,8 +1819,10 @@ mod operation_tests {
         let directory = Directory::new();
         let algebra = algebra();
         let input = [
-            algebra.parse("z^2+x").unwrap(),
-            algebra.parse("z+y").unwrap(),
+            // Nonprimitive-linear operands must still persist and replay
+            // individual operations before a whole prefix is complete.
+            algebra.parse("z^2+x^2+1").unwrap(),
+            algebra.parse("z^2+y^2+1").unwrap(),
         ];
         let options = OptimizedProjectionOptions {
             checkpoint_dir: Some(directory.0.clone()),
