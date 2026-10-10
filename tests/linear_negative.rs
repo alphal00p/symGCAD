@@ -483,3 +483,120 @@ fn constant_false_and_strict_zero_constraints_remain_in_the_verified_base() {
         rejected(&bad);
     }
 }
+
+#[test]
+fn original_negative_gluza33_has_three_cells_and_two_nonunit_square_identities() {
+    let mut p = Problem::from_toml(include_str!("fixtures/gluza33_negative.toml")).unwrap();
+    let reference: serde_json::Value =
+        serde_json::from_str(include_str!("../reference/gluza33_rayleigh_guide.json")).unwrap();
+    p.solver.engine = "linear_negative".into();
+    p.solver.negative_linear_guide = Some(reference["guide"].as_str().unwrap().into());
+    p.solver.order = serde_json::from_value(reference["lifting_order"].clone()).unwrap();
+    p.limits.wall_time_secs = 20.0;
+    let result = checked(&p);
+    assert_eq!(result.cells.len(), 3);
+    assert_eq!(result.order, p.solver.order);
+    let evidence = result.linear_negative.as_ref().unwrap();
+    assert_eq!(
+        evidence
+            .steps
+            .iter()
+            .map(|s| s.variable.as_str())
+            .collect::<Vec<_>>(),
+        vec!["x3", "x5"]
+    );
+    assert!(verify(&evidence.base).unwrap().verified);
+    assert_eq!(evidence.base.cells.len(), 3);
+
+    // Reconstruct from the original normalized target and guide, independently
+    // of the recorded coefficient strings and certificate replay.
+    let normalized = symgcad::problem::normalize(&p, &p.variables).unwrap();
+    let algebra = &normalized.algebra;
+    let mut current = -normalized.positives[evidence.target_constraint].clone();
+    let mut guide = algebra.parse(reference["guide"].as_str().unwrap()).unwrap();
+    for step in &evidence.steps {
+        let axis = p
+            .variables
+            .iter()
+            .position(|v| v == &step.variable)
+            .unwrap();
+        let z = algebra.parse(&step.variable).unwrap();
+        let a = current.derivative(axis);
+        let az = &a * &z;
+        let b = &current - &az;
+        let c = guide.derivative(axis);
+        let cz = &c * &z;
+        let d = &guide - &cz;
+        assert_eq!(algebra.parse(&step.polynomial).unwrap(), current);
+        assert_eq!(algebra.parse(&step.leading).unwrap(), a);
+        assert_eq!(algebra.parse(&step.endpoint).unwrap(), b);
+        let symgcad::linear_negative::LinearNegativeRule::PositiveGuide {
+            leading,
+            endpoint,
+            multiplier,
+            square,
+            ..
+        } = &step.rule
+        else {
+            panic!("Gluza33 requires two positive-guide rules")
+        };
+        assert_eq!(rational(multiplier).unwrap(), rational("10").unwrap());
+        assert_eq!(algebra.parse(&leading.polynomial).unwrap(), c);
+        assert_eq!(algebra.parse(&endpoint.polynomial).unwrap(), d);
+        let bc = &b * &c;
+        let ad = &a * &d;
+        let square = algebra.parse(square).unwrap();
+        assert_eq!(
+            &bc - &ad,
+            &square.pow(2) * &current.constant(rational("10").unwrap())
+        );
+        current = a;
+        guide = c;
+    }
+    let cone_expression = "(x0+x2+x7)^2-8*(x0+x2+x7)*(x1+x4+x6)+(x1+x4+x6)^2";
+    let cone = algebra.parse(cone_expression).unwrap();
+    assert_eq!(cone.nterms(), 21);
+    assert_eq!(current, cone);
+    assert_eq!(
+        current,
+        algebra
+            .parse(reference["residual"].as_str().unwrap())
+            .unwrap()
+    );
+    assert_eq!(
+        guide,
+        algebra
+            .parse(reference["residual_guide"].as_str().unwrap())
+            .unwrap()
+    );
+    let base = symgcad::problem::normalize(&evidence.base.problem, &evidence.base.order).unwrap();
+    assert_eq!(
+        base.positives.last().unwrap(),
+        &(-base.algebra.parse(cone_expression).unwrap())
+    );
+    assert_eq!(
+        result
+            .cells
+            .iter()
+            .flat_map(|cell| &cell.axes)
+            .filter(|axis| {
+                axis.lower
+                    .as_ref()
+                    .is_some_and(|bound| bound.index_domain == RootIndexDomain::RealDescending)
+            })
+            .count(),
+        6
+    );
+    let roundtrip: SolveResult =
+        serde_json::from_slice(&serde_json::to_vec(&result).unwrap()).unwrap();
+    assert!(verify(&roundtrip).unwrap().verified);
+
+    let mut bad = result;
+    let symgcad::linear_negative::LinearNegativeRule::PositiveGuide { multiplier, .. } =
+        &mut bad.linear_negative.as_mut().unwrap().steps[0].rule
+    else {
+        unreachable!()
+    };
+    *multiplier = "1".into();
+    rejected(&bad);
+}
