@@ -17,9 +17,10 @@ keys, factor bases, proof formats and verification obligations are unchanged.
 The new diagnostic counter `primitive_linear_identities` defaults to zero when
 reading older reports.
 
-The motivation was the symbolic A414 hour run, which retained 303,026 completed
-operation records. This count alone does not establish that most records were
-trivial. An initial bounded scan of 10,000 directory entries selected only 30
+The motivation was the symbolic A414 hour campaign, whose shared checkpoint
+directory retained 303,026 completed operation records, including its ordering
+trials. This count is not the final worker's polynomial inventory and does not
+establish that most records were trivial. An initial bounded scan of 10,000 directory entries selected only 30
 small, distinct, unit-leading-coefficient linear factors. The exact record paths
 and hashes were frozen and replayed for the following comparison.
 
@@ -73,3 +74,13 @@ The source change is `862bf60`; the before library has the production code from
 The full fast suite passes **507 tests across 34 targets** after this change.
 Its log, `artifacts/primitive-linear-cache-fast-tests-01.log`, has SHA-256
 `84b2dd57b0a0b1965b771a6f81b8654d7368e5ed27a5b32f75562bcf28cd08ed`.
+
+The subsequent release build from source `af1d942` completed in 454 seconds.
+Its frozen executable, `artifacts/bin/symgcad-primitive-linear-862bf60-release`,
+has SHA-256 `18f117360567d51134ea5c257c7b4c18a7097fe1d6b5f2979ceec26431d3ec90`.
+A fresh public CLI solve of the bounded square with the `x+y-1` split and
+deferred local projection returned two cells. Independent `verify` accepted
+both stacks and four rejected branches. The build and smoke manifest is
+`artifacts/primitive-linear-release-build-01.json`, SHA-256
+`2da0249f8210de124744ed70b0e123e303a834d2e633ff5d714ea04769263ec9`.
+This release validation does not add a corpus completion or a timing ratio.
