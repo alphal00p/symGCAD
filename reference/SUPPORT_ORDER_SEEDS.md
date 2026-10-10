@@ -134,3 +134,33 @@ determinism, resource preflights and evidence preservation. In particular,
 large numeric powers and exponent towers are rejected by raw tokens before
 normalizing arithmetic. No original CAD completion or ordering speedup is
 claimed by this snapshot.
+
+## First bounded order screen
+
+Proposals were regenerated with the existing homogeneous anchors (`x4` for
+A377, `x8` for A414), preserving the original mathematical inputs, groups and
+all other engine options. Each proposal and its prior control received a fresh
+60-second cold-cache solve with the same frozen release on CPU0 (A377) or CPU3
+(A414), one worker and 4 GiB. Neither order completed in either case:
+
+| Original | Order after the fixed `[s,t]` prefix | Worker wall (s) | Peak RSS (KiB) | Status |
+|---|---|---:|---:|---|
+| A377 control | x4,x0,x3,x5,x6,x8 | 60.029 | 90,260 | timeout |
+| A377 support seed | x4,x8,x6,x5,x3,x0 | 60.038 | 190,112 | timeout |
+| A414 control | x8,x1,x2,x3,x4,x7 | 60.029 | 85,372 | timeout |
+| A414 support seed | x8,x3,x2,x1,x7,x4 | 60.026 | 118,492 | timeout |
+
+This single bounded screen establishes no speed ratio, winner or new coverage.
+It does not include seed-discovery overhead in the worker times; that overhead
+must be charged in a future complete portfolio comparison. Actual supervised
+inputs were checked against the original constraints, splits, parameters,
+variables and groups, and no result files were produced.
+
+Evidence is in `artifacts/research/support-seed-screen-01/`. The independently
+checked summary SHA-256 is
+`ea20078c99802a55d61a9a6dfd8bc17f5dda8aefab58decdfd4a3a125f544cd4`.
+The A377/A414 ledger hashes are respectively
+`cefbbeedf562ad83ac90b7a84b60b2f44b0121e6cf46f6919f781d28269b24a4` and
+`cc9164f57b04d67d10f77b6372494041bbb0e36723a629b2c23bbb4c385ad7db`.
+All four workers used release SHA-256
+`578d31e639230854c6a7de3515161aac98aaf4ee0794ac490633c86fb28dd6bb`.
