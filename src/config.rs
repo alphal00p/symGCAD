@@ -37,6 +37,10 @@ pub struct SolverOptions {
     /// Engine for the exact endpoint problem after monotone peeling.
     #[serde(skip_serializing_if = "is_optimized")]
     pub monotone_base_engine: String,
+    /// For unsplit monotone problems, solve a certified negative target fiber
+    /// directly. Unsupported targets retain the ordinary sign-filter fallback.
+    #[serde(skip_serializing_if = "is_false")]
+    pub monotone_negative_target: bool,
     /// Batch tentative sibling discoveries in the experimental local engine.
     /// Omit the default to keep ordinary inputs readable by older workers.
     #[serde(skip_serializing_if = "is_true")]
@@ -102,6 +106,7 @@ impl Default for SolverOptions {
             input_positivity: false,
             prune_operations: false,
             monotone_base_engine: "optimized".into(),
+            monotone_negative_target: false,
             local_batch_siblings: true,
             local_reuse_subtrees: true,
             local_reuse_learned_cuts: true,

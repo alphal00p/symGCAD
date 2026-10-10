@@ -44,12 +44,34 @@ pub struct MonotoneEvidence {
     /// Elimination order: the last lifted coordinate is peeled first.
     pub steps: Vec<MonotoneStep>,
     pub base: Box<SolveResult>,
+    /// Absent in historical, complete sign-arrangement certificates. When
+    /// present, the base proves only the exact negative endpoint inequality
+    /// and reconstruction restores only the admissible lower fiber.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub target: Option<MonotoneTarget>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct MonotoneTarget {
+    /// Index in the original ordered strict constraint list.
+    pub constraint_index: usize,
+    /// Exact normalized Q defining the original constraint Q > 0.
+    pub normalized_target: String,
+    /// The peeled polynomial is orientation * Q. This theorem requires -1.
+    pub orientation: i8,
+    /// The reconstructed fibers have this sign; it must also be -1.
+    pub selected_sign: i8,
 }
 
 struct Plan {
     order: Vec<String>,
     steps: Vec<MonotoneStep>,
     base: Problem,
+}
+
+struct NegativePlan {
+    plan: Plan,
+    target: MonotoneTarget,
 }
 
 fn coefficient(p: &Poly, variable: usize, degree: u32) -> Poly {
@@ -260,7 +282,7 @@ fn base_problem(
     Ok(base)
 }
 
-fn plan(problem: &Problem) -> Result<Plan> {
+fn discover_steps(problem: &Problem) -> Result<(NormalizedProblem, Vec<MonotoneStep>, Poly)> {
     let normalized = input(problem)?;
     let mut p = normalized.split[0].clone();
     let mut steps = Vec::new();
@@ -308,13 +330,129 @@ fn plan(problem: &Problem) -> Result<Plan> {
             steps.push(step);
         }
     }
-    let mut base = base_problem(problem, &normalized, &steps, &p)?;
+    Ok((normalized, steps, p))
+}
+
+fn restrict_negative_endpoint(base: &mut Problem, endpoint: &str) -> Result<()> {
+    // A constant zero endpoint deliberately becomes a false constraint. It
+    // must never be turned into a zero exceptional polynomial that excludes
+    // the entire domain instead of proving that the inequality is empty.
+    base.split.clear();
+    base.constraints.push(format!("(-({endpoint}))>0"));
+    base.validate()
+}
+
+fn finish_plan(
+    problem: &Problem,
+    normalized: &NormalizedProblem,
+    steps: Vec<MonotoneStep>,
+    endpoint: &Poly,
+    negative_target: bool,
+) -> Result<Plan> {
+    let mut base = base_problem(problem, normalized, &steps, endpoint)?;
+    if negative_target {
+        restrict_negative_endpoint(&mut base, &normalized.algebra.format(endpoint))?;
+    }
     let mut order = crate::solver::selected_order(&base)?;
     base.solver.order = order.clone();
     base.solver.ordering = "given".into();
     order.extend(steps.iter().rev().map(|s| s.variable.clone()));
     check_order(problem, &order)?;
     Ok(Plan { order, steps, base })
+}
+
+fn plan(problem: &Problem) -> Result<Plan> {
+    let (normalized, steps, endpoint) = discover_steps(problem)?;
+    finish_plan(problem, &normalized, steps, &endpoint, false)
+}
+
+/// Reconstruct the exact target-free domain used for coefficient proofs.
+/// The original inequality cannot justify its own monotonicity obligations.
+fn target_problem(problem: &Problem, target: &MonotoneTarget) -> Result<Problem> {
+    problem.validate()?;
+    ensure!(
+        problem.solver.engine == "monotone"
+            && problem.solver.monotone_negative_target
+            && problem.split.is_empty()
+            && problem.solver.homogeneous_anchor.is_none(),
+        "negative-target peeling requires an unsplit, unscaled opt-in monotone problem"
+    );
+    ensure!(
+        target.orientation == -1 && target.selected_sign == -1,
+        "negative-target orientation and selected sign must both be -1"
+    );
+    let normalized = normalize(problem, &problem.variables)?;
+    let q = normalized
+        .positives
+        .get(target.constraint_index)
+        .ok_or_else(|| anyhow!("negative-target constraint index is out of range"))?;
+    ensure!(
+        normalized.algebra.format(q) == target.normalized_target,
+        "original negative-target constraint was modified"
+    );
+    let mut transferred = problem.clone();
+    transferred.constraints.remove(target.constraint_index);
+    transferred.split = vec![normalized.algebra.format(&(-q.clone()))];
+    transferred.validate()?;
+    Ok(transferred)
+}
+
+fn deadline_reached(problem: &Problem, started: Option<Instant>) -> bool {
+    started.is_some_and(|t| t.elapsed().as_secs_f64() >= problem.limits.wall_time_secs)
+}
+
+fn negative_plan(problem: &Problem, started: Option<Instant>) -> Result<Option<NegativePlan>> {
+    problem.validate()?;
+    ensure!(
+        problem.solver.engine == "monotone"
+            && problem.solver.monotone_negative_target
+            && problem.split.is_empty()
+            && problem.solver.homogeneous_anchor.is_none(),
+        "negative-target planning requires an unsplit, unscaled opt-in monotone problem"
+    );
+    let normalized = normalize(problem, &problem.variables)?;
+    for (constraint_index, q) in normalized.positives.iter().enumerate() {
+        if deadline_reached(problem, started) {
+            break;
+        }
+        if q.is_constant() {
+            continue;
+        }
+        let target = MonotoneTarget {
+            constraint_index,
+            normalized_target: normalized.algebra.format(q),
+            orientation: -1,
+            selected_sign: -1,
+        };
+        let transferred = target_problem(problem, &target)?;
+        let (transferred_normalized, steps, endpoint) = discover_steps(&transferred)?;
+        if steps.is_empty() {
+            continue;
+        }
+        if deadline_reached(problem, started) {
+            break;
+        }
+        return Ok(Some(NegativePlan {
+            plan: finish_plan(
+                &transferred,
+                &transferred_normalized,
+                steps,
+                &endpoint,
+                true,
+            )?,
+            target,
+        }));
+    }
+    Ok(None)
+}
+
+/// Select the same original lifting order as the exact inequality solver.
+/// Inapplicable problems retain the historical full-arrangement fallback.
+pub fn selected_negative_order(problem: &Problem) -> Result<Vec<String>> {
+    match negative_plan(problem, None)? {
+        Some(plan) => Ok(plan.plan.order),
+        None => crate::sign_filter::selected_order(problem),
+    }
 }
 
 pub fn selected_order(problem: &Problem) -> Result<Vec<String>> {
@@ -447,6 +585,7 @@ struct Restorer<'a> {
     stages: &'a [Restoration],
     started: Option<Instant>,
     limits: &'a crate::Limits,
+    negative_only: bool,
     cells: Vec<Cell>,
     stopped: Option<String>,
     stacks: usize,
@@ -461,6 +600,10 @@ impl Restorer<'_> {
             "base cell has incorrect dimensions or signs"
         );
         let sign = cell.signs[0];
+        ensure!(
+            !self.negative_only || sign == -1,
+            "negative-target restoration requires a certified negative endpoint"
+        );
         ensure!(
             [-1, 0, 1].contains(&sign) && (sign != 0 || stage.zero_endpoint),
             "uncertified endpoint sign zero"
@@ -518,6 +661,9 @@ impl Restorer<'_> {
             upper: Some(bound(root)),
         });
         lower.signs = vec![-1];
+        if self.negative_only {
+            return Ok(vec![lower]);
+        }
         let mut upper = cell;
         upper.axes.push(Axis {
             variable: stage.variable.clone(),
@@ -573,10 +719,15 @@ fn reconstruct(
     steps: Vec<MonotoneStep>,
     mut base: SolveResult,
     started: Option<Instant>,
+    target: Option<MonotoneTarget>,
 ) -> Result<SolveResult> {
     let normalized = normalize(problem, &order)?;
     let algebra = &normalized.algebra;
     let base_dimension = order.len() - steps.len();
+    ensure!(
+        target.is_none() || (!steps.is_empty() && base.split_polynomials.is_empty()),
+        "negative-target reconstruction needs at least one peel and an unsplit endpoint domain"
+    );
     ensure!(
         base.order == order[..base_dimension],
         "base certificate uses an incompatible order"
@@ -641,13 +792,20 @@ fn reconstruct(
         stages: &stages,
         started,
         limits: &problem.limits,
+        negative_only: target.is_some(),
         cells: vec![],
         stopped: None,
         stacks: 0,
     };
     for cell in &base.cells {
         let mut cell = cell.clone();
-        if base.split_polynomials.is_empty() {
+        if target.is_some() {
+            ensure!(
+                cell.signs.is_empty(),
+                "endpoint inequality has unexpected split signs"
+            );
+            cell.signs = vec![-1];
+        } else if base.split_polynomials.is_empty() {
             cell.signs = vec![0];
         }
         restorer.visit(0, cell)?;
@@ -655,7 +813,12 @@ fn reconstruct(
             break;
         }
     }
-    let cells = restorer.cells;
+    let mut cells = restorer.cells;
+    if target.is_some() {
+        for cell in &mut cells {
+            cell.signs.clear();
+        }
+    }
     let merged_cells = (problem.solver.merge == "aggressive").then(|| merge(&cells));
     let mut statistics = base.statistics.clone();
     statistics.raw_cells = cells.len();
@@ -687,6 +850,7 @@ fn reconstruct(
         monotone: Some(Box::new(MonotoneEvidence {
             steps,
             base: Box::new(base),
+            target,
         })),
         local: None,
         sign_filter: None,
@@ -698,9 +862,70 @@ pub fn solve_monotone(problem: &Problem) -> Result<SolveResult> {
     let plan = plan(problem)?;
     let planning_seconds = started.elapsed().as_secs_f64();
     let base = crate::solver::solve(&plan.base)?;
-    let mut result = reconstruct(problem, plan.order, plan.steps, base, Some(started))?;
+    let mut result = reconstruct(problem, plan.order, plan.steps, base, Some(started), None)?;
     result.statistics.ordering_seconds += planning_seconds;
     result.statistics.total_seconds = started.elapsed().as_secs_f64();
+    Ok(result)
+}
+
+/// Solve an original strict inequality by retaining only its negative
+/// monotone fibers. This is a separate coverage theorem, not a partial sign
+/// arrangement: the exact terminal endpoint inequality is a base constraint.
+pub fn solve_negative_target(problem: &Problem) -> Result<SolveResult> {
+    let started = Instant::now();
+    let plan = negative_plan(problem, Some(started))?;
+    let planning_seconds = started.elapsed().as_secs_f64();
+    if deadline_reached(problem, Some(started)) {
+        let mut result = SolveResult::failure(
+            problem.clone(),
+            Status::Incomplete,
+            "wall time exhausted during negative-target planning",
+        );
+        result.statistics.ordering_seconds = planning_seconds;
+        result.statistics.total_seconds = started.elapsed().as_secs_f64();
+        return Ok(result);
+    }
+    let mut result = if let Some(mut negative) = plan {
+        // Narrow only the delegated resource budget. Verification permits this
+        // explicitly checked narrowing while reconstructing every mathematical
+        // and solver field of the endpoint problem exactly.
+        negative.plan.base.limits.wall_time_secs =
+            problem.limits.wall_time_secs - started.elapsed().as_secs_f64();
+        if negative.plan.base.limits.wall_time_secs <= 0.0 {
+            let mut result = SolveResult::failure(
+                problem.clone(),
+                Status::Incomplete,
+                "wall time exhausted before the negative endpoint solve",
+            );
+            result.statistics.ordering_seconds = planning_seconds;
+            result.statistics.total_seconds = started.elapsed().as_secs_f64();
+            return Ok(result);
+        }
+        let base = crate::solver::solve(&negative.plan.base)?;
+        let reconstruction_started = Instant::now();
+        let mut result = reconstruct(
+            problem,
+            negative.plan.order,
+            negative.plan.steps,
+            base,
+            Some(started),
+            Some(negative.target),
+        )?;
+        result.statistics.lifting_seconds += reconstruction_started.elapsed().as_secs_f64();
+        result
+    } else {
+        // The historical path receives the unchanged original problem so its
+        // complete-arrangement proof remains byte-for-byte reconstructible.
+        crate::sign_filter::solve(problem)?
+    };
+    result.statistics.ordering_seconds += planning_seconds;
+    result.statistics.total_seconds = started.elapsed().as_secs_f64();
+    // Includes planning, delegated work, and reconstruction (even an empty
+    // result). Individual algebra calls still require the worker's hard cap.
+    if result.status == Status::CompleteGeneric && deadline_reached(problem, Some(started)) {
+        result.status = Status::Incomplete;
+        result.diagnostic = Some("negative-target cumulative wall time limit".into());
+    }
     Ok(result)
 }
 
@@ -717,7 +942,26 @@ pub fn verify_monotone(result: &SolveResult) -> Result<Verification> {
         .monotone
         .as_ref()
         .ok_or_else(|| anyhow!("missing monotone evidence"))?;
-    let expected_base = check_steps(&result.problem, &result.order, &evidence.steps)?;
+    let expected_base = if let Some(target) = &evidence.target {
+        ensure!(
+            !evidence.steps.is_empty(),
+            "negative-target evidence requires at least one certified peel"
+        );
+        let transferred = target_problem(&result.problem, target)?;
+        let mut base = check_steps(&transferred, &result.order, &evidence.steps)?;
+        restrict_negative_endpoint(&mut base, &evidence.steps.last().unwrap().endpoint)?;
+        let delegated_wall = evidence.base.problem.limits.wall_time_secs;
+        ensure!(
+            delegated_wall.is_finite()
+                && delegated_wall > 0.0
+                && delegated_wall <= result.problem.limits.wall_time_secs,
+            "negative endpoint wall budget exceeds the original budget"
+        );
+        base.limits.wall_time_secs = delegated_wall;
+        base
+    } else {
+        check_steps(&result.problem, &result.order, &evidence.steps)?
+    };
     ensure!(
         serde_json::to_value(&evidence.base.problem)? == serde_json::to_value(&expected_base)?,
         "base problem differs from exact endpoint reduction"
@@ -733,6 +977,7 @@ pub fn verify_monotone(result: &SolveResult) -> Result<Verification> {
         evidence.steps.clone(),
         (*evidence.base).clone(),
         None,
+        evidence.target.clone(),
     )?;
     ensure!(
         expected.status == Status::CompleteGeneric,
@@ -761,9 +1006,18 @@ pub fn verify_monotone(result: &SolveResult) -> Result<Verification> {
         "monotone compatibility merge differs"
     );
     ensure!(
-        result.trace.is_none() && result.homogeneous.is_none(),
+        result.trace.is_none()
+            && result.homogeneous.is_none()
+            && result.local.is_none()
+            && result.sign_filter.is_none(),
         "unexpected alternate monotone coverage evidence"
     );
+    if evidence.target.is_some() {
+        ensure!(
+            result.statistics.raw_cells == result.cells.len(),
+            "negative-target raw-cell count was modified"
+        );
+    }
     Ok(Verification {
         verified: true,
         cells: result.cells.len(),

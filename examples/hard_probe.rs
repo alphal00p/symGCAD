@@ -52,6 +52,9 @@ struct Args {
     peel_tail: Vec<String>,
     #[arg(long)]
     monotone_base_engine: Option<String>,
+    /// Solve an admissible unsplit negative monotone target directly.
+    #[arg(long)]
+    monotone_negative_target: bool,
     #[arg(long, default_value_t = 0)]
     final_promotions: usize,
     #[arg(long, default_value_t = 120.0)]
@@ -177,6 +180,7 @@ struct Campaign {
     block: Vec<String>,
     engine: String,
     monotone_base_engine: Option<String>,
+    monotone_negative_target: bool,
     batch_siblings: bool,
     reuse_subtrees: bool,
     reuse_learned_cuts: bool,
@@ -248,6 +252,9 @@ fn run_trial(campaign: &Campaign, trial: Trial) -> Result<Record> {
     problem.solver.engine = campaign.engine.clone();
     if let Some(engine) = &campaign.monotone_base_engine {
         problem.solver.monotone_base_engine = engine.clone();
+    }
+    if campaign.monotone_negative_target {
+        problem.solver.monotone_negative_target = true;
     }
     problem.solver.local_batch_siblings = campaign.batch_siblings;
     problem.solver.local_reuse_subtrees = campaign.reuse_subtrees;
@@ -570,6 +577,7 @@ fn main() -> Result<()> {
         },
         engine: args.engine.clone(),
         monotone_base_engine: args.monotone_base_engine.clone(),
+        monotone_negative_target: args.monotone_negative_target,
         batch_siblings: !args.no_batch_siblings,
         reuse_subtrees: !args.no_reuse_subtrees,
         reuse_learned_cuts: !args.no_learned_cuts,
@@ -758,6 +766,7 @@ fn main() -> Result<()> {
         "cpus":cpus,"worker_memory_mib":args.memory_mib,"campaign_secs":args.campaign_secs,
         "checkpoint_dir":campaign.checkpoint_dir,
         "operation_capture":campaign.operation_capture,
+        "monotone_negative_target":campaign.monotone_negative_target || campaign.problem.solver.monotone_negative_target,
         "seed":args.seed,"permutations_per_anchor":args.permutations,"peel_tail":args.peel_tail,
         "promotion_policy":"projection depth then term count then stale-progress quartile then retained algebra bytes then refinements; heuristic only",
         "initial_trials":trials,

@@ -21,6 +21,14 @@ use symbolica::prelude::*;
 
 pub fn selected_order(problem: &Problem) -> Result<Vec<String>> {
     if problem.solver.engine == "monotone" && problem.split.is_empty() {
+        if problem.solver.monotone_negative_target {
+            // The constrained original problem supplies the positive-scale
+            // certificate; target transfer happens only after that reduction.
+            if problem.solver.homogeneous_anchor.is_some() {
+                return crate::homogeneity::selected_order(problem);
+            }
+            return crate::monotone::selected_negative_order(problem);
+        }
         return crate::sign_filter::selected_order(problem);
     }
     if problem.solver.homogeneous_anchor.is_some() {
@@ -560,6 +568,12 @@ fn classify_solve_result(problem: &Problem, result: Result<SolveResult>) -> Resu
 fn solve_impl(problem: &Problem) -> Result<SolveResult> {
     problem.validate()?;
     if problem.solver.engine == "monotone" && problem.split.is_empty() {
+        if problem.solver.monotone_negative_target {
+            if problem.solver.homogeneous_anchor.is_some() {
+                return crate::homogeneity::solve_homogeneous(problem);
+            }
+            return crate::monotone::solve_negative_target(problem);
+        }
         return crate::sign_filter::solve(problem);
     }
     if problem.solver.homogeneous_anchor.is_some() {
