@@ -1,0 +1,302 @@
+{
+  "schema_version": 1,
+  "purpose": "Exact identity inventory and proposed proof transport; no coverage claimed",
+  "original_completions_added": 0,
+  "aggregate_complete_verified": 303,
+  "unresolved_originals": 28,
+  "paired_originals": 24,
+  "pair_count": 12,
+  "equivalence_classes_in_searched_class": 16,
+  "identity_report": "artifacts/research/crossing-transport-design-01/identities.json",
+  "identity_report_sha256": "127bfe7e0c1daf0d4875940c26ff701796a1aa087dd1ca9b48fa048b7326ae30",
+  "summary": {
+    "complete_search": true,
+    "eligible_verified_donor_matches": 0,
+    "matches": 32,
+    "original_completions_claimed": 0,
+    "seconds": 3.7097555140000003,
+    "targets": 28,
+    "verified_donor_matches": 0
+  },
+  "pairs": [
+    {
+      "originals": [
+        {
+          "identifier": "finiteA_6_317_7_0__2_0_1_1_1_1_0_0_1/symbolic",
+          "input": "artifacts/corpus/symbolic/0077_finiteA_6_317_7_0__2_0_1_1_1_1_0_0_1_symbolic.toml",
+          "input_sha256": "5f0f5b984f50b1678034adb387ac5e13e68455d028aa4e41b8369696ff7a1d10"
+        },
+        {
+          "identifier": "finiteAx12_6_317_7_0__2_0_1_1_1_1_0_0_1/symbolic",
+          "input": "artifacts/corpus/symbolic/0136_finiteAx12_6_317_7_0__2_0_1_1_1_1_0_0_1_symbolic.toml",
+          "input_sha256": "9147a0595689df2286f93030bcac68217da7464fd4900c2a59cb2d49543b25ab"
+        }
+      ],
+      "map": "s -> s; t -> 5/9-s-t; every x -> x",
+      "constraint_identity": "positive rational normalization, exact equality",
+      "ordered_split_signs": [
+        1
+      ],
+      "required_actual_order": "s before t; all original group and fixed-order restrictions preserved",
+      "eligible_completed_donor": false
+    },
+    {
+      "originals": [
+        {
+          "identifier": "finiteA_6_318_7_0__0_2_1_1_1_1_0_0_1/symbolic",
+          "input": "artifacts/corpus/symbolic/0079_finiteA_6_318_7_0__0_2_1_1_1_1_0_0_1_symbolic.toml",
+          "input_sha256": "3cc8ef9f5af7b6d8ff8ef10a6189dbf1a1af1b18285022dcd5b6c0df727158ce"
+        },
+        {
+          "identifier": "finiteAx12_6_318_7_0__0_2_1_1_1_1_0_0_1/symbolic",
+          "input": "artifacts/corpus/symbolic/0138_finiteAx12_6_318_7_0__0_2_1_1_1_1_0_0_1_symbolic.toml",
+          "input_sha256": "579c946143a1418fa4186fd6110f78495c363a6eef2708b603af5d2e7bc3379f"
+        }
+      ],
+      "map": "s -> s; t -> 5/9-s-t; every x -> x",
+      "constraint_identity": "positive rational normalization, exact equality",
+      "ordered_split_signs": [
+        1
+      ],
+      "required_actual_order": "s before t; all original group and fixed-order restrictions preserved",
+      "eligible_completed_donor": false
+    },
+    {
+      "originals": [
+        {
+          "identifier": "finiteA_6_377_10_0__5_0_0_1_1_1_1_0_1/symbolic",
+          "input": "artifacts/corpus/symbolic/0081_finiteA_6_377_10_0__5_0_0_1_1_1_1_0_1_symbolic.toml",
+          "input_sha256": "d00c3ebceebe641501c20a6dc28335f7502ee2c0e3c1e8118b388e31ba581e24"
+        },
+        {
+          "identifier": "finiteAx12_6_377_10_0__5_0_0_1_1_1_1_0_1/symbolic",
+          "input": "artifacts/corpus/symbolic/0140_finiteAx12_6_377_10_0__5_0_0_1_1_1_1_0_1_symbolic.toml",
+          "input_sha256": "fbc40350ecadd1df770b7be28c4fd1a935b43dfed1a68621e3f40b1a3f70193e"
+        }
+      ],
+      "map": "s -> s; t -> 5/9-s-t; every x -> x",
+      "constraint_identity": "positive rational normalization, exact equality",
+      "ordered_split_signs": [
+        1
+      ],
+      "required_actual_order": "s before t; all original group and fixed-order restrictions preserved",
+      "eligible_completed_donor": false
+    },
+    {
+      "originals": [
+        {
+          "identifier": "finiteA_6_414_10_0__0_5_1_1_1_0_0_1_1/symbolic",
+          "input": "artifacts/corpus/symbolic/0085_finiteA_6_414_10_0__0_5_1_1_1_0_0_1_1_symbolic.toml",
+          "input_sha256": "4feff5d7177f5b1b92d523c808373aa91866099221a860c8d1653ecb9a95049f"
+        },
+        {
+          "identifier": "finiteAx12_6_414_10_0__0_5_1_1_1_0_0_1_1/symbolic",
+          "input": "artifacts/corpus/symbolic/0144_finiteAx12_6_414_10_0__0_5_1_1_1_0_0_1_1_symbolic.toml",
+          "input_sha256": "6718cb93a2360a2c7caba57c28856ff9c5683da3a51512f2da0e4588a09256af"
+        }
+      ],
+      "map": "s -> s; t -> 5/9-s-t; every x -> x",
+      "constraint_identity": "positive rational normalization, exact equality",
+      "ordered_split_signs": [
+        1
+      ],
+      "required_actual_order": "s before t; all original group and fixed-order restrictions preserved",
+      "eligible_completed_donor": false
+    },
+    {
+      "originals": [
+        {
+          "identifier": "finiteA_7_381_10_0__4_0_1_1_1_1_1_0_1/symbolic",
+          "input": "artifacts/corpus/symbolic/0089_finiteA_7_381_10_0__4_0_1_1_1_1_1_0_1_symbolic.toml",
+          "input_sha256": "64ada1307f81f70ef7729b72b2aabd733a2199184d5348a952c8a0f821680f0f"
+        },
+        {
+          "identifier": "finiteAx12_7_381_10_0__4_0_1_1_1_1_1_0_1/symbolic",
+          "input": "artifacts/corpus/symbolic/0148_finiteAx12_7_381_10_0__4_0_1_1_1_1_1_0_1_symbolic.toml",
+          "input_sha256": "414e42b64fea435c091c55a433f5a0bedf668a0bd7b2e61c7006b2688c377d38"
+        }
+      ],
+      "map": "s -> s; t -> 5/9-s-t; every x -> x",
+      "constraint_identity": "positive rational normalization, exact equality",
+      "ordered_split_signs": [
+        1
+      ],
+      "required_actual_order": "s before t; all original group and fixed-order restrictions preserved",
+      "eligible_completed_donor": false
+    },
+    {
+      "originals": [
+        {
+          "identifier": "finiteA_7_446_11_0__0_5_1_1_1_1_0_1_1/symbolic",
+          "input": "artifacts/corpus/symbolic/0093_finiteA_7_446_11_0__0_5_1_1_1_1_0_1_1_symbolic.toml",
+          "input_sha256": "75a51a1b359b0cef36e4b65965bfe830df13d80f1e04babc6c58df0218667047"
+        },
+        {
+          "identifier": "finiteAx12_7_446_11_0__0_5_1_1_1_1_0_1_1/symbolic",
+          "input": "artifacts/corpus/symbolic/0152_finiteAx12_7_446_11_0__0_5_1_1_1_1_0_1_1_symbolic.toml",
+          "input_sha256": "ca89810d876b2bcde20ffc86b18928380eb4b26a418b6ab0f1accbb382bf1e3d"
+        }
+      ],
+      "map": "s -> s; t -> 5/9-s-t; every x -> x",
+      "constraint_identity": "positive rational normalization, exact equality",
+      "ordered_split_signs": [
+        1
+      ],
+      "required_actual_order": "s before t; all original group and fixed-order restrictions preserved",
+      "eligible_completed_donor": false
+    },
+    {
+      "originals": [
+        {
+          "identifier": "finiteB_7_471_13_0__7_1_1_0_1_0_1_1_1/symbolic",
+          "input": "artifacts/corpus/symbolic/0174_finiteB_7_471_13_0__7_1_1_0_1_0_1_1_1_symbolic.toml",
+          "input_sha256": "23d1b9942acdc37bfe8624e687ec9bef1f06fb5382de5834d2bb626a0eb029b0"
+        },
+        {
+          "identifier": "finiteBx12_7_471_13_0__7_1_1_0_1_0_1_1_1/symbolic",
+          "input": "artifacts/corpus/symbolic/0185_finiteBx12_7_471_13_0__7_1_1_0_1_0_1_1_1_symbolic.toml",
+          "input_sha256": "d255d048a78ace10c03f22781fd1b539b1f6b2e13bc105c163eccb27cc43983b"
+        }
+      ],
+      "map": "s -> s; t -> 5/9-s-t; every x -> x",
+      "constraint_identity": "positive rational normalization, exact equality",
+      "ordered_split_signs": [
+        1
+      ],
+      "required_actual_order": "s before t; all original group and fixed-order restrictions preserved",
+      "eligible_completed_donor": false
+    },
+    {
+      "originals": [
+        {
+          "identifier": "finiteC_6_215_11_0__6_1_1_0_1_0_1_1_0/symbolic",
+          "input": "artifacts/corpus/symbolic/0204_finiteC_6_215_11_0__6_1_1_0_1_0_1_1_0_symbolic.toml",
+          "input_sha256": "417410b390d364a9cb198ed94dbdfdc5745c6e628eafdb0744dfa3de21acc1b3"
+        },
+        {
+          "identifier": "finiteCx12_6_215_11_0__6_1_1_0_1_0_1_1_0/symbolic",
+          "input": "artifacts/corpus/symbolic/0233_finiteCx12_6_215_11_0__6_1_1_0_1_0_1_1_0_symbolic.toml",
+          "input_sha256": "f3b182041f717727118b22c3df181cb89820020dacada5d1077cc996c561149f"
+        }
+      ],
+      "map": "s -> s; t -> 5/9-s-t; every x -> x",
+      "constraint_identity": "positive rational normalization, exact equality",
+      "ordered_split_signs": [
+        1
+      ],
+      "required_actual_order": "s before t; all original group and fixed-order restrictions preserved",
+      "eligible_completed_donor": false
+    },
+    {
+      "originals": [
+        {
+          "identifier": "finiteC_6_231_7_0__2_1_1_0_0_1_1_1_0/symbolic",
+          "input": "artifacts/corpus/symbolic/0208_finiteC_6_231_7_0__2_1_1_0_0_1_1_1_0_symbolic.toml",
+          "input_sha256": "5af3c92c4b47273b011cc3359af99af99bdf5a591644e4f21d8795a29a5a942e"
+        },
+        {
+          "identifier": "finiteCx12_6_231_7_0__2_1_1_0_0_1_1_1_0/symbolic",
+          "input": "artifacts/corpus/symbolic/0237_finiteCx12_6_231_7_0__2_1_1_0_0_1_1_1_0_symbolic.toml",
+          "input_sha256": "461c21f41ac3817b15478fdb22f0f7fec0e8181b7dbd4ed4944481b3e30befd7"
+        }
+      ],
+      "map": "s -> s; t -> 5/9-s-t; every x -> x",
+      "constraint_identity": "positive rational normalization, exact equality",
+      "ordered_split_signs": [
+        1
+      ],
+      "required_actual_order": "s before t; all original group and fixed-order restrictions preserved",
+      "eligible_completed_donor": false
+    },
+    {
+      "originals": [
+        {
+          "identifier": "finiteC_6_476_10_0__0_0_5_1_1_0_1_1_1/symbolic",
+          "input": "artifacts/corpus/symbolic/0217_finiteC_6_476_10_0__0_0_5_1_1_0_1_1_1_symbolic.toml",
+          "input_sha256": "e1615fd76cb8bc367499291944dbd3be12481edaa947f9105c05b3e5acf5ae4a"
+        },
+        {
+          "identifier": "finiteCx12_6_476_10_0__0_0_5_1_1_0_1_1_1/symbolic",
+          "input": "artifacts/corpus/symbolic/0240_finiteCx12_6_476_10_0__0_0_5_1_1_0_1_1_1_symbolic.toml",
+          "input_sha256": "0fdbe37af705c5b1d2edd19c5c466b968f225d8b4b2a7200957643e346521c00"
+        }
+      ],
+      "map": "s -> s; t -> 5/9-s-t; every x -> x",
+      "constraint_identity": "positive rational normalization, exact equality",
+      "ordered_split_signs": [
+        1
+      ],
+      "required_actual_order": "s before t; all original group and fixed-order restrictions preserved",
+      "eligible_completed_donor": false
+    },
+    {
+      "originals": [
+        {
+          "identifier": "finiteC_7_247_10_0__4_1_1_0_1_1_1_1_0/symbolic",
+          "input": "artifacts/corpus/symbolic/0222_finiteC_7_247_10_0__4_1_1_0_1_1_1_1_0_symbolic.toml",
+          "input_sha256": "91d5ab51319df7d080aa8db6a7ae9e3e971d0fc7aae63811248d6d76dc3edcb2"
+        },
+        {
+          "identifier": "finiteCx12_7_247_10_0__4_1_1_0_1_1_1_1_0/symbolic",
+          "input": "artifacts/corpus/symbolic/0244_finiteCx12_7_247_10_0__4_1_1_0_1_1_1_1_0_symbolic.toml",
+          "input_sha256": "149f073cc02f26a38f2a43347f2457685e435abf1d72c85fee5a140086f5ca8d"
+        }
+      ],
+      "map": "s -> s; t -> 5/9-s-t; every x -> x",
+      "constraint_identity": "positive rational normalization, exact equality",
+      "ordered_split_signs": [
+        1
+      ],
+      "required_actual_order": "s before t; all original group and fixed-order restrictions preserved",
+      "eligible_completed_donor": false
+    },
+    {
+      "originals": [
+        {
+          "identifier": "finiteC_7_478_10_0__0_4_1_1_1_0_1_1_1/symbolic",
+          "input": "artifacts/corpus/symbolic/0225_finiteC_7_478_10_0__0_4_1_1_1_0_1_1_1_symbolic.toml",
+          "input_sha256": "7a534c1f34b3beddf032ae6dddaf42f68606ac833f7f7497c36395c0c35d39a4"
+        },
+        {
+          "identifier": "finiteCx12_7_478_10_0__0_4_1_1_1_0_1_1_1/symbolic",
+          "input": "artifacts/corpus/symbolic/0247_finiteCx12_7_478_10_0__0_4_1_1_1_0_1_1_1_symbolic.toml",
+          "input_sha256": "0908552738a0e8cb46b4a992105b29f1f956b77ce6e27f58ac3accb6233aa6ac"
+        }
+      ],
+      "map": "s -> s; t -> 5/9-s-t; every x -> x",
+      "constraint_identity": "positive rational normalization, exact equality",
+      "ordered_split_signs": [
+        1
+      ],
+      "required_actual_order": "s before t; all original group and fixed-order restrictions preserved",
+      "eligible_completed_donor": false
+    }
+  ],
+  "unmatched_originals": [
+    "finiteC_6_470_10_0__0_5_1_0_1_0_1_1_1/symbolic",
+    "finiteD_7_251_12_0__6_1_0_1_1_1_1_1_0/symbolic",
+    "finiteD_7_375_13_0__7_1_1_0_1_1_1_0_1/symbolic",
+    "test_gluza_ex33/solve/3"
+  ],
+  "small_already_completed_regression": {
+    "donor": "finiteA_3_26_4_0__0_2_0_1_1_0_0_0_0/symbolic",
+    "target": "finiteAx12_3_26_4_0__0_2_0_1_1_0_0_0_0/symbolic",
+    "source_order": [
+      "s",
+      "t",
+      "x4",
+      "x3",
+      "x1"
+    ],
+    "source_result_sha256": "286a68e7e00fd7a71178d1f00ec2f431103d125c028169bf434903301ba6cbd3",
+    "donor_verification": {
+      "verified": true,
+      "cells": 8,
+      "stacks": 14,
+      "rejected_branches": 17
+    },
+    "verification_sha256": "aac7573daf070e7fea2e3aa8bcfedbf09aca5c53d7abdb339d4151dd12056632",
+    "verifier_sha256": "f300617988679a167a6911b79c547f5b82c623bf368a6cc704b9a9611c3a8a67",
+    "status": "Both originals already completed; no transported proof produced"
+  }
+}
