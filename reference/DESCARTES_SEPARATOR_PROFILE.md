@@ -77,6 +77,13 @@ real roots, four positive. Continued-fraction sector sampling chooses the
 low-height rational separators **`2`, `874`, `6008`**. The endpoint, separator,
 and leading-coefficient signs are **`+,-,+,-,+`**.
 
+This same operand was still the active, unfinished discriminant when the prior
+release campaign reached its 300-second deadline (`300.421` seconds measured
+wall time; `initial-x5-0/record.json` beside the capture). That is the motivation
+for this replacement, not a measured standalone discriminant runtime or a
+whole-solve speedup ratio: the new timings cover only discovery and factoring of
+the alternative guards.
+
 | Work | Measured seconds |
 | --- | ---: |
 | Exact fiber root isolation | 0.01067 |
