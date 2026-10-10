@@ -10,7 +10,7 @@ For `p=a*z²+b*z+c`, the identity
 `4*a*p=(2*a*z+b)²+(4*a*c-b²)` gives strict nonvanishing if `a` has a
 certified strict sign and `4*a*c-b²>0` throughout the target-free domain.
 Either coefficient obligation may itself be established by another quadratic
-step in an earlier-independent coordinate. Each child loses its parent's
+step in a remaining coordinate. Each child loses its parent's
 axis; no sampled value or target sign is used as a premise. Repeated roots
 and same-sign interior zeros are not omitted: a merely nonnegative
 discriminant complement or square does not satisfy this rule.
