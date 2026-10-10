@@ -52,6 +52,13 @@ symgcad bench campaign.toml
 
 The binary above is `target/release/symgcad`; add that directory to `PATH` or use the full path. `--help` documents each command. [Detailed usage](docs/USAGE.md) covers all options, proof formats and worked reductions.
 
+For dressed HEPKit DOT graphs, the optional [FastSecDec interface](docs/FASTSECDEC_INTEROP.md)
+exports native signed U/F, exact kinematics and edge-to-parameter mappings.
+`symgcad import-fastsecdec` checks the bundle and produces an ordinary problem
+for solving and verification. Setup can clone a pinned revision of FastSecDec's
+separate `no_deformation` branch; FastSecDec is never vendored here. This prepares
+graph-driven sign analysis; no-deformation numerical integration remains future work.
+
 ## Engines and bounded search
 
 | Engine | Purpose |

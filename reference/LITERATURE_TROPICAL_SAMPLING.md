@@ -61,6 +61,15 @@ original edge-endpoint table. The imported `Problem` in `src/config.rs`
 does not retain a graph. A polynomial support or an integral-family number
 must not be silently treated as the original labelled graph.
 
+The subsequent [FastSecDec graph-input interface](../docs/FASTSECDEC_INTEROP.md)
+provides the intended source of that connectivity: native dressed HEPKit DOT
+graphs, routing, exact kinematics and stable denominator-to-parameter maps.
+Its A446 regression now reconstructs all original symbolic U/F coefficients
+and the specified fixed point; a native spanning-tree check independently
+reconstructs U. This closes the provenance gap for that explicit graph.
+Historical fixtures without such a binding still cannot supply graph
+certificates by inference from their names or polynomial supports.
+
 The smallest new import is a data-only sidecar binding:
 
 1. Original source hash and normalized mathematical-input hash.

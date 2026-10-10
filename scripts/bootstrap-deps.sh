@@ -5,18 +5,21 @@ set -euo pipefail
 repo_root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
 deps_dir="$repo_root/DO_NOT_PUSH_REFERENCES"
 with_reference=false
+with_fastsecdec=false
 apply_patches=false
 check_only=false
 
 usage() {
     cat <<'EOF'
-Usage: scripts/bootstrap-deps.sh [--reference] [--apply-patches] [--check]
+Usage: scripts/bootstrap-deps.sh [--reference] [--fastsecdec] [--apply-patches] [--check]
                                 [--directory PATH]
 
 Fetch the revisions recorded in PROVENANCE.toml. The default dependency tree
 is pristine and matches the recorded benchmarks. --apply-patches applies the
 two optional upstream fixes, once each. Repeated calls are idempotent.
 --reference also fetches the independent GCAD sources; --check changes nothing.
+--fastsecdec also fetches the pinned no_deformation-branch FastSecDec producer
+for optional graph-driven tests. It remains a separate external repository.
 --directory overrides the external-source directory for setup validation only;
 Cargo expects the default DO_NOT_PUSH_REFERENCES location.
 Existing checkouts at another revision or with unrelated changes are rejected;
@@ -27,6 +30,7 @@ EOF
 while (($#)); do
     case "$1" in
         --reference) with_reference=true ;;
+        --fastsecdec) with_fastsecdec=true ;;
         --apply-patches) apply_patches=true ;;
         --check) check_only=true ;;
         --directory)
@@ -136,5 +140,10 @@ if $with_reference; then
     fetch_repo gcad
     [[ -z $(git -C "$deps_dir/gcad" status --porcelain) ]] \
         || die "GCAD has local changes; preserving them unchanged"
+fi
+if $with_fastsecdec; then
+    fetch_repo fastSecDec
+    [[ -z $(git -C "$deps_dir/fastSecDec" status --porcelain) ]] \
+        || die "FastSecDec has local changes; preserving them unchanged"
 fi
 printf 'Dependency setup verified. External sources stay outside Git tracking.\n'

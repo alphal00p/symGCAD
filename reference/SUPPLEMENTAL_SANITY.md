@@ -121,3 +121,22 @@ positive. The same seed still checked all eight cells and 16 points, found
 exactly two sign failures in that cell, and returned a nonzero exit status.
 [Both counterexamples](a446-sanity-mutation.json) retain their exact coordinates
 and negative F values. The genuine proof was not modified.
+
+## Graph-driven A446 replay
+
+The new [FastSecDec interoperability workflow](../docs/FASTSECDEC_INTEROP.md)
+also passed the same supplemental protocol on its independently verified
+eight-cell result. The original evaluator read the producer's actual signed-F
+companion TOML and exact point, independently of CAD reconstruction. Seed
+`20261010` generated two fresh interior points per cell: eight cells and 16
+points checked, 112 original-constraint checks, 16 F evaluations (240 scalar
+expression evaluations), zero failures and zero unchecked cells. Sampling
+took 1.368 seconds inside the checker and remained outside benchmark timings.
+
+The full report is retained as
+`artifacts/fastsecdec-a446-interop-01/supplemental-sanity.json`, SHA-256
+`9ec7a4bb60bbdda781332ddbac6ccaf7c0b809650deabf53af6a4b07d4695c6a`.
+Its proof SHA-256 is
+`25c85937d3870d4c7390862504a0cecffb6a8be0337f35b553a94456df8b330f`.
+This adds an interface sanity check, not a new corpus completion or coverage
+argument.

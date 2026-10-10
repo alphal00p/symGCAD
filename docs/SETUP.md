@@ -50,6 +50,22 @@ nix develop -c typst compile benchmark/benchmark.typ benchmark/benchmark.pdf
 
 The document's table data and source are committed separately from generated solver proofs.
 
+## Optional graph input from FastSecDec
+
+```sh
+scripts/bootstrap-deps.sh --fastsecdec
+scripts/bootstrap-deps.sh --fastsecdec --check
+```
+
+This fetches the tested `no_deformation` branch revision recorded in
+`PROVENANCE.toml` into the ignored `DO_NOT_PUSH_REFERENCES/fastSecDec` directory.
+FastSecDec stays a separate repository with its own Cargo lockfile; its source
+is never included in symGCAD commits. It is optional for graph-driven tests
+and exact U/F export, and unnecessary for ordinary polynomial problems.
+See [the graph-input workflow](FASTSECDEC_INTEROP.md) for build, export,
+checked import and independent solve verification. The full no-deformation
+integration pipeline remains downstream.
+
 Historical benchmark source identifiers map to the copied public history through
 [the publication commit map](../reference/PUBLICATION_HISTORY.md).
 The documented setup and A446 workflow also passed an
