@@ -167,3 +167,50 @@ with no failures or ignored tests; test execution took 52.80 seconds after
 The first full-suite invocation was stopped during compilation when review
 found the native-zero map regression; its interrupted log is retained as
 `discriminant-segmentation-fast-tests-01.log` and is not counted as a pass.
+
+## Completed ordinary operation and warm continuation
+
+The second bounded A377 continuation ended after 3600.028 seconds at
+424,292 KiB peak RSS, without a result or verification. Its cache audit shows
+that the ordinary degree-24 discriminant above **did complete**, recording
+3299.107 seconds. The final active capture is a different discriminant of
+degree 18 in `t` and degree 42 in `s`; the deadline did not interrupt the
+already completed degree-24 calculation.
+
+The completed native operation and the frozen accelerated replay have the
+same input digest, backend, variable map, elimination axis and canonical
+output-array digest
+`f38e7a98dab6d31382f4db9d44f6a229fa711cda8b2b9efac960001b35007493`.
+This corroborates the canonical polynomial only: normalization removes signed
+rational scale. The separate full-grid comparison above establishes the
+signed-scale identity. The 3299.107-second cache duration and 146.381-second
+accelerated algebra duration are individual operation diagnostics, not a
+three-run benchmark or a whole-case speed ratio.
+
+`artifacts/research/a377-segmentation-warm-hour-02/` retains the final audit
+(SHA-256 `cfa6b86da35d52b7e4052414932b8a0a3afcc791121c0dd15bde17c4a34f9da1`),
+comparison (`f933089c777fbe2791e7a448b0d604973476c2b03e535e2a80f287e740f6e216`)
+and final cache manifest
+(`816f7d6bbd2d074323d440b0b1c6a9834ddecebd5e322dfbd3778cae2444d2bb`).
+All original 1,880 entries are unchanged; the new discriminant record brings
+the total to 1,881 completed entries and 159,699,803 bytes.
+
+The next release was built from source `d03f2ea6a1c2d1fb4e4a1271da6976390ef61078`
+with all compiled source hashes checked before and after the build. Its
+solver SHA-256 is
+`e6ccecc0db581272a791cee3c3d5cb04cec7bb8fc87d807ce2efcef60c7a2650`;
+the build manifest digest is
+`c2031c8c4bc8eb7ecf7a586a01b0f37962a1935efe052cbfe8f87bbe735e229c`.
+A fresh two-cell solve/verification and the native A446 checked import and
+eight-cell proof replay passed with that executable.
+
+`artifacts/research/a377-segmentation-warm-hour-03/` was launched at
+11:52:25 UTC on 10 October 2026, on CPU 8 with 4 GiB and a 3600-second campaign
+budget. Only the completed native cache entries were copied; no research
+result was injected. Mathematics, variable groups/order, solver options and
+limits match the previous run, apart from its fresh checkpoint path and the
+new executable. Its initial-cache manifest digest is
+`6b07016d8cecd254dd8548908cd8f4304c78faa12434d0c3bd8b697b0223e532`;
+the launch record digest is
+`772953b0dd528800284aa73adbef2590f8b18a8d477dfc0d86f959f28f039f27`.
+This records a warm attempt starting, not a completion or cold benchmark.
