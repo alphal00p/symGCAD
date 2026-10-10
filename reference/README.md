@@ -46,6 +46,10 @@ Inventory categories at upstream revision
 | Literal two-loop fixture files | 265 |
 | Generated one-loop fixture files | 12 |
 
+All eleven non-GCAD utility tests have explicit Rust equivalents and
+backend-specific API dispositions in
+[UPSTREAM_UTILITY_TESTS.md](UPSTREAM_UTILITY_TESTS.md).
+
 The original ZZ fixtures keep `s,t` symbolic, substitute `mt2=1,mz2=5/18`,
 and impose `s>4,x_i>0`. The fixed workload additionally uses `s=10,t=-3`.
 ZZ tests only check completion, so their results are compatibility observations,

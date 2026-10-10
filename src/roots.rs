@@ -331,9 +331,12 @@ fn open_or_exact_interval(
 }
 
 /// A small-denominator rational in a closed rational interval. Continued
-/// fractions use Symbolica's exact integer/rational arithmetic.
+/// fractions use Symbolica's exact integer/rational arithmetic. Endpoints
+/// may be supplied in either order, matching the upstream helper contract.
 pub fn simplest_between(lo: &Rational, hi: &Rational) -> Rational {
-    assert!(lo <= hi);
+    if lo > hi {
+        return simplest_between(hi, lo);
+    }
     if hi.is_negative() {
         return -simplest_between(&(-hi.clone()), &(-lo.clone()));
     }
