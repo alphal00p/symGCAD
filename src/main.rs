@@ -359,6 +359,18 @@ fn run_search(problem: &Problem) -> Result<Value> {
             .sum::<f64>();
             Some((1.0 + cost) / checkpoints.len().max(1) as f64)
         });
+        let promotion_score = problem
+            .solver
+            .search_local_progress
+            .then(|| {
+                let report: symgcad::local_projection::LocalReport =
+                    serde_json::from_value(progress.as_ref()?.clone()).ok()?;
+                symgcad::search::local_progress::promotion_score(
+                    report.search_inventory.as_ref()?,
+                    report.refinements,
+                )
+            })
+            .flatten();
         let abandoned_prefix = if status == TrialStatus::Pruned {
             progress.as_ref().and_then(|p| {
                 let report: symgcad::optimized_projection::OptimizedProjectionReport =
@@ -378,6 +390,7 @@ fn run_search(problem: &Problem) -> Result<Value> {
             elapsed_secs: process.wall_time_secs,
             cells,
             progress_score,
+            promotion_score,
             message: if complete { None } else { Some(process.stderr) },
             abandoned_prefix,
         })
@@ -398,11 +411,14 @@ fn run_search(problem: &Problem) -> Result<Value> {
     let report = if let (Some(directory), Some(normalized)) =
         (&problem.solver.checkpoint_dir, normalized_context)
     {
+        let mut context =
+            json!({"problem":context_problem,"normalized":normalized,"scheduler":"uct-journal-v1"});
+        if problem.solver.search_local_progress {
+            context["timeout_promotion_policy"] = json!(symgcad::search::local_progress::POLICY);
+        }
         let checkpoint = SearchCheckpointOptions {
             directory: directory.clone(),
-            context: serde_json::to_string(
-                &json!({"problem":context_problem,"normalized":normalized,"scheduler":"uct-journal-v1"}),
-            )?,
+            context: serde_json::to_string(&context)?,
         };
         search_checkpointed(&groups, &priority, &seeds, &options, &checkpoint, evaluate)?
     } else {

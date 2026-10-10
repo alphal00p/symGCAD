@@ -11,6 +11,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::time::Instant;
 
 pub mod checkpoint;
+pub mod local_progress;
 pub use checkpoint::{CheckpointReport, SearchCheckpointOptions, search_checkpointed};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -106,6 +107,10 @@ pub struct TrialOutcome {
     /// Optional nonnegative structural cost estimate; smaller is promising.
     /// Used only to prioritize unfinished candidates, never as a certificate.
     pub progress_score: Option<f64>,
+    /// Optional ranking for timed-out candidate promotions only. It does not
+    /// affect UCT rewards, pruning, or the completed-winner comparison.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub promotion_score: Option<f64>,
     pub message: Option<String>,
     /// A measured, expensive elimination prefix. Search may avoid repeating
     /// it during this bounded campaign; it is not an exceptional set or a
@@ -381,6 +386,7 @@ where
                 elapsed_secs: 0.0,
                 cells: None,
                 progress_score: *score,
+                promotion_score: None,
                 message: Some("shared prefix abandoned earlier in this search campaign".into()),
                 abandoned_prefix: Some(prefix.clone()),
             })
@@ -591,6 +597,12 @@ fn validate_outcome(
         "worker returned an invalid progress score"
     );
     ensure!(
+        outcome
+            .promotion_score
+            .is_none_or(|x| x.is_finite() && x >= 0.0),
+        "worker returned an invalid promotion score"
+    );
+    ensure!(
         outcome.status != TrialStatus::Completed || outcome.cells.is_some(),
         "completed worker omitted its cell count"
     );
@@ -746,6 +758,12 @@ fn partial_cost(outcome: &TrialOutcome) -> f64 {
     outcome.progress_score.unwrap_or(f64::MAX)
 }
 
+fn promotion_cost(outcome: &TrialOutcome) -> f64 {
+    outcome
+        .promotion_score
+        .unwrap_or_else(|| partial_cost(outcome))
+}
+
 fn reward(outcome: &TrialOutcome) -> f64 {
     if outcome.status == TrialStatus::Completed {
         0.5 + 0.5 / (1.0 + outcome.elapsed_secs.ln_1p())
@@ -779,7 +797,7 @@ fn promotion_candidate(
             } else {
                 a.tier.cmp(&b.tier)
             };
-            tier.then_with(|| partial_cost(&a.last).total_cmp(&partial_cost(&b.last)))
+            tier.then_with(|| promotion_cost(&a.last).total_cmp(&promotion_cost(&b.last)))
                 .then_with(|| ia.cmp(ib))
         })
         .map(|(id, _)| id)

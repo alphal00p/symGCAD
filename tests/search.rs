@@ -6,6 +6,7 @@ fn outcome(status: TrialStatus, elapsed_secs: f64) -> TrialOutcome {
         elapsed_secs,
         cells: Some(1),
         progress_score: None,
+        promotion_score: None,
         message: None,
         abandoned_prefix: None,
     }

@@ -67,3 +67,27 @@ a restart hint: all 12 checkpoint, 10 existing search and 2 CLI tests passed in
 `artifacts/search-checkpoint-focused-tests-04.log`. The earlier `02` log contains
 only subsequently fixed borrowing errors in an unrelated research example.
 No performance speedup is inferred from recovery correctness.
+
+The optional `search_local_progress` policy adds a separately serialized
+`promotion_score` to trial outcomes. It only ranks timeout promotions: UCT
+rewards, unfinished fallback suggestions, pruning and completed winners retain
+their prior rules. `local-inventory-log-v1` sums `ln(1+x)` over distinct local
+registry polynomial count, total terms, maximum total degree, maximum rational
+coefficient bit height, and refinements. Each polynomial is scanned once at
+registration; disabled runs do not collect inventory. Missing or unknown-version
+observations receive no score. This is a monotone complexity prediction with
+equal weights, not an estimate of covered volume or remaining time. The CLI
+binds the flag and policy version to its checkpoint context. Earlier outcome
+records default to no promotion score and keep their historical meaning.
+
+The focused qualification passed 168 distinct tests across the library, search,
+checkpoint, CLI, local-frontier, local-progress and bilinear-premise targets.
+The new tests check exact inventory/deduplication, monotone and finite costs,
+promotion priority without UCT or fallback changes, unchanged completed-winner
+selection, old report defaults, journal replay, separate CLI contexts and proof
+verification independent of telemetry. Logs are
+`artifacts/local-search-promotion-focused-tests-{01,02}.log`; the first retains
+a test-only failure from an unrealistically short allowance for hashing the
+large debug executable. The corrected test uses the existing checkpoint test's
+bounded seed allowance. No search-performance gain is claimed without a cold,
+same-binary flag ablation.

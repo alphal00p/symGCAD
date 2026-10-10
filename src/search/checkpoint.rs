@@ -109,6 +109,7 @@ impl Journal {
                                 elapsed_secs: r.outcome.elapsed_secs,
                                 cells: r.outcome.cells,
                                 progress_score: r.outcome.progress_score,
+                                promotion_score: r.outcome.promotion_score,
                                 message,
                                 abandoned_prefix: r.outcome.abandoned_prefix.clone(),
                             },

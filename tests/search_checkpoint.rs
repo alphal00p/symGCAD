@@ -35,9 +35,40 @@ fn outcome(status: TrialStatus) -> TrialOutcome {
         elapsed_secs: 0.001,
         cells: Some(3),
         progress_score: Some(1.0),
+        promotion_score: None,
         message: None,
         abandoned_prefix: None,
     }
+}
+
+#[test]
+fn promotion_scores_survive_replay_but_policy_context_changes_start_fresh() {
+    let dir = directory();
+    let mut opts = options();
+    opts.max_rollouts = 1;
+    let mut context = checkpoint(&dir);
+    context.context = format!("exact-problem:{}", symgcad::search::local_progress::POLICY);
+    let callback = |_: &symgcad::search::TrialRequest| {
+        let mut r = outcome(TrialStatus::Timeout);
+        r.promotion_score = Some(17.0);
+        Ok(r)
+    };
+    search_checkpointed(&[vec![0, 1]], &[1, 0], &[], &opts, &context, callback).unwrap();
+    let resumed = search_checkpointed(&[vec![0, 1]], &[1, 0], &[], &opts, &context, |_| {
+        Ok(outcome(TrialStatus::Timeout))
+    })
+    .unwrap();
+    assert_eq!(resumed.checkpoint.as_ref().unwrap().loaded_trials, 1);
+    assert_eq!(resumed.trials[0].outcome.promotion_score, Some(17.0));
+    assert!(resumed.best_order.is_none());
+    context.context = "exact-problem:local-inventory-log-future-policy".into();
+    let fresh = search_checkpointed(&[vec![0, 1]], &[1, 0], &[], &opts, &context, |_| {
+        Ok(outcome(TrialStatus::Timeout))
+    })
+    .unwrap();
+    assert_eq!(fresh.checkpoint.unwrap().loaded_trials, 0);
+    assert!(fresh.trials[0].outcome.promotion_score.is_none());
+    fs::remove_dir_all(dir).unwrap();
 }
 fn checkpoint(p: &Path) -> SearchCheckpointOptions {
     SearchCheckpointOptions {

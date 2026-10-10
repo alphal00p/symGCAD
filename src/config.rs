@@ -29,6 +29,9 @@ pub struct SolverOptions {
     /// Heuristic abandonment of explosive ordering prefixes. This affects
     /// search effort only; the selected final solve is never pruned this way.
     pub search_pruning: bool,
+    /// Experimental local inventory costs rank timeout promotions only.
+    #[serde(skip_serializing_if = "is_false")]
+    pub search_local_progress: bool,
     pub checkpoint_dir: Option<PathBuf>,
     pub cache_memory_mib: usize,
     pub positivity: bool,
@@ -118,6 +121,7 @@ impl Default for SolverOptions {
             max_rollouts: 256,
             search_time_secs: None,
             search_pruning: true,
+            search_local_progress: false,
             checkpoint_dir: None,
             cache_memory_mib: 128,
             positivity: false,

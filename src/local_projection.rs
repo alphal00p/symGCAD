@@ -195,6 +195,10 @@ pub struct LocalPhaseCosts {
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 #[serde(default)]
 pub struct LocalReport {
+    /// Optional append-only registry observations for ordering search. These
+    /// diagnostic counters are never inputs to certificate verification.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub search_inventory: Option<crate::search::local_progress::LocalInventory>,
     pub speculative_nodes: usize,
     pub refinements: usize,
     /// New stack cuts retained across all speculative refinement rounds.
@@ -1656,6 +1660,9 @@ impl Builder<'_> {
             return id;
         }
         let id = self.polynomials.len();
+        if let Some(inventory) = &mut self.report.search_inventory {
+            inventory.observe(&polynomial);
+        }
         self.ids.insert(polynomial.clone(), id);
         self.polynomials.push(polynomial);
         id
@@ -2385,6 +2392,9 @@ pub fn solve_local(problem: &Problem, options: &LocalOptions) -> Result<LocalSol
         ..Default::default()
     };
     let mut report = LocalReport::default();
+    if problem.solver.search_local_progress {
+        report.search_inventory = Some(crate::search::local_progress::LocalInventory::new());
+    }
     let bezout_registry = if options.strict_bezout {
         strict_bezout::Registry::from_hints(
             &normalized,
