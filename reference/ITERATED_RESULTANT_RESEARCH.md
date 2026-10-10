@@ -440,3 +440,24 @@ diagnostic, not a measured improvement or an implemented determinant
 algorithm. A full interpolation would still require a complete exact
 degree certificate and all successful images, followed by signed product
 reconstruction. No incomplete image collection can certify the result.
+Because the 125-by-125 determinant is a polynomial definition, its exact
+images remain valid at `L0=0` or `delta=0`; these points need not be skipped
+as they would for the rational quotient-algebra formula. This does not
+remove the correction factors or the original CAD's degree-loss guards.
+
+The ordinary native comparison on the **same** `H0` capture also timed
+out: `profile_operation --strategy integer-ducos`, the direct backend
+used by `exact_resultant_ducos`, reached 120.033489171 seconds and 71,036
+KiB peak RSS with no result. It used CPU12, 4 GiB and a 120-second worker
+deadline under a separate 135-second deadline. The frozen profiler SHA is
+`b7fea963146378508cd4a18713d134daaa3baee6202338b2520fde705197b6e7`;
+`artifacts/research/a377-H0-native-discriminant-01/report.process.json`
+has SHA
+`01bd4d2f04af5a8fa6896ad61c7cae13111e560c28ee4208940d0dfd45ae66f3`.
+Its preparation binds the prior signed content identity and unchanged
+capture. This profiler would record only output size and a canonical
+output hash on success, not a complete signed polynomial, so it cannot
+alone provide a reconstruction candidate or independent verification.
+Neither native arithmetic nor the bounded encoding attempts have yet
+completed `Disc(H0)`. The larger integer-index image benchmark remains a
+reviewed proposal only.
