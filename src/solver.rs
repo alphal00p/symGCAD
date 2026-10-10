@@ -23,6 +23,9 @@ mod merging;
 pub use merging::merge;
 
 pub fn selected_order(problem: &Problem) -> Result<Vec<String>> {
+    if problem.solver.engine == "quadratic_ladder" {
+        return crate::quadratic_ladder::selected_order(problem);
+    }
     if problem.solver.engine == "bilinear_positive" {
         return crate::bilinear_positive::selected_order(problem);
     }
@@ -117,6 +120,9 @@ fn projection_options(problem: &Problem) -> Result<OptimizedProjectionOptions> {
             // own prefix and operation cache namespace for safe ablations.
             if problem.solver.weighted_square_positivity {
                 fingerprint.push_str("|weighted-square-positivity-v1");
+            }
+            if problem.solver.quadratic_component_positivity {
+                fingerprint.push_str("|quadratic-component-positivity-v1");
             }
             fingerprint
         },
@@ -586,6 +592,9 @@ fn classify_solve_result(problem: &Problem, result: Result<SolveResult>) -> Resu
 
 fn solve_impl(problem: &Problem) -> Result<SolveResult> {
     problem.validate()?;
+    if problem.solver.engine == "quadratic_ladder" {
+        return crate::quadratic_ladder::solve(problem);
+    }
     if problem.solver.engine == "bilinear_positive" {
         return crate::bilinear_positive::solve(problem);
     }
@@ -753,6 +762,7 @@ fn solve_impl(problem: &Problem) -> Result<SolveResult> {
         sign_filter: None,
         linear_negative: None,
         bilinear_positive: None,
+        quadratic_ladder: None,
     })
 }
 

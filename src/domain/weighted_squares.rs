@@ -32,7 +32,7 @@ pub struct WeightedResidualTerm {
     pub exponents: Vec<u32>,
 }
 
-fn positive_literal(text: &str) -> Result<Rational> {
+pub(super) fn positive_literal(text: &str) -> Result<Rational> {
     // A 512-bit numerator/denominator pair needs at most 156 decimal digits.
     // Check grammar and length before handing any data to Symbolica's parser.
     ensure!(text.len() <= 160, "weighted rational literal length");
@@ -58,7 +58,11 @@ fn positive_literal(text: &str) -> Result<Rational> {
     Ok(value)
 }
 
-fn replay_residual(template: &Poly, terms: &[WeightedResidualTerm], limit: usize) -> Result<Poly> {
+pub(super) fn replay_residual(
+    template: &Poly,
+    terms: &[WeightedResidualTerm],
+    limit: usize,
+) -> Result<Poly> {
     ensure!(
         !terms.is_empty() && terms.len() <= limit,
         "weighted residual term count"
@@ -77,7 +81,7 @@ fn replay_residual(template: &Poly, terms: &[WeightedResidualTerm], limit: usize
     Ok(result)
 }
 
-fn height(c: &Rational) -> u64 {
+pub(super) fn height(c: &Rational) -> u64 {
     c.numerator_ref().significant_bits() as u64 + c.denominator_ref().significant_bits() as u64
 }
 
@@ -95,7 +99,7 @@ fn monomial(template: &Poly, coefficient: Rational, exponents: &[u32]) -> Poly {
     p
 }
 
-fn positive_support(p: &Poly, positive: &[bool]) -> bool {
+pub(super) fn positive_support(p: &Poly, positive: &[bool]) -> bool {
     p.exponents_iter().all(|e| {
         e.iter()
             .zip(positive)
@@ -103,7 +107,7 @@ fn positive_support(p: &Poly, positive: &[bool]) -> bool {
     })
 }
 
-fn strict_residual(p: &Poly, positive: &[bool]) -> bool {
+pub(super) fn strict_residual(p: &Poly, positive: &[bool]) -> bool {
     !p.is_zero()
         && p.coefficients.iter().all(|c| *c > Rational::zero())
         && positive_support(p, positive)

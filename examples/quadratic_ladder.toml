@@ -1,0 +1,16 @@
+name = "quadratic opening below a positive-endpoint linear fiber"
+variables = ["v", "y", "x", "z"]
+constraints = ["v > 0", "y > 0", "x > 0", "z > 0"]
+split = ["(x^2+(1-3*y)*x+y+1)*z+v+1"]
+
+[solver]
+engine = "quadratic_ladder"
+ordering = "given"
+order = ["v", "y", "x", "z"]
+positivity = true
+merge = "none"
+
+[limits]
+wall_time_secs = 30
+memory_mib = 1024
+workers = 1

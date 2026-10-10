@@ -1,7 +1,9 @@
 # Proposed positive-endpoint quadratic-ladder wrapper
 
-This is a mathematical design, not an implemented engine or a completed
-conditional problem. Its generic coefficient conditions include the exact
+The opt-in `quadratic_ladder` engine implements this mathematical design;
+its [regression and conditional-workload evidence](QUADRATIC_LADDER_VALIDATION.md)
+are recorded separately.
+Its generic coefficient conditions include the exact
 [A446/Ax446 research ladder](A446_KINEMATIC_QUADRATIC_LADDER.md), but discovery
 must use degrees and identities, never graph names or fixture identifiers.
 
@@ -77,7 +79,7 @@ missing one of the five branches prevents complete status.
   coupled, or sign constraints involving these three axes cause decline in
   the first version; do not silently drop them. Multiple original sign
   polynomials need a separate arrangement/composition proof.
-- The first explicit `engine="quadratic_ladder"` accepts a fixed/given order
+- The explicit `engine="quadratic_ladder"` accepts a fixed/given order
   only, respecting variable groups, and inspects its final triple y,x,z.
   No triple search or homogeneity reduction is performed. Require degree_z(F)=1 and
   degree_x(q)=2, b affine in y with the stated independent b0,b1, and
@@ -144,9 +146,9 @@ the initial PSD-component kernel. Working in original coordinates lets the
 weighted certificate prove B and the proposed PSD certificate prove c directly.
 The remaining base constraints are linear and positive-coordinate bounds.
 
-First validate the theorem with unrelated rational-coefficient families and
-mutations of every premise. Then perform a bounded whole conditional-domain
-solve and fresh independent verification. Even five verified conditional cells
-would leave the original t>4 complement unresolved and require explicit t=4
-exception/partition composition before original-corpus completion. No current
-benchmark or completion credit is implied by this proposed wrapper.
+The implementation has passed unrelated rational-family and premise-mutation
+regressions, and the bounded whole conditional-domain solve produced five
+freshly verified cells. The original t>4 complement remains unresolved and
+requires explicit t=4 exception/partition composition before original-corpus
+completion. No original benchmark or completion credit follows from this
+conditional result.

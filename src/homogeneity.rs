@@ -447,6 +447,7 @@ fn reconstruct(
         sign_filter: None,
         linear_negative: None,
         bilinear_positive: None,
+        quadratic_ladder: None,
     })
 }
 

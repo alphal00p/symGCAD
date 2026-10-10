@@ -116,6 +116,40 @@ The verifier reconstructs projection obligations and checks an exhaustive liftin
 
 Production resultants use Symbolica's deterministic integer-Ducos routine, exact low-degree identities, and bounded bivariate interpolation with enough exact images to prove the full polynomial identity. Automatic CRT dispatch is confined to the profiling example because the current Symbolica checkout permits probabilistic early termination there. The separately replayable upstream sign correction in `patches/` is documented but is not applied to the reference checkout. `comparison::compare_generic` validates small decompositions through a certified common refinement, including differing variable orders and reconstructed scale/monotone cells.
 
+## A quadratic opening below a linear fiber
+
+The opt-in `quadratic_ladder` engine accepts one split polynomial, a fixed or
+given order, and three final positive unbounded coordinates `y,x,z`. It checks
+the signed original identity `F = q*z+B`, where
+`q = a*x^2+(b0-b1*y)*x+c`. Strict certificates must prove
+`B,a,c,b0,b1>0`; the discriminant of `q` in `x` must be quadratic in `y`
+with strictly positive leading coefficient. These are whole-domain
+requirements. No sampled sign establishes a premise.
+
+These identities prove that two positive `x` roots open above the larger
+discriminant root in `y`. The engine restores exactly five cells above every
+verified base cell, including both sides of the original interior `F=0`
+sheet. Its typed proof records six positivity certificates and the exact
+base decomposition. Verification extracts coefficients afresh, replays the
+certificates, verifies the base and checks every restored branch and root
+selector. Extra constraints involving these final three coordinates,
+multiple split polynomials, homogeneous transport or inconclusive premises
+produce an explicit applicability error. Base-only strict constraints are
+retained. The [theorem](../reference/POSITIVE_ENDPOINT_QUADRATIC_LADDER_PLAN.md)
+specifies the exceptional sections and root conventions.
+
+```sh
+symgcad solve examples/quadratic_ladder.toml --output artifacts/ladder.json
+symgcad verify artifacts/ladder.json
+```
+
+For more complicated coefficients, enable either or both of
+`weighted_square_positivity = true` and
+`quadratic_component_positivity = true`, together with `positivity = true`.
+The latter checks rational positive-semidefinite quadratic components plus
+a strictly positive residual. Both options preserve uncertified interior
+zero boundaries and default to false.
+
 ## Reference corpus and benchmarks
 
 The reference checkouts and generated inputs/results are ignored by Git. Revisions and initial corpus hashes are recorded in `PROVENANCE.toml`.

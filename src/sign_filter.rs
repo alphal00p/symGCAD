@@ -197,6 +197,7 @@ fn solve_plan(problem: &Problem, plan: Plan, started: Instant) -> Result<SolveRe
         local: None,
         linear_negative: None,
         bilinear_positive: None,
+        quadratic_ladder: None,
         sign_filter: Some(Box::new(SignFilterEvidence {
             constraint_index: plan.constraint_index,
             normalized_target: plan.normalized_target,

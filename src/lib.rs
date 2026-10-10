@@ -12,6 +12,7 @@ pub mod homogeneity;
 pub mod linear_negative;
 pub mod local_projection;
 pub mod monotone;
+pub mod quadratic_ladder;
 pub mod optimized_projection;
 pub mod ordering;
 pub mod output;

@@ -46,3 +46,28 @@ See the individual [proposal-cache](BASE_SUPPORT_PROPOSAL_CACHE.md),
 [registry](BASE_SUPPORT_REGISTRY_CAPACITY.md) and
 [weighted-square](WEIGHTED_SQUARE_PRODUCTION.md) notes for the proof contracts,
 focused regressions and narrowly scoped measurements.
+
+## Quadratic certificates and ladder gate
+
+The subsequent complete fast suite, including the new PSD-component
+certificate and quadratic-ladder engine, passed **615 tests across 45 targets,
+zero failed, two ignored**. One pass is the separate uncommitted alternate-mass
+regression, so the tracked suite accounts for **614 passes**. No production,
+test or Cargo input changed during the run. Formatting checks also passed for
+the new modules and regressions.
+
+The same command and CPU3 / 2 GiB / 900-second supervisor completed in
+476 seconds, including 7 minutes 3 seconds of compilation; test bodies summed
+to 51.93 seconds. Sampled aggregate peak RSS was 1,634,192 KiB. These are
+correctness-gate costs, not benchmark solver timings. The original corpus
+count remains unchanged. See the [conditional result](QUADRATIC_LADDER_VALIDATION.md)
+and [four-way certificate diagnostics](QUADRATIC_COMPONENT_PRODUCTION.md).
+
+Evidence under `artifacts/research/quadratic-fast-suite-01/`:
+
+| Record | SHA-256 |
+| --- | --- |
+| `run.log` | `ff8eaa44e7782c70606cfba4031222684cc281f02935b8cab9e5cccbd42ae21d` |
+| `run.process.json` | `d9f462003ed91485951262d1af9fea4c90b48c373cb223acec3ec86a0354da32` |
+| `source-hashes.txt` | `ceefe93aee544944f472652d05858de88aa36b71c299b96088d34f074a945e7c` |
+| `source-check.txt` | `5495c5de11f506dc9249a87a079c224bcb535b0d5fb39ce2ddcff65b982419db` |

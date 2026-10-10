@@ -1,7 +1,7 @@
 # Proposed next bounded certificate: PSD quadratic components
 
-This is a design, not a production implementation. No new solve or runtime
-measurement accompanies it. The prerequisite weighted-square milestone is
+This records the approved design; the implementation and validation are in
+[the production note](QUADRATIC_COMPONENT_PRODUCTION.md). The prerequisite weighted-square milestone is
 `0409343`; the evidence for this separate rule is the already measured
 [quadratic-component research](QUADRATIC_COMPONENT_CERTIFICATE.md).
 

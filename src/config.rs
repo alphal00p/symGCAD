@@ -49,6 +49,9 @@ pub struct SolverOptions {
     /// guards. Monotone premise discovery keeps its existing portfolio.
     #[serde(skip_serializing_if = "is_false")]
     pub weighted_square_positivity: bool,
+    /// Experimental exact PSD quadratic-component residual certificates.
+    #[serde(skip_serializing_if = "is_false")]
+    pub quadratic_component_positivity: bool,
     /// Engine for the exact endpoint problem after monotone peeling.
     #[serde(skip_serializing_if = "is_optimized")]
     pub monotone_base_engine: String,
@@ -150,6 +153,7 @@ impl Default for SolverOptions {
             input_positivity: false,
             prune_operations: false,
             weighted_square_positivity: false,
+            quadratic_component_positivity: false,
             monotone_base_engine: "optimized".into(),
             monotone_negative_target: false,
             negative_linear_guide: None,
@@ -187,6 +191,11 @@ impl SolverOptions {
         crate::domain::CertificateOptions {
             weighted_square_candidates: if self.weighted_square_positivity {
                 72
+            } else {
+                0
+            },
+            quadratic_component_candidates: if self.quadratic_component_positivity {
+                32
             } else {
                 0
             },
@@ -328,7 +337,8 @@ impl Problem {
                 "monotone",
                 "local",
                 "linear_negative",
-                "bilinear_positive"
+                "bilinear_positive",
+                "quadratic_ladder"
             ]
             .contains(&self.solver.engine.as_str()),
             "unknown engine"
@@ -362,7 +372,8 @@ impl Problem {
                     "monotone",
                     "local",
                     "linear_negative",
-                    "bilinear_positive"
+                    "bilinear_positive",
+                    "quadratic_ladder"
                 ]
                 .contains(&self.solver.engine.as_str()),
             "positivity certificates require an optimized engine"
@@ -378,6 +389,10 @@ impl Problem {
         ensure!(
             !self.solver.weighted_square_positivity || self.solver.positivity,
             "weighted_square_positivity requires positivity"
+        );
+        ensure!(
+            !self.solver.quadratic_component_positivity || self.solver.positivity,
+            "quadratic_component_positivity requires positivity"
         );
         ensure!(
             self.solver

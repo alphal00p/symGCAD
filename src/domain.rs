@@ -9,7 +9,9 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 use symbolica::prelude::*;
 
+mod quadratic_components;
 mod weighted_squares;
+pub use quadratic_components::QuadraticComponentSquare;
 pub use weighted_squares::{WeightedResidualTerm, WeightedSquareTerm};
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -118,6 +120,9 @@ pub struct CertificateOptions {
     /// Opt-in bounded positive-monomial-weighted binomial squares.
     #[serde(default, skip_serializing_if = "no_weighted_square_candidates")]
     pub weighted_square_candidates: usize,
+    /// Opt-in exact PSD quadratic components with a strictly positive residual.
+    #[serde(default, skip_serializing_if = "no_weighted_square_candidates")]
+    pub quadratic_component_candidates: usize,
     /// Nonrecursive quadratic no-real-root attempts; historical proofs omit it.
     #[serde(default)]
     pub quadratic_no_real_roots_candidates: usize,
@@ -143,6 +148,7 @@ impl Default for CertificateOptions {
             univariate_sturm_degree: default_sturm_degree(),
             square_residual_candidates: 16,
             weighted_square_candidates: 0,
+            quadratic_component_candidates: 0,
             quadratic_no_real_roots_candidates: 4,
         }
     }
@@ -150,6 +156,10 @@ impl Default for CertificateOptions {
 
 impl CertificateOptions {
     fn validate(&self) -> Result<()> {
+        ensure!(
+            self.quadratic_component_candidates <= 32,
+            "quadratic component candidates are capped at 32"
+        );
         ensure!(
             self.weighted_square_candidates <= 72,
             "weighted square candidates are capped at 72"
@@ -230,6 +240,13 @@ pub enum CertificateMethod {
     WeightedSquaresPlusPositiveResidual {
         upper_variables: Vec<usize>,
         squares: Vec<WeightedSquareTerm>,
+        residual: Vec<WeightedResidualTerm>,
+    },
+    /// Exact rational linear-form squares from PSD quadratic components,
+    /// plus a nonzero positive-coefficient residual on the original domain.
+    QuadraticComponentsPlusPositiveResidual {
+        upper_variables: Vec<usize>,
+        squares: Vec<QuadraticComponentSquare>,
         residual: Vec<WeightedResidualTerm>,
     },
     /// On the original box, a has the recorded sign and 4ac-b^2 is strictly
@@ -365,6 +382,11 @@ pub fn certify_nonzero(
         return Ok(Some(make(sign, method)));
     }
     if let Some((sign, method)) = weighted_squares::discover(algebra, polynomial, domain, options)?
+    {
+        return Ok(Some(make(sign, method)));
+    }
+    if let Some((sign, method)) =
+        quadratic_components::discover(algebra, polynomial, domain, options)?
     {
         return Ok(Some(make(sign, method)));
     }
@@ -544,6 +566,7 @@ pub fn verify_certificate(
     if matches!(
         certificate.method,
         CertificateMethod::WeightedSquaresPlusPositiveResidual { .. }
+            | CertificateMethod::QuadraticComponentsPlusPositiveResidual { .. }
     ) {
         ensure!(
             polynomial.variables() == &algebra.variables,
@@ -551,7 +574,7 @@ pub fn verify_certificate(
         );
         ensure!(
             weighted_squares::bounded(polynomial),
-            "weighted square polynomial budget"
+            "bounded square polynomial budget"
         );
         ensure!(
             certificate.polynomial == algebra.format(polynomial),
@@ -675,6 +698,20 @@ pub fn verify_certificate(
             squares,
             residual,
         } => weighted_squares::verify(
+            algebra,
+            polynomial,
+            &domain,
+            certificate.sign,
+            upper_variables,
+            squares,
+            residual,
+            &certificate.limits,
+        )?,
+        CertificateMethod::QuadraticComponentsPlusPositiveResidual {
+            upper_variables,
+            squares,
+            residual,
+        } => quadratic_components::verify(
             algebra,
             polynomial,
             &domain,

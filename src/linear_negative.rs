@@ -708,6 +708,7 @@ fn finish_base(
             base: Box::new(base),
         })),
         bilinear_positive: None,
+        quadratic_ladder: None,
     };
     // Keep a completed base and any reconstructed data for diagnostics while
     // preventing a late or empty reconstruction from escaping the wall cap.

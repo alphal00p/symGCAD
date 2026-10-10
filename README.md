@@ -71,10 +71,13 @@ graph-driven sign analysis; no-deformation numerical integration remains future 
 | `monotone` | Certified linear/quadratic endpoint reduction, including conditional quadratic cases. |
 | `linear_negative` | Certified negative-target reduction using positive comparison polynomials. |
 | `bilinear_positive` | Certified two-variable positive-target reduction. |
+| `quadratic_ladder` | Certified five-sector arrangement when a quadratic opens two positive roots below a linear fiber. |
 
 For bounded MCTS, select `ordering = "mcts"`; `search_time_secs`, `max_rollouts` and the process limits cap exploration. `checkpoint_dir` retains validated algebra work and a restart journal. Trial pruning predicts cost only: it cannot discard a mathematical region or turn a timeout into a proof. Homogeneous scale reduction is explicit and checks the original domain and order obligations.
 
 With `positivity = true`, the experimental `weighted_square_positivity = true` adds bounded, independently replayed weighted-square certificates to optimized projection, ordering, and local guards. It preserves interior zero boundaries; see the [scope and ablations](reference/WEIGHTED_SQUARE_PRODUCTION.md).
+
+The separate opt-in `quadratic_component_positivity = true` extends this portfolio to exact positive-semidefinite quadratic components with a strictly positive residual. Its checker replays rational square identities; a nonnegative expression with an interior zero is insufficient. See the [certificate scope](reference/QUADRATIC_COMPONENT_PRODUCTION.md) and the [quadratic-ladder example](examples/quadratic_ladder.toml).
 
 A `complete_generic` result covers full-dimensional open cells outside its recorded algebraic exceptional set. Lower-dimensional sections are excluded. The verifier reconstructs exact projection/reduction identities, root bounds and exhaustive coverage; an incomplete result cannot pass. Exceptional parameter specializations require a new solve after substitution.
 
@@ -87,6 +90,8 @@ The deterministic matched-baseline study covers all **331 groups / 579 sign-expa
 New reference comparisons are capped at `max(300 s, 3 × symGCAD solve time)`, with shorter campaign limits respected. Native timeouts receive no exact ratio; see the [reference budget policy](reference/REFERENCE_BUDGETS.md).
 
 Later certified reductions complete fixed A381/Ax381 with 836 cells each, negative Gluza30/Gluza33 with one/three cells, and positive Gluza30 with 80,980 cells. Discovery costs, verification costs, failed attempts and exact original-domain checks are recorded separately.
+
+The quadratic ladder also gives five verified cells for the crossed A446 chamber `t < 4`, retaining the original interior `F=0` sheet. Its [conditional proof and supplemental check](reference/QUADRATIC_LADDER_VALIDATION.md) leave the unrestricted symbolic problem unresolved.
 
 A [supplemental seeded sanity check](reference/SUPPLEMENTAL_SANITY.md) sampled two fresh interior points in each fixed A446 cell: all 8 cells, 16 exact F evaluations and 112 original-constraint checks passed. This check recomputes boundaries at each new prefix and is excluded from benchmark timings; it does not replace the coverage proof.
 
