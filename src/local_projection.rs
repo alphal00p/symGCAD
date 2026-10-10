@@ -66,6 +66,8 @@ mod descartes;
 mod interval_descartes;
 pub use interval_descartes::{PositiveInterval, PositiveIntervalEndpoint, PositiveIntervalWitness};
 mod base_univariate;
+#[cfg(test)]
+mod base_univariate_replay;
 mod hint_archive;
 pub use base_univariate::{
     BaseUnivariateBasis, BaseUnivariateBlock, BaseUnivariateReport, BaseUnivariateSource,
