@@ -37,9 +37,13 @@ The three disabled examples also contain merge assertions: ex38 and ex43 expect
 29 cells; ex44 T/C1/B2 expects 28 while its own source comment reports 19.
 Projection ex43's stale `[16,4,2,1]` assertion has already been independently
 dispositioned: native and Rust both return `[16,2,1,1]`. The separate disabled
-aggressive replay is now being run under
-`artifacts/bench/disabled-aggressive-256527b/`; its results must be inspected
-before any of those merge assertions are called reproduced or corrected.
+aggressive replay under `artifacts/bench/disabled-aggressive-256527b/` completed:
+ex38 timed out in Rust, while native returns one cell; ex43 and ex44 match raw
+counts but have Rust/native merged counts 20/23 and 20/19. Separate independent
+replay verifies both completed Rust proofs. The native merger also has two
+reproduced defects and order-dependent successful counts. See
+[the upstream merge audit](UPSTREAM_MERGE_AUDIT.md) for exact evidence and explicit
+policy dispositions. These are not merged-parity passes.
 
 ## Utility assertions
 
