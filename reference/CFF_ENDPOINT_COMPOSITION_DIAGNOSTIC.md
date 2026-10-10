@@ -251,3 +251,73 @@ The original TOML hashes are
 
 The reproducible candidate-generation policy is graph incidence and symbolic
 identity driven. No topology identifier is a proposed solver dispatch rule.
+
+## Generic weighted-square prototype: measured gain
+
+The independent research helper `examples/profile_weighted_squares.rs`
+now implements the second proposal without graph data or topology dispatch.
+It accepts a JSON variable map, original strict positivity constraints, and
+labelled polynomial expressions. Exact affine coordinate bounds are derived
+from those constraints, then each active coordinate is translated/reflected
+to a strictly positive coordinate. An unbounded active coordinate causes this
+conservative prototype to decline, including when more elaborate even-power
+reasoning might have been possible.
+
+For a negative coefficient `-c*x^e`, the discovery pass searches positive
+coefficients `a*x^v`, `b*x^w` with `v+w=2*e` and `4*a*b>=c²`.
+It chooses a rational weight in `[c²/(4*b),a]` and records the exact
+monomial-weighted binomial square that cancels that negative term. Used
+diagonal coefficients remain nonnegative. This prototype only tries full
+single-pair cancellation; the older Jacobian helper's partial multi-pair
+search is deliberately not needed for this gain. A fixed portfolio combines
+four negative-term orders, three pair rankings, and three rational weight
+choices, in both sign orientations.
+
+Independent replay rederives the shifts from the original constraints,
+validates every exponent and rational weight, checks the support of each
+monomial weight, requires a nonzero positive-coefficient residual in strictly
+positive coordinates, and reconstructs the entire signed shifted polynomial
+with Symbolica. The saved certificate is serialized/deserialized and replayed
+again. Discovery's mutable coefficient map is not trusted by replay.
+
+On the authentic B operand, the existing production portfolio is inconclusive;
+the prototype finds exactly the six monomial-weighted squares obtained by
+expanding `b*(x1-x3)²+a*(x5-x7)²`. It succeeds in its first strategy with
+252 pair scans. The residual has 24 positive-coefficient monomials, so zero
+seams are excluded by strictness rather than presumed absent.
+
+| Authentic operand on `u<4` | Current portfolio | Prototype | Discovery including first replay | Separate serialization/replay |
+|---|---|---|---:|---:|
+| B, 42 terms | Inconclusive | Six squares; verified positive | 0.00242 s | 0.00157 s |
+| Quadratic constant, 19 terms | Inconclusive | Inconclusive | 0.00494 s | — |
+| C0, 14 terms | Inconclusive | Inconclusive | 0.00403 s | — |
+
+These are single development-profile diagnostics, not benchmark speedup
+ratios. The whole three-operand process took 0.03 seconds with 3,076 KiB peak
+RSS, under the same CPU 3 / 2 GiB / 120-second envelope. The two inconclusive
+operands exhausted all 72 sign/strategy combinations, without reaching the
+work cap. Their four-term-square limitation remains as described above.
+Neither this proof nor the leaf test completes an original symbolic domain.
+
+Limits are 256 terms, 16 variables, exponents at most 32, 512-bit combined
+rational numerator/denominator height, 32 squares per trial, and one million
+pair scans shared across all trials for one polynomial. External process
+limits remain necessary because a single Symbolica call is not interruptible.
+The four focused tests pass, covering two structurally different weighted
+polynomial families, negative orientation, an explicit upper-bound shift,
+work exhaustion, a pure square with an interior zero seam, a sign-changing
+negative weight, an unrestricted weight, and tampered residual/weight/domain
+evidence. No production sources were changed in this experiment.
+
+Retained artifacts are in `artifacts/research/weighted-squares-01/`:
+
+| File | SHA-256 |
+|---|---|
+| `a446-b-u-below-4.json` (input) | `e5bfed73cac360a50886a06980e4bd2b48a8dd3390c32ae66efa9ff5ae518609` |
+| `endpoint.json` (proof and timings) | `11850cf9e41a80b35e683d3236e8e92b143c08fb1bed5ef4d7065664382ca6bd` |
+| `helper` (frozen executable) | `3377f82eeb6032c42101fac8e9885334446429e310b1e9ccba6f3180a88674b3` |
+| `examples/profile_weighted_squares.rs` (repository source) | `4584bdbff30a9e53bac814164244abfb667a50078ee6a9fa3fbd0e1a869b1d5e` |
+
+The actual proof includes `u_original=4-u_positive` explicitly. Before/after
+hash checks bind the input, source, and frozen binary; build/test logs and
+separate process records are retained alongside the report.
