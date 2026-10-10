@@ -38,7 +38,7 @@ impl Default for CampaignConfig {
             reference_root: ".reference/gcad".into(),
             adapter: "reference/adapter.py".into(),
             repeats: 3,
-            reference_timeout_secs: 300.0,
+            reference_timeout_secs: 3600.0,
             solve_timeout_secs: 300.0,
             campaign_time_secs: 3600.0,
             memory_mib: 65536,
@@ -66,6 +66,49 @@ pub struct CaseSummary {
     pub verified: Option<bool>,
     pub reference_peak_rss_kib: u64,
     pub rust_peak_rss_kib: u64,
+    #[serde(default)]
+    pub reference_budgets: Vec<ReferenceBudget>,
+    #[serde(default)]
+    pub reference_censored: bool,
+}
+
+/// Fresh-process wall time, never an algorithm phase time or a timeout.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ReferenceBudget {
+    pub stage: String,
+    pub repetition: Option<usize>,
+    pub completed_rust_median_wall_secs: Option<f64>,
+    pub adaptive_ceiling_secs: f64,
+    pub configured_ceiling_secs: f64,
+    pub remaining_campaign_secs: f64,
+    pub effective_timeout_secs: f64,
+}
+
+pub fn reference_budget(
+    rust_median: Option<f64>,
+    configured: f64,
+    remaining: f64,
+    stage: &str,
+    repetition: Option<usize>,
+) -> Result<ReferenceBudget> {
+    ensure!(
+        configured.is_finite() && configured > 0. && remaining.is_finite() && remaining > 0.,
+        "reference ceilings must be finite and positive"
+    );
+    ensure!(
+        rust_median.is_none_or(|t| t.is_finite() && t >= 0.),
+        "invalid completed Rust measurement"
+    );
+    let adaptive = rust_median.map_or(300., |t| (3. * t).min(f64::MAX).max(300.));
+    Ok(ReferenceBudget {
+        stage: stage.into(),
+        repetition,
+        completed_rust_median_wall_secs: rust_median,
+        adaptive_ceiling_secs: adaptive,
+        configured_ceiling_secs: configured,
+        remaining_campaign_secs: remaining,
+        effective_timeout_secs: adaptive.min(configured).min(remaining).min(3600.),
+    })
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -141,6 +184,16 @@ fn algorithm_seconds(result: &Value, reference: bool) -> Option<f64> {
     (total.is_finite() && total >= 0.0).then_some(total)
 }
 
+pub fn completed_solve_wall(process: &ProcessOutcome, result: Option<&Value>) -> Option<f64> {
+    (process.status == "completed"
+        && process.exit_code == Some(0)
+        && !process.output_truncated
+        && process.wall_time_secs.is_finite()
+        && process.wall_time_secs > 0.
+        && result.is_some_and(|r| r["status"] == "complete_generic"))
+    .then_some(process.wall_time_secs)
+}
+
 /// Compare the same explicit-order mathematical branches. Reference
 /// qualification is frozen before any Rust timings are observed. A failed
 /// Rust run stays in the denominator and prevents a passing parity claim.
@@ -176,6 +229,10 @@ pub fn run_campaign(config_path: &Path, executable: &Path) -> Result<CampaignRep
     let base = config_path.canonicalize()?.parent().unwrap().to_owned();
     let output = resolve(&base, &config.output_dir);
     fs::create_dir_all(&output)?;
+    ensure!(
+        fs::read_dir(&output)?.next().is_none(),
+        "preserve existing benchmark evidence; select a fresh output directory"
+    );
     let reference_root = resolve(&base, &config.reference_root);
     let adapter = resolve(&base, &config.adapter);
     let python = if let Some(path) = &config.reference_python {
@@ -218,7 +275,8 @@ pub fn run_campaign(config_path: &Path, executable: &Path) -> Result<CampaignRep
         "reference_compiler":reference_metadata.as_ref().and_then(|m|m.get("compiler")),
         "reference_python":python,"cpu_model":cpu_model,
         "workers":config.workers,"memory_mib":config.memory_mib,
-        "timing_policy":"fixed order; projection + lifting + merging; normalization and startup reported separately"
+        "timing_policy":"fixed order; projection + lifting + merging; normalization and startup reported separately",
+        "reference_budget_policy":"qualification at most 300s before Rust; paired native repetitions capped at max(300s,3*median completed Rust fresh-process solve wall), further limited by configured and remaining campaign ceilings; timeouts are censored"
     });
     let mut problems = Vec::new();
     for path in &config.cases {
@@ -280,6 +338,8 @@ pub fn run_campaign(config_path: &Path, executable: &Path) -> Result<CampaignRep
             verified: None,
             reference_peak_rss_kib: 0,
             rust_peak_rss_kib: 0,
+            reference_budgets: vec![],
+            reference_censored: false,
         };
         if remaining() < 0.05 {
             exhausted = true;
@@ -287,8 +347,17 @@ pub fn run_campaign(config_path: &Path, executable: &Path) -> Result<CampaignRep
             summaries.push(summary);
             continue;
         }
-        problem.limits.wall_time_secs = config.reference_timeout_secs.min(remaining());
-        let record = run_reference(problem, &python, &reference_root, &adapter)?;
+        let budget = reference_budget(
+            None,
+            config.reference_timeout_secs,
+            remaining(),
+            "qualification",
+            None,
+        )?;
+        problem.limits.wall_time_secs = budget.effective_timeout_secs;
+        summary.reference_budgets.push(budget.clone());
+        let mut record = run_reference(problem, &python, &reference_root, &adapter)?;
+        record.reference_budget = Some(budget);
         fs::write(
             output.join(format!("{i:04}-qualification.json")),
             serde_json::to_vec_pretty(&record)?,
@@ -310,6 +379,7 @@ pub fn run_campaign(config_path: &Path, executable: &Path) -> Result<CampaignRep
             summary.status = "qualified".into();
         } else {
             summary.status = format!("reference_{}", record.process.status);
+            summary.reference_censored = true;
         }
         summaries.push(summary);
     }
@@ -319,8 +389,9 @@ pub fn run_campaign(config_path: &Path, executable: &Path) -> Result<CampaignRep
             &serde_json::json!({"schema_version":1,"cases":summaries,"problems":problems}),
         )?,
     )?;
-    // Phase 2: only the already-frozen set contributes to parity. The manifest
-    // above records reference timeouts as unresolved inputs rather than losses.
+    // Phase 2: only the already-frozen set contributes to parity. Qualification
+    // remains capped at300s before Rust, so it may censor a case that could
+    // otherwise finish under a larger measured adaptive reference budget.
     for (i, problem) in problems.iter_mut().enumerate() {
         if !summaries[i].reference_qualified {
             continue;
@@ -341,7 +412,77 @@ pub fn run_campaign(config_path: &Path, executable: &Path) -> Result<CampaignRep
                 break;
             }
             problem.limits.wall_time_secs = config.solve_timeout_secs.min(remaining());
-            let record = run_reference(problem, &python, &reference_root, &adapter)?;
+            let input = output.join(format!("{i:04}-input.json"));
+            let result_file = output.join(format!("{i:04}-rust-{repetition}-result.json"));
+            fs::write(&input, serde_json::to_vec(problem)?)?;
+            let mut command = Command::new(executable);
+            command
+                .arg("_worker")
+                .arg("solve")
+                .arg(&input)
+                .arg("--output")
+                .arg(&result_file);
+            let process = run_bounded(&mut command, &problem.limits)?;
+            summaries[i].rust_peak_rss_kib =
+                summaries[i].rust_peak_rss_kib.max(process.peak_rss_kib);
+            let result: Option<Value> =
+                if process.status == "completed" && !process.output_truncated {
+                    serde_json::from_str(&process.stdout).ok()
+                } else {
+                    None
+                };
+            if let Some(wall) = completed_solve_wall(&process, result.as_ref()) {
+                let result = result.as_ref().unwrap();
+                rust_wall.push(wall);
+                if let Some(seconds) = algorithm_seconds(result, false) {
+                    rust_solver.push(seconds);
+                    if let Some(total) = result["statistics"]["total_seconds"].as_f64() {
+                        let ordering = result["statistics"]["ordering_seconds"]
+                            .as_f64()
+                            .unwrap_or(0.0);
+                        rust_preparation.push((total - seconds - ordering).max(0.0));
+                    }
+                }
+                rust_cells.push(result["cells"].as_u64().unwrap_or(0));
+                if let Some(merged) = result["merged_cells"].as_u64() {
+                    rust_merged.push(merged);
+                }
+            }
+            let record = BenchmarkRecord {
+                schema_version: 1,
+                engine: "symgcad".into(),
+                problem: problem.name.clone(),
+                process,
+                result,
+                limits: Some(problem.limits.clone()),
+                reference_budget: None,
+            };
+            fs::write(
+                output.join(format!("{i:04}-rust-{repetition}.json")),
+                serde_json::to_vec_pretty(&record)?,
+            )?;
+        }
+        // Complete Rust fresh-process measurements determine one adaptive
+        // ceiling per case. Failed/timeout runs never enter this median.
+        let rust_median = median(rust_wall.clone());
+        for repetition in 0..config.repeats {
+            if remaining() < 0.05 {
+                exhausted = true;
+                break;
+            }
+            let budget = reference_budget(
+                rust_median,
+                config.reference_timeout_secs,
+                remaining(),
+                "measurement",
+                Some(repetition),
+            )?;
+            problem.limits.wall_time_secs = budget.effective_timeout_secs;
+            summaries[i].reference_budgets.push(budget.clone());
+            let mut record =
+                run_reference_measured(problem, &python, &reference_root, &adapter, rust_median)?;
+            record.reference_budget = Some(budget);
+            let before = reference_wall.len();
             summaries[i].reference_peak_rss_kib = summaries[i]
                 .reference_peak_rss_kib
                 .max(record.process.peak_rss_kib);
@@ -374,60 +515,9 @@ pub fn run_campaign(config_path: &Path, executable: &Path) -> Result<CampaignRep
                         .sum::<u64>(),
                 );
             }
-            if remaining() < 0.05 {
-                exhausted = true;
-                break;
+            if reference_wall.len() == before {
+                summaries[i].reference_censored = true;
             }
-            problem.limits.wall_time_secs = config.solve_timeout_secs.min(remaining());
-            let input = output.join(format!("{i:04}-input.json"));
-            let result_file = output.join(format!("{i:04}-rust-{repetition}-result.json"));
-            fs::write(&input, serde_json::to_vec(problem)?)?;
-            let mut command = Command::new(executable);
-            command
-                .arg("_worker")
-                .arg("solve")
-                .arg(&input)
-                .arg("--output")
-                .arg(&result_file);
-            let process = run_bounded(&mut command, &problem.limits)?;
-            summaries[i].rust_peak_rss_kib =
-                summaries[i].rust_peak_rss_kib.max(process.peak_rss_kib);
-            let result: Option<Value> =
-                if process.status == "completed" && !process.output_truncated {
-                    serde_json::from_str(&process.stdout).ok()
-                } else {
-                    None
-                };
-            if let Some(result) = result
-                .as_ref()
-                .filter(|r| r["status"] == "complete_generic")
-            {
-                rust_wall.push(process.wall_time_secs);
-                if let Some(seconds) = algorithm_seconds(result, false) {
-                    rust_solver.push(seconds);
-                    if let Some(total) = result["statistics"]["total_seconds"].as_f64() {
-                        let ordering = result["statistics"]["ordering_seconds"]
-                            .as_f64()
-                            .unwrap_or(0.0);
-                        rust_preparation.push((total - seconds - ordering).max(0.0));
-                    }
-                }
-                rust_cells.push(result["cells"].as_u64().unwrap_or(0));
-                if let Some(merged) = result["merged_cells"].as_u64() {
-                    rust_merged.push(merged);
-                }
-            }
-            let record = BenchmarkRecord {
-                schema_version: 1,
-                engine: "symgcad".into(),
-                problem: problem.name.clone(),
-                process,
-                result,
-            };
-            fs::write(
-                output.join(format!("{i:04}-rust-{repetition}.json")),
-                serde_json::to_vec_pretty(&record)?,
-            )?;
         }
         let s = &mut summaries[i];
         s.reference_median_secs = median(reference_wall.clone());
@@ -461,7 +551,9 @@ pub fn run_campaign(config_path: &Path, executable: &Path) -> Result<CampaignRep
                 );
             }
         } else {
-            s.status = if exhausted {
+            s.status = if s.reference_censored {
+                "reference_censored"
+            } else if exhausted {
                 "campaign_exhausted"
             } else {
                 "incomplete_repetitions"
@@ -503,12 +595,20 @@ pub fn run_campaign(config_path: &Path, executable: &Path) -> Result<CampaignRep
                     problem: problem.name.clone(),
                     process,
                     result,
+                    limits: Some(problem.limits.clone()),
+                    reference_budget: None,
                 };
                 fs::write(
                     output.join(format!("{i:04}-verification-process.json")),
                     serde_json::to_vec_pretty(&record)?,
                 )?;
             }
+        }
+        // A timeout is a censored measurement, never an exact ratio. Likewise
+        // a failed proof replay must not leave a provisional ratio behind.
+        if s.status != "complete" || s.verified != Some(true) {
+            s.end_to_end_ratio = None;
+            s.solver_ratio = None;
         }
         fs::write(
             output.join("progress.json"),
@@ -581,6 +681,10 @@ pub struct BenchmarkRecord {
     pub problem: Option<String>,
     pub process: ProcessOutcome,
     pub result: Option<Value>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub limits: Option<Limits>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reference_budget: Option<ReferenceBudget>,
 }
 
 const OUTPUT_LIMIT: usize = 64 * 1024 * 1024;
@@ -847,6 +951,27 @@ pub fn run_reference(
     reference_root: &Path,
     adapter: &Path,
 ) -> Result<BenchmarkRecord> {
+    run_reference_measured(problem, python, reference_root, adapter, None)
+}
+
+/// The supplied median must contain completed Rust fresh-process solves only.
+/// Unknown timing keeps every qualification/standalone reference at most300s.
+pub fn run_reference_measured(
+    problem: &Problem,
+    python: &Path,
+    reference_root: &Path,
+    adapter: &Path,
+    completed_rust_median: Option<f64>,
+) -> Result<BenchmarkRecord> {
+    let budget = reference_budget(
+        completed_rust_median,
+        problem.limits.wall_time_secs,
+        problem.limits.wall_time_secs,
+        "reference_worker",
+        None,
+    )?;
+    let mut problem = problem.clone();
+    problem.limits.wall_time_secs = budget.effective_timeout_secs;
     let mut command = Command::new(python);
     command
         .arg(adapter)
@@ -856,12 +981,15 @@ pub fn run_reference(
     // JSON command argument avoids temp-file races and shell interpolation.
     command
         .arg("--problem-json")
-        .arg(serde_json::to_string(problem)?);
+        .arg(serde_json::to_string(&problem)?);
     command
         .env("OPENBLAS_NUM_THREADS", "1")
         .env("OMP_NUM_THREADS", "1");
     let process = run_bounded(&mut command, &problem.limits)?;
-    let result = if process.status == "completed" && !process.output_truncated {
+    let result = if process.status == "completed"
+        && process.exit_code == Some(0)
+        && !process.output_truncated
+    {
         Some(serde_json::from_str(&process.stdout).context("reference emitted invalid JSON")?)
     } else {
         None
@@ -872,6 +1000,8 @@ pub fn run_reference(
         problem: problem.name.clone(),
         process,
         result,
+        limits: Some(problem.limits.clone()),
+        reference_budget: Some(budget),
     })
 }
 
@@ -894,6 +1024,96 @@ pub fn append_record(path: &Path, record: &BenchmarkRecord) -> Result<()> {
 #[cfg(all(test, target_os = "linux"))]
 mod tests {
     use super::*;
+    #[test]
+    fn adaptive_reference_budget_respects_floor_median_and_all_ceilings() -> Result<()> {
+        assert_eq!(
+            reference_budget(None, 3600., 3600., "qualification", None)?.effective_timeout_secs,
+            300.
+        );
+        let measured = median(vec![20., 400., 200.]);
+        let b = reference_budget(measured, 3600., 3000., "measurement", Some(0))?;
+        assert_eq!(b.completed_rust_median_wall_secs, Some(200.));
+        assert_eq!(b.adaptive_ceiling_secs, 600.);
+        assert_eq!(b.effective_timeout_secs, 600.);
+        assert_eq!(
+            reference_budget(measured, 90., 3000., "test", None)?.effective_timeout_secs,
+            90.
+        );
+        assert_eq!(
+            reference_budget(measured, 3600., 41., "test", None)?.effective_timeout_secs,
+            41.
+        );
+        assert_eq!(
+            reference_budget(Some(2000.), 9000., 9000., "test", None)?.effective_timeout_secs,
+            3600.
+        );
+        assert!(reference_budget(Some(f64::NAN), 300., 300., "test", None).is_err());
+        assert!(reference_budget(None, 300., 0., "test", None).is_err());
+        Ok(())
+    }
+    #[test]
+    fn failed_or_partial_rust_runs_never_supply_a_completed_measurement() {
+        let result =
+            serde_json::json!({"status":"complete_generic","statistics":{"total_seconds":999999.}});
+        let mut p = ProcessOutcome {
+            status: "completed".into(),
+            wall_time_secs: 123.,
+            user_cpu_secs: 0.,
+            system_cpu_secs: 0.,
+            peak_rss_kib: 1,
+            exit_code: Some(0),
+            stdout: String::new(),
+            stderr: String::new(),
+            output_truncated: false,
+        };
+        assert_eq!(completed_solve_wall(&p, Some(&result)), Some(123.));
+        p.status = "timeout".into();
+        assert_eq!(completed_solve_wall(&p, Some(&result)), None);
+        p.status = "completed".into();
+        p.exit_code = Some(1);
+        assert_eq!(completed_solve_wall(&p, Some(&result)), None);
+        p.exit_code = Some(0);
+        p.output_truncated = true;
+        assert_eq!(completed_solve_wall(&p, Some(&result)), None);
+        p.output_truncated = false;
+        assert_eq!(
+            completed_solve_wall(&p, Some(&serde_json::json!({"status":"incomplete"}))),
+            None
+        );
+        p.wall_time_secs = f64::INFINITY;
+        assert_eq!(completed_solve_wall(&p, Some(&result)), None);
+    }
+    #[test]
+    fn reference_timeout_retains_effective_budget_and_censors_result() -> Result<()> {
+        let path = std::env::temp_dir().join(format!(
+            "symgcad-reference-cap-{}-{}.sh",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)?
+                .as_nanos()
+        ));
+        fs::write(&path, "sleep 10\n")?;
+        let p = Problem {
+            limits: Limits {
+                wall_time_secs: 0.06,
+                memory_mib: 128,
+                workers: 1,
+                max_cells: None,
+            },
+            ..Default::default()
+        };
+        let record = run_reference(&p, Path::new("sh"), Path::new("unused"), &path)?;
+        fs::remove_file(path)?;
+        assert_eq!(record.process.status, "timeout");
+        assert!(record.result.is_none());
+        assert_eq!(record.limits.as_ref().unwrap().wall_time_secs, 0.06);
+        let budget = record.reference_budget.unwrap();
+        assert_eq!(budget.completed_rust_median_wall_secs, None);
+        assert_eq!(budget.adaptive_ceiling_secs, 300.);
+        assert_eq!(budget.effective_timeout_secs, 0.06);
+        assert!(record.process.wall_time_secs < 2.);
+        Ok(())
+    }
     #[test]
     fn supervisor_kills_a_process_group_on_deadline() {
         let limits = Limits {
