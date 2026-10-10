@@ -175,3 +175,31 @@ input with multidegrees `[9,9,6,0,0,0,0]` in reduced map
 `[x2,x1,x7,x4,x6,x3,x5]`, coefficient height 17 bits. This is an exact
 operand snapshot, not a completed operation timing or a proven bottleneck.
 Neither launch changes the verified original count, **303/331**.
+
+The `x0` alternative subsequently **timed out at 3,600.025448 seconds**,
+with **181,628 KiB peak RSS**, no result and no verification. Its final
+cache contains **5,177 completed native records**, **26,872,438 bytes**:
+4,998 factorizations, 55 resultants and 124 discriminants. A bounded final
+audit rechecked all native keys, output/multiplicity checksums, maps,
+domain fingerprints and original input/binary bindings. Completed operation
+times sum to 38.225178 seconds, including resultants of 13.759818,
+12.179291 and 7.243604 seconds; these are completed-record timings only.
+
+The final pending capture remains byte-identical to the initial 224-term,
+three-variable factor operand, input hash
+`692447d2758a0dc4af4c3cb0ef38f2a17deb480ab1589f00a1d2e40a9d8421a1`.
+Its key has no completed cache record. The saved progress snapshot is stale
+at 53.293018 seconds, so no operation duration is inferred from it. This
+multivariate factor input is outside both discriminant segmentation and the
+first-axis-only support-basis mode; neither recent option is a demonstrated
+remedy for this particular pending request. No automatic restart followed.
+
+Final evidence under `gluza33-x0-anchor-hour-01/`:
+
+- `results/ledger.json`: `894a2d96b9d9abfd3452b2b381d435ae6ad4a7d3e94153c980c520f9a115ccb2`.
+- `final-audit.json`: `2f6d0280d94e3aa209b0991f815caab4454ffc389f90a708f5aa61fc2aa09ba7`.
+- `final-cache-manifest.json`: `fe3dac6ee33672e0c1eb60180257a5274b52edaa0411491f920cd2ec0d68a37d`.
+- `final-capture.json`: `162d5b9b98efeed85cadf3f375ad914fa902682a58764d927505927e66100646`.
+
+The two completed cold attempts add no original coverage; the separate
+24 GiB `x3` continuation remains a live, unverified attempt.
