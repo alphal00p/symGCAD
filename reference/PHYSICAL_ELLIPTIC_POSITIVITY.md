@@ -267,3 +267,16 @@ The proof SHA-256 is
 and the replay supervisor checked that its bytes were unchanged before and
 after verification. The smaller negative-target completion does not rely
 on that larger proof.
+
+The same 5.88 GB proof was then replayed with the streaming `1e29f04` release
+verifier, using the identical supervisor executable, CPU7 affinity, one
+worker, 32 GiB memory cap and 600 second worker bound. Both runs checked
+350,082 cells, 1,048,909 stacks and 2,754,414 rejected branches, and both
+verified unchanged proof hashes before and after the worker. The streaming
+version used 21,665,440 KiB peak RSS versus 28,021,356 KiB before: a 22.68%
+reduction. Its wall time was 165.607753 seconds versus 163.685577 seconds, so
+this single pair establishes no runtime improvement. The full matched
+metadata and process outcomes are in
+`artifacts/research/physical-release-verification-13/comparison.json`.
+This is an exploratory memory control, not a three-repeat benchmark or an
+assertion that all intervening build differences have been isolated.
