@@ -144,8 +144,8 @@ as a quadratic in x1, C has leading coefficient 1 and discriminant
 proves this using the existing Bernstein certificate for the negative
 discriminant; it needs no new multi-variable square search. A scan of the
 actual retained factors found six further valid applications, four involving
-only s and pp4. This establishes concrete pruning opportunities; the original
-physical decomposition remains unresolved.
+only s and pp4. This established concrete pruning opportunities; the original
+physical decomposition was still unresolved at that stage.
 
 ## Observed quadratic-certificate effect
 
@@ -241,9 +241,29 @@ Evidence is under
 - `result.json` has SHA-256
   `bc62bf55da7df70e60a9938b01cf32abeb5a40ddb6678c8bc2283be491d2d9b9`.
 
+The standard completion harness repeated this exact original case with the
+immutable `1e29f04` release worker and a fresh cold checkpoint directory.
+It again produced and independently verified 269,061 cells. The public solve
+process took 33.856314 seconds with 3,588,004 KiB peak RSS; verification took
+73.085090 seconds with 6,628,724 KiB peak RSS. The whole campaign took
+114.448661 seconds. These are single-run measurements, not repeat medians.
+The worker SHA-256 is
+`77dc42588f83ff0bd15b68cde873de97ff02213bd2a4d2fd64233d51e548f281`.
+The standard ledger is
+`artifacts/research/physical-negative-target-release-14/results/ledger.json`,
+and its original mathematical identity is
+`082baf881fef15de493e1d039955ec79c2803eaaf0411e6f6ec51cca57c0c091`.
+The release proof has SHA-256
+`453e1ce44186b2bb5e588766f539feac7010a5ab75583655af069ed949fff857`.
+
 For comparison, the earlier full-arrangement route emitted a separate
-5,878,358,378-byte original proof with 350,082 negative cells, but its debug
-verification timed out at 600 seconds. Its preserved campaign is
-`physical-quadratic-x6-global-10-large`; a fresh bounded release replay is
-being recorded separately in `physical-release-verification-13`. The
-negative-target completion above does not rely on that larger proof.
+5,878,358,378-byte original proof with 350,082 negative cells. Its debug
+verification timed out at 600 seconds, but a fresh `3acd6aa` release replay
+verified it in 163.685577 seconds with 28,021,356 KiB peak RSS. Its preserved
+solve campaign is `physical-quadratic-x6-global-10-large`; the independent
+release replay is recorded in `physical-release-verification-13/old-release`.
+The proof SHA-256 is
+`185935901c076b6b9e45751dc58c2cbc411c99756232625532f4a78df4bae8c2`,
+and the replay supervisor checked that its bytes were unchanged before and
+after verification. The smaller negative-target completion does not rely
+on that larger proof.
