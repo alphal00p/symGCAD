@@ -1,0 +1,170 @@
+{
+  "schema_version": 1,
+  "scope": "Original ordering/projection API calls; separate from 331 mathematical solve groups",
+  "historical_report": "artifacts/bench/core-api-deterministic/report.json",
+  "historical_report_sha256": "391e0532e42d1d86eb5928e01a0fd3f2d9643285f568699ec843f98a030ec99a",
+  "slow_timeout_secs": 3600,
+  "cases": [
+    {
+      "name": "test_input_unmodified/order/1",
+      "source": "tests/test_gcad.py::test_input_unmodified",
+      "operation": "order",
+      "suite": "fast",
+      "historical_status": "matched"
+    },
+    {
+      "name": "test_input_unmodified/order/2",
+      "source": "tests/test_gcad.py::test_input_unmodified",
+      "operation": "order",
+      "suite": "fast",
+      "historical_status": "matched"
+    },
+    {
+      "name": "test_input_unmodified/order/3",
+      "source": "tests/test_gcad.py::test_input_unmodified",
+      "operation": "order",
+      "suite": "fast",
+      "historical_status": "matched"
+    },
+    {
+      "name": "test_massless_planar_elliptic/order/1",
+      "source": "tests/test_gcad.py::test_massless_planar_elliptic",
+      "operation": "order",
+      "suite": "fast",
+      "historical_status": "matched"
+    },
+    {
+      "name": "test_massless_planar_elliptic_symb/order/1",
+      "source": "tests/test_gcad.py::test_massless_planar_elliptic_symb",
+      "operation": "order",
+      "suite": "slow",
+      "historical_status": "reference_timeout"
+    },
+    {
+      "name": "test_elliptic2l_physical/order/1",
+      "source": "tests/test_gcad.py::test_elliptic2l_physical",
+      "operation": "order",
+      "suite": "fast",
+      "historical_status": "matched"
+    },
+    {
+      "name": "test_elliptic2l_physical/order/2",
+      "source": "tests/test_gcad.py::test_elliptic2l_physical",
+      "operation": "order",
+      "suite": "fast",
+      "historical_status": "matched"
+    },
+    {
+      "name": "test_elliptic2l_physical_symb/order/1",
+      "source": "tests/test_gcad.py::test_elliptic2l_physical_symb",
+      "operation": "order",
+      "suite": "slow",
+      "historical_status": "reference_timeout"
+    },
+    {
+      "name": "test_ex_e5/order/1",
+      "source": "tests/test_gcad.py::test_ex_e5",
+      "operation": "order",
+      "suite": "fast",
+      "historical_status": "matched"
+    },
+    {
+      "name": "test_melih_box/order/1",
+      "source": "tests/test_gcad.py::test_melih_box",
+      "operation": "order",
+      "suite": "fast",
+      "historical_status": "matched"
+    },
+    {
+      "name": "test_triangle2l_split/order/1",
+      "source": "tests/test_gcad.py::test_triangle2l_split",
+      "operation": "order",
+      "suite": "fast",
+      "historical_status": "matched"
+    },
+    {
+      "name": "test_gluza_ex30/order/1",
+      "source": "tests/test_gcad.py::test_gluza_ex30",
+      "operation": "order",
+      "suite": "fast",
+      "historical_status": "matched"
+    },
+    {
+      "name": "test_gluza_ex33_trivial/order/1",
+      "source": "tests/test_gcad.py::test_gluza_ex33_trivial",
+      "operation": "order",
+      "suite": "slow",
+      "historical_status": "reference_timeout"
+    },
+    {
+      "name": "test_gluza_ex33/order/1",
+      "source": "tests/test_gcad.py::test_gluza_ex33",
+      "operation": "order",
+      "suite": "slow",
+      "historical_status": "reference_timeout"
+    },
+    {
+      "name": "test_pentabox_exb/order/1",
+      "source": "tests/test_gcad.py::test_pentabox_exb",
+      "operation": "order",
+      "suite": "fast",
+      "historical_status": "matched"
+    },
+    {
+      "name": "test_pentabox_exb_symb/order/1",
+      "source": "tests/test_gcad.py::test_pentabox_exb_symb",
+      "operation": "order",
+      "suite": "slow",
+      "historical_status": "reference_timeout"
+    },
+    {
+      "name": "test_pentabox_exd/order/1",
+      "source": "tests/test_gcad.py::test_pentabox_exd",
+      "operation": "order",
+      "suite": "fast",
+      "historical_status": "matched"
+    },
+    {
+      "name": "test_pentabox_exd_symb/order/1",
+      "source": "tests/test_gcad.py::test_pentabox_exd_symb",
+      "operation": "order",
+      "suite": "slow",
+      "historical_status": "reference_timeout"
+    },
+    {
+      "name": "failing_test_ex43/project/1",
+      "source": "tests/test_gcad.py::failing_test_ex43",
+      "operation": "project",
+      "suite": "fast",
+      "historical_status": "matched"
+    },
+    {
+      "name": "test_greedy_sotd_order/order/3",
+      "source": "tests/test_gcad.py::test_greedy_sotd_order",
+      "operation": "order",
+      "suite": "fast",
+      "historical_status": "matched"
+    },
+    {
+      "name": "test_greedy_sotd_order/order/4",
+      "source": "tests/test_gcad.py::test_greedy_sotd_order",
+      "operation": "order",
+      "suite": "fast",
+      "historical_status": "matched"
+    },
+    {
+      "name": "test_greedy_sotd_order/order/5",
+      "source": "tests/test_gcad.py::test_greedy_sotd_order",
+      "operation": "order",
+      "suite": "fast",
+      "historical_status": "matched"
+    },
+    {
+      "name": "test_greedy_mods_order/order/1",
+      "source": "tests/test_gcad.py::test_greedy_mods_order",
+      "operation": "order",
+      "suite": "fast",
+      "historical_status": "matched"
+    }
+  ]
+}

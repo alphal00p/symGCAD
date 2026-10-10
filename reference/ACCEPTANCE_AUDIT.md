@@ -24,6 +24,12 @@ problem has a verified decomposition. Several upstream expected-order assertions
 are commented out; the timeouts are not completed mismatches. Original ordering
 and projection assertions must retain their separate dispositions at M6.
 
+All six are explicitly tagged `slow` in `tests/api_classification.json`.
+The [separate API runner](API_SLOW_SUITE.md) accepts exact case selection and
+one-hour campaigns, runs Rust first, and applies the capped reference policy.
+These tags do not change the 28 unresolved mathematical originals or the
+historical API outcomes above.
+
 ## Aggressive merging
 
 The deterministic fast-core aggressive replay

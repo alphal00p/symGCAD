@@ -173,6 +173,12 @@ nix develop -c cargo run --example api_compare -- \
   --solver artifacts/bin/symgcad-baseline-3125469
 ```
 
+Select `--suite fast` for the 17 historically matched API checks. The six
+unresolved ordering calls are separately tagged `slow`; see the
+[one-hour API workflow](API_SLOW_SUITE.md) for per-case campaigns, exact
+selection, preserved evidence, and adaptive native limits. This does not
+change the solve-corpus denominator.
+
 To replay a previously frozen reference-completing set after an infrastructure
 fix, without changing its denominator or orders, use the Rust replay driver:
 
