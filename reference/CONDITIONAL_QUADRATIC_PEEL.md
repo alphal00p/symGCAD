@@ -157,3 +157,41 @@ are in `artifacts/hard-campaigns/a381-conditional-debug-01/results/ledger.json`,
 SHA256 `0f48ab3c49ef84485f319a703b5766bdfa304c1a97ec2f8a38e7549179fd2716`.
 The unrestricted symbolic A381/Ax381 problems remain unresolved; the separate
 kinematic-piece research does not change that status.
+
+## Matched cold release control
+
+A subsequent control compared the immutable pre-rule release `1e29f04` with
+the conditional-rule release `0a95bc2`. Each original fixed problem received
+three fresh solves per binary, alternating old/new repetitions, on CPU6 with
+one worker, 8 GiB, and separate 60-second solve and verification limits. All
+algebra caches started cold. The exact worker inputs have the same byte hashes
+across both binaries, including the explicit order and anchor above, original
+constraints, both requested signs, and no merging. The earlier research that
+found the order and certificate identities is outside these measured solves.
+
+| Original problem | Pre-rule outcomes | Conditional-rule outcomes | New median public solve | New median independent verification |
+| --- | --- | --- | ---: | ---: |
+| fixed A381 | 3 timeouts at 60 s | 3 verified completions, 836 cells each | 0.185704 s | 0.061275 s |
+| fixed Ax381 | 3 timeouts at 60 s | 3 verified completions, 836 cells each | 0.101736 s | 0.061425 s |
+
+Thus all six pre-rule trials timed out and all six new trials completed and
+independently verified. The solve times include fresh process startup and
+export. The old outcomes are censored, so this establishes a completion gain
+under the matched limit, **not a finite measured speedup ratio**. No symbolic
+completion follows from this fixed-kinematics experiment.
+
+The complete report, individual ledgers, input/result/verification hashes, and
+all failures are under `artifacts/bench/conditional-fixed-control-01/`.
+`comparison.json` has SHA256
+`788997dbc9ff7df98126eaa96c3902c9afaaf9938e1f86b8a9e3324fc178cce9`.
+The immutable workers are:
+
+| Worker | SHA256 |
+| --- | --- |
+| `artifacts/bin/symgcad-monotone-streaming-1e29f04` | `77dc42588f83ff0bd15b68cde873de97ff02213bd2a4d2fd64233d51e548f281` |
+| `artifacts/bin/symgcad-conditional-0a95bc2` | `0f41d37c9b22bbbf95fe5a0eca38b669dbc877006ccd769e4d2853266b327091` |
+
+The six `old-{0,1,2}.toml` / `new-{0,1,2}.toml` campaign files specify the
+complete configuration. Reproduction runs each matching worker's `bench`
+command under `nix develop` and `taskset -c 6`, using fresh output directories
+so the preserved evidence is not overwritten.
