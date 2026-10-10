@@ -103,3 +103,40 @@ The subsequent full `cargo test --all-targets` run passed 529 tests across
 `cargo fmt --all --check` also passed. The full logs are
 `artifacts/strict-bezout-all-targets-tests-01.log` and
 `artifacts/strict-bezout-doc-tests-01.log`.
+
+## Initial original-problem measurements
+
+The frozen debug worker from production `07a274f` has SHA256
+`607dd85fd0aad160da25f6f947d90d450033f34405bf59d7e8069a0b21a774cc`.
+It received the original positive Gluza30 and Gluza33 mathematical inputs,
+with identical legal fixed orders and solver settings between each paired
+trial except for the optional hint list. Every process was cold, used one
+CPU and had an 8 GiB memory cap. These are exploratory single trials, not
+release parity measurements.
+
+The graph-guide generator produced 49 Gluza30 hints in 0.510 seconds and
+two Gluza33 hints in 1.450 seconds inside its debug worker. Discovery time
+is separate from the following public solve times; production preparation
+and exact checking are included.
+
+| Original problem and limits | With hints | Without hints |
+| --- | --- | --- |
+| Gluza30, 60 s and 10,000 local refinements | Incomplete at the refinement cap, 16.830 s internal | Incomplete at the refinement cap, 19.982 s internal |
+| Gluza33, 60 s and 10,000 local refinements | Hard timeout | Hard timeout |
+| Gluza30, 120 s and 1,000,000 local refinements | Hard timeout | Hard timeout |
+
+In the first Gluza30 run, all 49 proposals were accepted, 2,918 resultants
+were omitted, and 3,692 ordinary pair-resultant operations remained. The
+control performed 7,861 pair-resultant operations. Each run stopped after
+10,001 refinements, but they traversed different speculative cells; these
+counts and elapsed times do not establish an end-to-end speedup. Both
+returned zero certified completed cells. The hard-timeout trials were
+terminated before the public CLI exported a final local report, so no
+final omission or progress counters are inferred for them.
+
+All six attempts remain explicit in
+`artifacts/hard-campaigns/strict-bezout-debug-01/comparison.json`, SHA256
+`3cc94fb10d6d10fb4d96dbe07f05b225ff97a89d7b095ddbd68949890e3c0522`.
+The source archive, executable hash, exact original input checks, campaign
+configurations and per-trial ledgers accompany it. No new original
+completion or release performance claim follows from these measurements.
