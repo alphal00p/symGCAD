@@ -34525,23 +34525,23 @@
       "display": {
         "baseline_native": "—",
         "baseline_rust": "—",
-        "incomplete": "60.0",
+        "incomplete": "3600",
         "ratio": "—",
         "rss": "—",
         "solve": "—",
         "verify": "—"
       },
       "identifier": "finiteA_6_317_7_0__2_0_1_1_1_1_0_0_1/symbolic",
-      "incomplete_peak_rss_mib": 124.125,
+      "incomplete_peak_rss_mib": 1364.140625,
       "last_status": "timeout",
-      "longest_incomplete_seconds": 60.039254298,
+      "longest_incomplete_seconds": 3600.023942971,
       "mathematical_sha256": "571fe589246add0b49ce786395faa2e911b9aeea741805111e18eed6ca5a5d88",
       "measurement": null,
       "original_input": "artifacts/corpus/symbolic/0077_finiteA_6_317_7_0__2_0_1_1_1_1_0_0_1_symbolic.toml",
       "rank": 304,
       "scope": "symbolic_core",
       "slow": true,
-      "slow_status": "running",
+      "slow_status": "incomplete",
       "verified": false
     },
     {
@@ -34565,23 +34565,23 @@
       "display": {
         "baseline_native": "—",
         "baseline_rust": "—",
-        "incomplete": "60.0",
+        "incomplete": "3600",
         "ratio": "—",
         "rss": "—",
         "solve": "—",
         "verify": "—"
       },
       "identifier": "finiteA_6_318_7_0__0_2_1_1_1_1_0_0_1/symbolic",
-      "incomplete_peak_rss_mib": 87.91015625,
+      "incomplete_peak_rss_mib": 1413.15625,
       "last_status": "timeout",
-      "longest_incomplete_seconds": 60.03574841,
+      "longest_incomplete_seconds": 3600.024490802,
       "mathematical_sha256": "6faadc123614d010adeeeda20ad8dbc8918110a4a6f4200c7949e91c03341414",
       "measurement": null,
       "original_input": "artifacts/corpus/symbolic/0079_finiteA_6_318_7_0__0_2_1_1_1_1_0_0_1_symbolic.toml",
       "rank": 305,
       "scope": "symbolic_core",
       "slow": true,
-      "slow_status": "running",
+      "slow_status": "incomplete",
       "verified": false
     },
     {
@@ -34623,7 +34623,7 @@
       "rank": 306,
       "scope": "symbolic_core",
       "slow": true,
-      "slow_status": "pending",
+      "slow_status": "running",
       "verified": false
     },
     {
@@ -34665,7 +34665,7 @@
       "rank": 307,
       "scope": "symbolic_core",
       "slow": true,
-      "slow_status": "pending",
+      "slow_status": "running",
       "verified": false
     },
     {
@@ -34707,7 +34707,7 @@
       "rank": 308,
       "scope": "symbolic_core",
       "slow": true,
-      "slow_status": "pending",
+      "slow_status": "running",
       "verified": false
     },
     {
@@ -34732,23 +34732,23 @@
       "display": {
         "baseline_native": "—",
         "baseline_rust": "—",
-        "incomplete": "60.0",
+        "incomplete": "3600",
         "ratio": "—",
         "rss": "—",
         "solve": "—",
         "verify": "—"
       },
       "identifier": "finiteA_7_446_11_0__0_5_1_1_1_1_0_1_1/symbolic",
-      "incomplete_peak_rss_mib": 747.453125,
+      "incomplete_peak_rss_mib": 1944.27734375,
       "last_status": "timeout",
-      "longest_incomplete_seconds": 60.034863782,
+      "longest_incomplete_seconds": 3600.024493082,
       "mathematical_sha256": "4acb576982bcf35e00604945c8d1ac4191fa1cc00694c2b43aee6f20fca84b35",
       "measurement": null,
       "original_input": "artifacts/corpus/symbolic/0093_finiteA_7_446_11_0__0_5_1_1_1_1_0_1_1_symbolic.toml",
       "rank": 309,
       "scope": "symbolic_core",
       "slow": true,
-      "slow_status": "running",
+      "slow_status": "incomplete",
       "verified": false
     },
     {
@@ -34788,7 +34788,7 @@
       "rank": 310,
       "scope": "symbolic_core",
       "slow": true,
-      "slow_status": "pending",
+      "slow_status": "running",
       "verified": false
     },
     {
@@ -34979,7 +34979,7 @@
       "display": {
         "baseline_native": "—",
         "baseline_rust": "—",
-        "incomplete": "60.0",
+        "incomplete": "3600",
         "ratio": "—",
         "rss": "—",
         "solve": "—",
@@ -34988,14 +34988,14 @@
       "identifier": "finiteAx12_7_446_11_0__0_5_1_1_1_1_0_1_1/symbolic",
       "incomplete_peak_rss_mib": 1022.421875,
       "last_status": "timeout",
-      "longest_incomplete_seconds": 60.039127828,
+      "longest_incomplete_seconds": 3600.023940261,
       "mathematical_sha256": "0b7d98a6bf463a26f6ac3cadb7647b21718d6549ab26c47320eac13238e470de",
       "measurement": null,
       "original_input": "artifacts/corpus/symbolic/0152_finiteAx12_7_446_11_0__0_5_1_1_1_1_0_1_1_symbolic.toml",
       "rank": 315,
       "scope": "symbolic_core",
       "slow": true,
-      "slow_status": "running",
+      "slow_status": "incomplete",
       "verified": false
     },
     {
@@ -35685,6 +35685,46 @@
           "error": null,
           "identifier": "finiteA_6_317_7_0__2_0_1_1_1_1_0_0_1/symbolic",
           "ledger": "/common/dev/gcad/artifacts/slow-suite-one-hour-01/00/results/ledger.json",
+          "ledger_sha256": "08f3d79f2a72d05f9b010dd15ed9c2d6878c89df2b5438afaca301a406684e38",
+          "status": "finished",
+          "supplemental": null,
+          "wall_time_secs": 3600.85442912
+        },
+        {
+          "cpu": 5,
+          "error": null,
+          "identifier": "finiteA_6_318_7_0__0_2_1_1_1_1_0_0_1/symbolic",
+          "ledger": "/common/dev/gcad/artifacts/slow-suite-one-hour-01/01/results/ledger.json",
+          "ledger_sha256": "6b8f852b06cdf623f2e66fe5be89d7388c95ca79fed372df0d06481452512e09",
+          "status": "finished",
+          "supplemental": null,
+          "wall_time_secs": 3600.849622835
+        },
+        {
+          "cpu": 7,
+          "error": null,
+          "identifier": "finiteA_7_446_11_0__0_5_1_1_1_1_0_1_1/symbolic",
+          "ledger": "/common/dev/gcad/artifacts/slow-suite-one-hour-01/02/results/ledger.json",
+          "ledger_sha256": "b03a9936f757a611b22d2b1c9ecf6813c46ebd8ed6321a4fda69e20310288881",
+          "status": "finished",
+          "supplemental": null,
+          "wall_time_secs": 3600.841944181
+        },
+        {
+          "cpu": 6,
+          "error": null,
+          "identifier": "finiteAx12_7_446_11_0__0_5_1_1_1_1_0_1_1/symbolic",
+          "ledger": "/common/dev/gcad/artifacts/slow-suite-one-hour-01/03/results/ledger.json",
+          "ledger_sha256": "80949fe83438bb0239c93e47c6e27a0c5b982143416eb239df7e76ef8e033981",
+          "status": "finished",
+          "supplemental": null,
+          "wall_time_secs": 3600.851200769
+        },
+        {
+          "cpu": 7,
+          "error": null,
+          "identifier": "finiteA_6_377_10_0__5_0_0_1_1_1_1_0_1/symbolic",
+          "ledger": "/common/dev/gcad/artifacts/slow-suite-one-hour-01/04/results/ledger.json",
           "ledger_sha256": null,
           "status": "running",
           "supplemental": null,
@@ -35693,18 +35733,8 @@
         {
           "cpu": 5,
           "error": null,
-          "identifier": "finiteA_6_318_7_0__0_2_1_1_1_1_0_0_1/symbolic",
-          "ledger": "/common/dev/gcad/artifacts/slow-suite-one-hour-01/01/results/ledger.json",
-          "ledger_sha256": null,
-          "status": "running",
-          "supplemental": null,
-          "wall_time_secs": null
-        },
-        {
-          "cpu": 7,
-          "error": null,
-          "identifier": "finiteA_7_446_11_0__0_5_1_1_1_1_0_1_1/symbolic",
-          "ledger": "/common/dev/gcad/artifacts/slow-suite-one-hour-01/02/results/ledger.json",
+          "identifier": "finiteA_6_414_10_0__0_5_1_1_1_0_0_1_1/symbolic",
+          "ledger": "/common/dev/gcad/artifacts/slow-suite-one-hour-01/05/results/ledger.json",
           "ledger_sha256": null,
           "status": "running",
           "supplemental": null,
@@ -35713,50 +35743,20 @@
         {
           "cpu": 6,
           "error": null,
-          "identifier": "finiteAx12_7_446_11_0__0_5_1_1_1_1_0_1_1/symbolic",
-          "ledger": "/common/dev/gcad/artifacts/slow-suite-one-hour-01/03/results/ledger.json",
+          "identifier": "finiteA_7_381_10_0__4_0_1_1_1_1_1_0_1/symbolic",
+          "ledger": "/common/dev/gcad/artifacts/slow-suite-one-hour-01/06/results/ledger.json",
           "ledger_sha256": null,
           "status": "running",
           "supplemental": null,
           "wall_time_secs": null
         },
         {
-          "cpu": null,
-          "error": null,
-          "identifier": "finiteA_6_377_10_0__5_0_0_1_1_1_1_0_1/symbolic",
-          "ledger": "/common/dev/gcad/artifacts/slow-suite-one-hour-01/04/results/ledger.json",
-          "ledger_sha256": null,
-          "status": "pending",
-          "supplemental": null,
-          "wall_time_secs": null
-        },
-        {
-          "cpu": null,
-          "error": null,
-          "identifier": "finiteA_6_414_10_0__0_5_1_1_1_0_0_1_1/symbolic",
-          "ledger": "/common/dev/gcad/artifacts/slow-suite-one-hour-01/05/results/ledger.json",
-          "ledger_sha256": null,
-          "status": "pending",
-          "supplemental": null,
-          "wall_time_secs": null
-        },
-        {
-          "cpu": null,
-          "error": null,
-          "identifier": "finiteA_7_381_10_0__4_0_1_1_1_1_1_0_1/symbolic",
-          "ledger": "/common/dev/gcad/artifacts/slow-suite-one-hour-01/06/results/ledger.json",
-          "ledger_sha256": null,
-          "status": "pending",
-          "supplemental": null,
-          "wall_time_secs": null
-        },
-        {
-          "cpu": null,
+          "cpu": 4,
           "error": null,
           "identifier": "finiteAx12_6_317_7_0__2_0_1_1_1_1_0_0_1/symbolic",
           "ledger": "/common/dev/gcad/artifacts/slow-suite-one-hour-01/07/results/ledger.json",
           "ledger_sha256": null,
-          "status": "pending",
+          "status": "running",
           "supplemental": null,
           "wall_time_secs": null
         },
@@ -35969,7 +35969,7 @@
       "solve_seconds": 3600.0,
       "verification_seconds": 600.0
     },
-    "path": "artifacts/slow-suite-one-hour-01/queue.json"
+    "path": "artifacts/slow-suite-one-hour-audit-02/queue-snapshot.json"
   },
   "sources": {
     "/common/dev/gcad/artifacts/bench/conditional-fixed-control-01/new-0/results/ledger.json": "47d4348ed87d9f2a3b7143b224798ef26ab99fa977754925cb781f8d59e1ddd7",
@@ -35980,6 +35980,10 @@
     "/common/dev/gcad/artifacts/bench/conditional-fixed-control-01/old-2/results/ledger.json": "118d555d726c3c299c1473d3160b0846b774d35bb64947519e3f6174d2acbf6f",
     "/common/dev/gcad/artifacts/hard-campaigns/linear-negative-debug-01/gluza30/results/ledger.json": "dc29054bed2ac51d3dd788e705597e610498c0a73da56c83b54221113c94b095",
     "/common/dev/gcad/artifacts/hard-campaigns/linear-negative-debug-01/gluza33/results/ledger.json": "c9c5a0f5e1a934fd601f0794951c3c05d48d21bdae900b19c8d9e137586391f9",
+    "/common/dev/gcad/artifacts/slow-suite-one-hour-01/00/results/ledger.json": "08f3d79f2a72d05f9b010dd15ed9c2d6878c89df2b5438afaca301a406684e38",
+    "/common/dev/gcad/artifacts/slow-suite-one-hour-01/01/results/ledger.json": "6b8f852b06cdf623f2e66fe5be89d7388c95ca79fed372df0d06481452512e09",
+    "/common/dev/gcad/artifacts/slow-suite-one-hour-01/02/results/ledger.json": "b03a9936f757a611b22d2b1c9ecf6813c46ebd8ed6321a4fda69e20310288881",
+    "/common/dev/gcad/artifacts/slow-suite-one-hour-01/03/results/ledger.json": "80949fe83438bb0239c93e47c6e27a0c5b982143416eb239df7e76ef8e033981",
     "artifacts/bench/conditional-fixed-control-01/comparison.json": "788997dbc9ff7df98126eaa96c3902c9afaaf9938e1f86b8a9e3324fc178cce9",
     "artifacts/bench/conditional-fixed-control-01/new-0/results/ledger.json": "47d4348ed87d9f2a3b7143b224798ef26ab99fa977754925cb781f8d59e1ddd7",
     "artifacts/bench/conditional-fixed-control-01/new-1/results/ledger.json": "51f09943939f17e70492c1c4b035f6c94a310f477efc257d9b87121a55e52ac7",
@@ -36008,7 +36012,7 @@
     "artifacts/completion-unscaled-retry-01/results/ledger.json": "21d758a7bbb9ff3bb9c912a2dcf21197079bbc286a58e022108da9f2125e0375",
     "artifacts/hard-campaigns/a381-conditional-debug-01/results/ledger.json": "0f48ab3c49ef84485f319a703b5766bdfa304c1a97ec2f8a38e7549179fd2716",
     "artifacts/research/physical-negative-target-release-14/results/ledger.json": "94eb21d24c140a81f97183cf18fdbf287570845ce9f89e1ce71a7e9466067bf9",
-    "artifacts/slow-suite-one-hour-01/queue.json": "6b9d225285be146b0beb5baba19e86e7c6e7c88472d459ef186b49fbe5ee49dc",
+    "artifacts/slow-suite-one-hour-audit-02/queue-snapshot.json": "d3e1e62fa617af755f0fd5bd3b306e21eeffc724baa5f9349e943cef1e7ae417",
     "artifacts/symbolic-quadratic-integer-release-01/results/ledger.json": "d099bf109c8568ff7c36c1afa0a013d2ba845079f3de774ef4cb64df8bc81f5a"
   },
   "title": "symGCAD — corpus benchmark"

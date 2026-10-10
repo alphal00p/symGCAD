@@ -102,3 +102,22 @@ homogeneous reductions, plus false, incomplete and tampered verification
 evidence. Initial status remains 303 verified originals and
 28 unresolved originals until their independent campaign evidence changes
 that inventory.
+
+## First one-hour wave
+
+The 10 October 2026 audit of the first four finished attempts found no new
+complete result. Symbolic A317, A318, A446 and Ax12-A446 each timed out after
+3600.024 seconds; no result file, proof or verification was available. Their
+recorded peak resident memory was respectively 1364.1, 1413.2, 1944.3 and
+699.1 MiB. These are censored attempts, not solved times or speedup ratios.
+The verified inventory remains **303 / 331**. At this snapshot the queue had
+four finished attempts, four further runs active and twenty pending.
+
+The read-only audit is retained as
+`artifacts/slow-suite-one-hour-audit-02/audit.json`, SHA-256
+`7cd418ee5fd661ecaa5a95aa6015b2c896435b7596ed9050530a55e8b6aa3430`.
+Its copied `queue-snapshot.json` has SHA-256
+`d3e1e62fa617af755f0fd5bd3b306e21eeffc724baa5f9349e943cef1e7ae417`;
+the audit records all four exact ledger hashes. The refreshed benchmark uses
+this immutable snapshot rather than a live journal. The original attempts
+and earlier benchmark evidence remain unchanged.

@@ -25,6 +25,7 @@ All distinct problems are listed below, fastest verified solve first; unresolved
 *N* is the repetition count; three-run medians are preferred when available. *D/R* identifies debug/release builds.
 Cache tags: *C* = cold; *S* = shared checkpoints (may be warm); *?* = unrecorded.
 For incomplete rows, *TO/stop* is the longest retained observed attempt, not a solved time.
+Their RAM is the highest retained attempt RSS, which may come from an earlier run.
 The *baseline* columns are a separate, matched GCAD comparison: projection + lifting + merging only,
 with three fresh repetitions and identical orders. *±* means two separate sign-branch solves, not the optimized full-split solve.
 
@@ -94,6 +95,11 @@ with three fresh repetitions and identical orders. *±* means two separate sign-
   full one-hour campaigns; this snapshot must be regenerated as those runs finish.
   Missing times and cells are not zeros, and timeouts do not produce finite speedup ratios.
 
+  The first one-hour wave (10 October 2026) ended with four timeouts: symbolic A317,
+  A318, A446 and Ax12-A446 each ran 3600.024 seconds without exporting a result.
+  The audited queue then had four further runs active and twenty pending. These attempts
+  add no completion credit; the frozen queue snapshot and ledger hashes are in the JSON.
+
   Measurements prefer verified three-repeat controls, otherwise the fastest accepted original-problem
   run. Builds are labelled. Cache tags mean cold (C), shared and possibly warm (S), or unrecorded (?).
   Solve times include in-run search, preprocessing and export. Earlier order discovery is separate;
@@ -118,7 +124,7 @@ with three fresh repetitions and identical orders. *±* means two separate sign-
   memory, not the configured ceiling. Three historical supplemental verification runs retain elapsed
   time but no RSS; their RAM entries carry † and report the available solve RSS only.
   Concurrent campaigns may share the host, so single-run differences
-  are not presented as precise speedups. The pending slow campaign uses bounded process supervision,
+  are not presented as precise speedups. The ongoing slow campaign uses bounded process supervision,
   durable attempt records and independent proof verification.
 
   *Supplemental sanity check.* Fixed A446 passed two fresh rational points in each of its eight
