@@ -350,3 +350,42 @@ dual are retained in
 `artifacts/research/a377-sylvester-support-bound-01/report.json`, SHA-256
 `79282107b2a64a73904470bbbd2b15ddda8981f7e4984afaaa1a2a1f42b85216`.
 This support bound does not itself verify the discriminant or any CAD cell.
+
+### Degree-32 candidate and interrupted independent grid
+
+The wider research computation returned a signed candidate after
+**1538.878302 seconds**, using **1,364,132 KiB peak RSS**. It has degree
+4058 in `s` and 3261 terms. The immutable candidate file is
+`artifacts/research/a377-degree32-segmentation-02/discriminant.json`, SHA-256
+`b798275222aa98597a4261224e714272d0d21dafcd805937e57b7397d337b2c1`.
+The signed expression digest is
+`e6cfd9d4634329847158eac82e4282db28474f4543c2887c13188c9f3ec57920`.
+These measurements are for one research algebra call, not the original
+decomposition or an upstream GCAD comparison.
+
+The adapter exactly reconstructed the corresponding resultant candidate
+`LC_t(p)*D`, with the positive degree-32 discriminant sign, before the
+independent numeric Ducos grid began. That grid received the remaining
+2043 seconds of the one-hour campaign. It timed out after 2043.032161
+seconds, with the last atomic progress record showing **4608 / 4773**
+checked points. No final verification report exists. Consequently this
+candidate remains **independently unverified**; the partial grid supplies
+no completed identity or CAD coverage credit.
+
+The compute and grid supervisor digests are respectively
+`def194b83514a3af1fae344c2df08772b66a663397caf3cc05b2bcbdb78ec3df` and
+`8940f1a68025fa85f8bcbbdeffd8200577f5b7d6c30464985169cff1a9122077`.
+The final partial-progress digest is
+`8b6668c5ab32259c2af4773649ad2875f16095d921bfbfdb59e424549f617ac7`.
+The candidate and all failed/interrupted evidence remain unchanged.
+
+A separate verification-only campaign was launched on CPU9 with 4 GiB and
+a fresh one-hour limit. It rechecks the entire grid from the immutable
+derived inputs; it does not turn the incomplete counter into a certificate.
+Its directory is `artifacts/research/a377-degree32-verification-03/`, and
+the launch record has SHA-256
+`f3920c504331dc75e990b8aeccb1ac4abf595dd30599ddcb605fb1cec5ecd826`.
+The preparation retains a corrected metadata assertion that initially
+confused the capture file digest with its distinct operand-array digest;
+that failed check launched no worker. No production envelope or cache
+contents were changed by these research runs.
