@@ -4,6 +4,18 @@ Experimental implementation and soundness design, 2026-10-10. The opt-in
 construction preserves the existing proof format and independent checker.
 No additional hard-case completion is claimed here.
 
+The full fast suite after integration passes **503 tests across 34 targets**.
+Its log is `artifacts/local-deferred-fast-tests-01.log`, SHA-256
+`c49d881313a83e4b50647ef9837f1b0fc78eeeea33f1d74fa833860ff23d0364`.
+The frozen development solver has SHA-256
+`29e2824b665f8631a86d3ef1873bab1831f92f68461bb56a181a08cf9b41c098`;
+a public-CLI diagonal-square smoke run reports two deferred stacks and two
+independently verified cells. Two fresh original symbolic-A446 pilots use the
+earlier reversed kinematic order, one with interval stock eight and one with
+deferred projection plus stable samples at stock two. Each has a 300-second
+solve limit, a separate 600-second verification allowance, one CPU and 8 GiB.
+They are exploratory development-build trials, not native timing comparisons.
+
 ## Finding and scope
 
 The default `Builder::visit` initializes a stack from its original input factors,
