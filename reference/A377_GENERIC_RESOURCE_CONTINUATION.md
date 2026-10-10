@@ -3,7 +3,8 @@
 Warm06 ended at **2026-10-10 16:46:03 UTC** with a
 **3,600.011380-second timeout**, 1,689,592 KiB peak recorded RSS, and no result
 or verification. It preserved 30 new completed native discriminants. Original
-coverage remains **303/331**; the next continuation is prepared but unlaunched.
+coverage remains **303/331**. Warm07 launched at **16:58:26 UTC** with the
+audited completed native cache and the generic schema-2 registry release.
 
 A fresh warm continuation launched at **2026-10-10 15:46:02 UTC**, CPU 8,
 12 GiB, with one **3,600-second shared solve/independent-verification budget**.
@@ -108,15 +109,15 @@ metadata-only version with a 20,000-term cap completed all checks; it did not
 run algebra or alter the preserved capture/progress files. All original worker
 processes and their process groups exited before their allocation was reused.
 
-## Prepared schema-2 registry comparison
+## Schema-2 registry comparison
 
 `artifacts/research/a377-segmentation-warm-hour-07/` contains a fresh copy of
 exactly those 2,086 completed native records. The original mathematics, order,
 anchor, enabled algebra/basis options and 12 GiB/shared one-hour limits are
 unchanged. Weighted-square positivity is explicitly false. No research
 discriminant, square-free proposal, root inventory or unfinished request was
-injected. Frozen release and independent CLI-smoke bindings remain launch
-requirements; this preparation has not launched a worker.
+injected. The original preparation remains immutable; a separate launch record
+binds the subsequently reviewed release and independent CLI smoke.
 
 The measured questions are whether the generic schema-2 registry avoids the
 earlier 128-source fallback and changes subsequent discovery, or instead
@@ -131,3 +132,27 @@ Earlier search, preparation and campaign costs remain separate warm history.
 | `initial-cache-manifest.json` | `6ca70277010bfb3b50811d651f0540204efc19f3a5b6fd4111ea7b13f51e8582` |
 | `input.toml` | `2d3c89aea1bfc417207f41c7527a58107e503c396d6059ecf620ad8b6c9aa89b` |
 | `campaign.toml` | `569c47810d81ff12bc9b0981c619b0b6b6de699d18ca04b7c97dd60a76247bc6` |
+
+Warm07 launched at **2026-10-10 16:58:26.625604214 UTC**, CPU 8, 12 GiB,
+with a shared **3,600-second solve/independent-verification budget**. Frozen
+release `299095a` has SHA-256
+`dd0c377962ad5fc615be02a11a3731c90251fa3245c0e0f9b8a97bc7d4870bc0`;
+its build manifest is
+`cc1552d8c5c77c63ecb914b8a2c87fce8a1747f42441c824549d7ac3d723774a`.
+All source and copied native operation files were rehashed immediately before
+launch. The actual worker input, executable, CPU affinity, address-space limit
+and capture environment match the preparation. No active operand had yet been
+published at this initial audit; that is not an operation-completion claim.
+
+The two first release smokes independently verified a same-sign square seam
+and a weighted nonlinear crossing. Their simple square input exercises the
+basis option but does not admit a typed source. An additional fresh smoke using
+`y^2-(x-1)*(x-2)` actually admitted **one schema-2 source**, exported **seven
+cells**, and passed fresh independent verification. It is a release check,
+not additional original-corpus coverage.
+
+| Warm07 launch evidence | SHA-256 |
+| --- | --- |
+| `launch.json` | `245bdd1247791b0c47f528d2d29e6118dd51c41a009d0e467e6c1edb70d03b2f` |
+| `actual-worker-audit.json` | `4fb9a92c2f368034e6a1084ad4a2e7fbeffc9e576ea2d3d9a39652d0c277805b` |
+| `artifacts/combined-release-schema2-smoke-02/audit.json` | `ad10a6949923cb6822da01294179f45dcb214eff01a3e6c171bfc689a51ee073` |
