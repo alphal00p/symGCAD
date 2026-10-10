@@ -54,6 +54,12 @@ native 0.9570 seconds, with an explicitly recorded five-second native cap.
 Trying to reuse its output directory failed without changing the report hash.
 This is a compatibility smoke check, not a performance ratio.
 
+A subsequent fresh `--suite fast` replay matched **all 17 APIs** (16 orders
+and one exact projection) in 18.252 seconds. Every native call had an explicit
+15-second cap; the longest completed native call took 1.792 seconds. The
+report is `artifacts/bench/api-fast-capped-01/report.json`, SHA-256
+`2bc0abc2f588f2214c188cd4b196e29a1751e8ec41126d679691a29502668896`.
+
 The first two one-hour API attempts cover symbolic massless and symbolic
 physical elliptic ordering on CPUs 0 and 1, at 8 GiB each. They are stored in
 `artifacts/bench/api-hour-01/{massless,physical}/`; their results remain pending
