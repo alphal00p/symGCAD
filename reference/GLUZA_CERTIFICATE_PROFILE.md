@@ -97,3 +97,74 @@ timeout 75s taskset -c 1 artifacts/profile/gluza33-certificate-rejection-01/prof
 The helper has four tests for exact counterexamples, finite/one-sided/free
 domains, inconclusive probes and caps, and identity reconstruction. No changes
 to Symbolica or the original reference implementation were needed.
+
+## Matched full-original retry after the identity fix
+
+The immutable production `ab8b9ba` worker, SHA-256
+`68a9cdc90842868ec9d7c08e2b9ba8f2b6265acbf315437bfae4ec647ca58157`,
+repeated the same portfolio on the same CPUs and limits. All 24 `(name,
+variant, input SHA-256)` pairs are exactly equal to the earlier campaign,
+including the promoted variants. Adaptive promotion execution order can differ.
+
+| Family | Attempts/timeouts | Verified completions | Total seconds | Peak RSS KiB |
+| --- | ---: | ---: | ---: | ---: |
+| Gluza30 | 8/8 | 0 | 322.313 | 202072 |
+| Gluza33 | 16/16 | 0 | 482.467 | 99136 |
+
+The four original problems remain unresolved. The first Gluza33 local/x0
+attempt published nearby snapshots with the same 776 certificate attempts:
+certificate time changed from 7.89286 to 0.08124 seconds and elapsed time from
+12.656 to 4.793 seconds; factor/resultant totals stayed near 2.57/1.08 seconds.
+This supports the identified bottleneck without claiming completed-solve speedup.
+Inputs, plans, complete ledgers, reproduction commands and hash comparison are
+under `artifacts/core-identity-retry-01/`, summary SHA-256
+`9ac77eff7827ebd5cebecbce1fd3f267d637fbd3564a252bba9d1bca91696c32`.
+
+## Research: conditional rejection before the final variable
+
+`examples/profile_partial_rejection.rs` observes separate direct-local solves
+that retain the original nonlinear inequality. It does not use sign-filter
+arrangements and does not change the solver's traversal. At an actual observed
+positive prefix, the helper groups the original inequality by remaining
+monomials and evaluates every earlier-coordinate coefficient exactly. If every
+coefficient is strictly negative, the original strict-positive inequality is
+impossible over the remaining positive coordinates, provided the recorded
+coefficient signs hold throughout the parent cell. A coefficient that vanishes
+only at the sample blocks the proposed rule; no sign is inferred from it.
+
+A future proof would need the original positive-coordinate premises, exact
+coefficient reconstruction, and sign-invariance of every earlier coefficient
+through its guarded factors. These observations are not themselves a GCAD proof.
+An opposite-sign split cell cannot be discarded by this argument; that is why
+these diagnostics use the original inequality instead of the monotone wrapper.
+
+Four independent 20-second observations, one CPU/4 GiB each, all timed out:
+
+| Original domain | Distinct published prefixes | Candidate rejected prefixes | Candidates with two axes remaining |
+| --- | ---: | ---: | ---: |
+| Gluza30 negative | 30 | 1 | 0 |
+| Gluza30 positive | 31 | 5 | 3 |
+| Gluza33 negative, x0 anchor | 3 | 0 | 0 |
+| Gluza33 positive, x0 anchor | 3 | 0 | 0 |
+
+There were no candidates with three or more remaining axes. Each two-axis
+candidate used four earlier coefficient guards. Published progress prefixes are
+sparse and are not weighted by actual visit count. Offline Gluza30 coefficient
+evaluation took about 10 ms over 61 prefixes; applying this roughly 0.17 ms cost
+at tens of thousands of visits could add seconds. Final-axis rejection may
+already be inexpensive through existing positive-ray rules. The evidence
+supports only a bounded opt-in experiment, not a default rule or a speedup claim.
+No production rejection heuristic was implemented.
+
+Frozen observer, source, original-domain inputs, snapshots and reports are in
+`artifacts/profile/gluza-partial-rejection-01/`. Its executable SHA-256 is
+`21c8e7e7e9aca294ed4ad4ae099425763ca2f42c6b8e8a9fd18fb2550e4a00af`;
+summary SHA-256 is
+`f5a660f2709de2d48c5c7e8dae15b9a4b0e1a7fd1f12f7bb0c338f9e9773183e`.
+The two helper tests cover exact coefficient grouping, strict-negative fibers,
+and nonstructural zero-coefficient obstructions. Example replay after
+`nix develop`, using a fresh output directory:
+
+```sh
+taskset -c 4 artifacts/profile/gluza-partial-rejection-01/profile_partial_rejection artifacts/core-identity-retry-01/gluza30/0002-monotone-local-unscaled-seed0/input.toml --executable artifacts/hard-campaigns/identity-fast-debug-01/bin/symgcad --output artifacts/profile/gluza-partial-rejection-01/replay --seconds 20 --memory-mib 4096
+```
