@@ -652,6 +652,7 @@ mod tests {
             coordinate: 99,
             separations: vec![],
             pair_witnesses: vec![],
+            strict_bezout: vec![],
             rules: vec![super::super::PositiveRayRule {
                 polynomial: 1,
                 case,

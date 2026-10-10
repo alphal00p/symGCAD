@@ -602,6 +602,7 @@ fn solve_impl(problem: &Problem) -> Result<SolveResult> {
                 descartes_witnesses: problem.solver.local_descartes_witnesses,
                 descartes_intervals: problem.solver.local_descartes_intervals,
                 positive_pair_witnesses: problem.solver.local_positive_pair_witnesses,
+                strict_bezout: !problem.solver.local_strict_bezout_hints.is_empty(),
                 base_point_projection: problem.solver.local_base_point_projection,
                 adjacent_pairs: problem.solver.local_adjacent_pairs,
                 subtree_cache_mib: problem.solver.local_subtree_cache_mib,

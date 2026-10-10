@@ -69,6 +69,8 @@ mod hint_archive;
 mod learned_cuts;
 pub use hint_archive::HintArchiveReport;
 mod pair_witnesses;
+mod strict_bezout;
+pub use strict_bezout::{PositiveStrictBezout, StrictBezoutHint};
 mod stack_samples;
 mod subtree_cache;
 
@@ -97,6 +99,10 @@ pub struct LocalOptions {
     /// evaluations. A finite stock per pair prevents unbounded new templates.
     #[serde(default)]
     pub positive_pair_witnesses: bool,
+    /// Use only explicitly proposed and independently checked strict polynomial
+    /// combination identities; empty historical evidence retains resultants.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub strict_bezout: bool,
     /// Maximum leading-term cancellations per pair, either one or two.
     /// Missing historical fields retain the original one-cancellation proof.
     #[serde(default = "one_cancellation")]
@@ -157,6 +163,7 @@ impl Default for LocalOptions {
             positive_ray: true,
             positive_pair_separation: true,
             positive_pair_witnesses: false,
+            strict_bezout: false,
             positive_pair_cancellations: 2,
             batch_sibling_discovery: true,
             reuse_completed_subtrees: true,
@@ -229,6 +236,12 @@ pub struct LocalReport {
     pub pair_witness_templates: usize,
     pub pair_witness_template_reuses: usize,
     pub pair_witness_budget_fallbacks: usize,
+    pub strict_bezout_hints_accepted: usize,
+    pub strict_bezout_hints_rejected: usize,
+    pub strict_bezout_resultants_omitted: usize,
+    pub strict_bezout_resultant_fallbacks: usize,
+    pub strict_bezout_preparation_seconds: f64,
+    pub strict_bezout_rejections: Vec<String>,
     pub stable_sample_hits: usize,
     pub stable_sample_misses: usize,
     pub stable_sample_recorded: usize,
@@ -314,6 +327,8 @@ pub struct PositiveRayProjection {
     pub separations: Vec<PositivePairSeparation>,
     #[serde(default)]
     pub pair_witnesses: Vec<PositivePairWitness>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub strict_bezout: Vec<PositiveStrictBezout>,
 }
 
 /// The complete positive branch ordering of two individually delineable cuts.
@@ -979,7 +994,7 @@ fn local_bounds(
 /// rootless case. The one-variation case exports a positive-root ordinal;
 /// full-real boundary indices remain invariant in the remaining cases.
 fn positive_projection_raw(
-    algebra: &Algebra,
+    normalized: &NormalizedProblem,
     polynomials: &[Poly],
     cuts: &[usize],
     variable: usize,
@@ -990,6 +1005,8 @@ fn positive_projection_raw(
     pair_cancellations: usize,
     pair_witnesses: bool,
     mut pair_witness_stock: Option<&mut pair_witnesses::WitnessStock>,
+    strict_bezout: bool,
+    bezout_registry: &mut strict_bezout::Registry,
     descartes_one: bool,
     descartes_witnesses: bool,
     mut witness_stock: Option<&mut descartes::WitnessStock>,
@@ -1008,6 +1025,7 @@ fn positive_projection_raw(
     f64,
     PositiveRayProjection,
 )> {
+    let algebra = &normalized.algebra;
     ensure!(
         cuts.contains(&coordinate),
         "positive coordinate factor is not protected"
@@ -1233,6 +1251,7 @@ fn positive_projection_raw(
         rules,
         separations: Vec::new(),
         pair_witnesses: Vec::new(),
+        strict_bezout: Vec::new(),
     };
     if raw
         .iter()
@@ -1268,6 +1287,36 @@ fn positive_projection_raw(
             if let Some((proof, coefficients)) = attempt? {
                 raw.extend(coefficients);
                 ray.separations.push(proof);
+                continue;
+            }
+        }
+        if strict_bezout {
+            let started = Instant::now();
+            let pair = [id.min(other), id.max(other)];
+            let attempt = if let Some(stored) = replay {
+                if let Some(proof) = stored.strict_bezout.iter().find(|p| p.polynomials == pair) {
+                    Some((
+                        proof.clone(),
+                        bezout_registry.verify(
+                            normalized,
+                            polynomials,
+                            pair,
+                            variable,
+                            prefix,
+                            proof,
+                        )?,
+                    ))
+                } else {
+                    // Ordinary resultants are always an admissible strengthening.
+                    None
+                }
+            } else {
+                bezout_registry.attempt(polynomials, pair, variable, prefix)?
+            };
+            *pair_seconds += started.elapsed().as_secs_f64();
+            if let Some((proof, guards)) = attempt {
+                raw.extend(guards);
+                ray.strict_bezout.push(proof);
                 continue;
             }
         }
@@ -1531,6 +1580,7 @@ struct Builder<'a> {
     descartes_stock: descartes::WitnessStock,
     interval_stock: interval_descartes::WitnessStock,
     pair_witness_stock: pair_witnesses::WitnessStock,
+    bezout_registry: strict_bezout::Registry,
 }
 #[derive(Serialize, Deserialize)]
 struct Built {
@@ -1829,7 +1879,7 @@ impl Builder<'_> {
                     .first()
                     .ok_or_else(|| anyhow!("missing coordinate factor"))?;
                 let (bearing, raw, pairs, omitted, seconds, ray) = positive_projection_raw(
-                    &self.normalized.algebra,
+                    self.normalized,
                     &self.polynomials,
                     cuts,
                     level,
@@ -1840,6 +1890,8 @@ impl Builder<'_> {
                     self.options.positive_pair_cancellations,
                     self.options.positive_pair_witnesses,
                     Some(&mut self.pair_witness_stock),
+                    self.options.strict_bezout,
+                    &mut self.bezout_registry,
                     self.options.descartes_one,
                     self.options.descartes_witnesses,
                     Some(&mut self.descartes_stock),
@@ -1873,6 +1925,10 @@ impl Builder<'_> {
                 }
                 self.report.positive_ray_stacks += 1;
                 self.report.pair_witness_resultants_omitted += ray.pair_witnesses.len();
+                self.report.strict_bezout_resultants_omitted += ray.strict_bezout.len();
+                if self.options.strict_bezout {
+                    self.report.strict_bezout_resultant_fallbacks += pairs;
+                }
                 self.report.quadratic_discriminants_omitted += ray
                     .rules
                     .iter()
@@ -2328,6 +2384,26 @@ pub fn solve_local(problem: &Problem, options: &LocalOptions) -> Result<LocalSol
         ))?,
         ..Default::default()
     };
+    let mut report = LocalReport::default();
+    let bezout_registry = if options.strict_bezout {
+        strict_bezout::Registry::from_hints(
+            &normalized,
+            &problem.solver.local_strict_bezout_hints,
+            &mut report,
+            started,
+            problem.limits.wall_time_secs,
+        )
+    } else {
+        strict_bezout::Registry::default()
+    };
+    if started.elapsed().as_secs_f64() >= problem.limits.wall_time_secs {
+        return Ok(unfinished(
+            problem,
+            "wall time limit during local preparation".into(),
+            started,
+            Some(report),
+        ));
+    }
     let mut builder = Builder {
         problem,
         normalized: &normalized,
@@ -2337,7 +2413,7 @@ pub fn solve_local(problem: &Problem, options: &LocalOptions) -> Result<LocalSol
         ids: HashMap::new(),
         input_factors: Vec::new(),
         input_levels: vec![BTreeSet::new(); order.len()],
-        report: LocalReport::default(),
+        report,
         operations: CachedOperations {
             cache: ProjectionCache::new(&normalized.algebra, &cache_options),
             phases: LocalPhaseCosts::default(),
@@ -2370,6 +2446,7 @@ pub fn solve_local(problem: &Problem, options: &LocalOptions) -> Result<LocalSol
         descartes_stock: descartes::WitnessStock::default(),
         interval_stock: interval_descartes::WitnessStock::default(),
         pair_witness_stock: pair_witnesses::WitnessStock::default(),
+        bezout_registry,
     };
     builder.report.active_phase = "input_factorization".into();
     builder.publish(true)?;
@@ -2457,7 +2534,8 @@ pub fn solve_local(problem: &Problem, options: &LocalOptions) -> Result<LocalSol
         + report.phases.discriminant_seconds
         + report.phases.resultant_seconds
         + report.phases.domain_certificate_seconds
-        + report.phases.pair_separation_seconds;
+        + report.phases.pair_separation_seconds
+        + report.strict_bezout_preparation_seconds;
     statistics.lifting_seconds =
         report.phases.root_classification_seconds + report.phases.root_isolation_seconds;
     let solution = SolveResult {
@@ -2518,6 +2596,8 @@ struct Checker<'a> {
     positive_pair_separation: bool,
     positive_pair_cancellations: usize,
     positive_pair_witnesses: bool,
+    strict_bezout: bool,
+    bezout_registry: std::cell::RefCell<strict_bezout::Registry>,
     stable_sector_samples: bool,
     descartes_one: bool,
     descartes_witnesses: bool,
@@ -2678,7 +2758,7 @@ impl Checker<'_> {
                         "positive-ray coordinate factor is incorrect"
                     );
                     let (bearing, raw, _, _, _, expected) = positive_projection_raw(
-                        &self.normalized.algebra,
+                        self.normalized,
                         self.polynomials,
                         cuts,
                         level,
@@ -2689,6 +2769,8 @@ impl Checker<'_> {
                         self.positive_pair_cancellations,
                         self.positive_pair_witnesses,
                         None,
+                        self.strict_bezout,
+                        &mut self.bezout_registry.borrow_mut(),
                         self.descartes_one,
                         self.descartes_witnesses,
                         None,
@@ -2971,6 +3053,8 @@ pub fn verify_local_parts(
         positive_pair_separation: options.positive_pair_separation,
         positive_pair_cancellations: options.positive_pair_cancellations,
         positive_pair_witnesses: options.positive_pair_witnesses,
+        strict_bezout: options.strict_bezout,
+        bezout_registry: std::cell::RefCell::new(strict_bezout::Registry::default()),
         stable_sector_samples: options.stable_sector_samples,
         descartes_one: options.descartes_one,
         descartes_witnesses: options.descartes_witnesses,

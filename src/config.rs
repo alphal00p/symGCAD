@@ -79,6 +79,10 @@ pub struct SolverOptions {
     /// rational-section guards, retaining resultant fallback.
     #[serde(skip_serializing_if = "is_false")]
     pub local_positive_pair_witnesses: bool,
+    /// Optional strict polynomial-combination proposals for positive pair
+    /// separation. Every used identity and coordinate premise is checked.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub local_strict_bezout_hints: Vec<crate::local_projection::StrictBezoutHint>,
     /// Isolate the first-axis root union without constant projection algebra.
     #[serde(skip_serializing_if = "is_true")]
     pub local_base_point_projection: bool,
@@ -126,6 +130,7 @@ impl Default for SolverOptions {
             local_descartes_witnesses: false,
             local_descartes_intervals: false,
             local_positive_pair_witnesses: false,
+            local_strict_bezout_hints: Vec::new(),
             local_base_point_projection: true,
             local_adjacent_pairs: false,
             local_subtree_cache_mib: 32,
