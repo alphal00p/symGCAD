@@ -67,9 +67,12 @@ The quoted measurements apply only to the frozen input matching the report.
 
 The helper parses these exact operands afresh: the first is a 58-term quartic
 with degree vector `[2,2,3,4,4,0,0,0]`; the second is a 1,232-term octic with
-degree vector `[4,4,8,8,8,0,0,0]`. The octic is a distinct captured expression
-from the former discriminant operand. Their strings differ; no scale-equivalence
-or identity between the two captures is asserted.
+degree vector `[4,4,8,8,8,0,0,0]`. In this final frozen pair, the operand strings
+have lengths 967 and 35,149 bytes. The octic string is **exactly identical** to
+the old discriminant operand in capture `9cf0933ab7e5d259ba92d1ae463bb3ce88dd4e543e30eb42228d8df3efc38cbe`.
+This was checked by direct equality of the decoded JSON operand strings. The
+initial, unprofiled `26fd...` pair instead had lengths 1,662 and 29,326 and a
+different octic string; those initial-pair details do not describe this profile.
 
 Each operand has four simple positive roots. The distinct union has eight,
 with owner sequence `[0,0,1,0,1,1,1,0]`. Its four cross-owner edges yield:
