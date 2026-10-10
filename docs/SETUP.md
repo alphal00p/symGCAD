@@ -1,14 +1,17 @@
 # Reproducible setup
 
-The project requires Rust >=1.96. The committed `flake.lock` supplies Rust 1.98.1 and native GMP/MPFR dependencies on Linux. Cargo's exact crate resolution is in `Cargo.lock`. Source dependencies are fetched separately; they are never vendored into this repository.
+The project requires Rust >=1.96. The committed `flake.lock` supplies Rust 1.98.1 and native GMP/MPFR dependencies on Linux. Cargo's exact crate resolution is in `Cargo.lock`. Cargo fetches public source dependencies directly; they are never vendored into this repository.
 
 ```sh
-scripts/bootstrap-deps.sh
 nix develop
 cargo build --release --locked
 ```
 
-The bootstrap reads [PROVENANCE.toml](../PROVENANCE.toml), fetches the exact Symbolica Git commit over public HTTPS, and checks out a detached revision. Numerica and Graphica are tracked workspace members of that same Symbolica monorepo; their exact subtree IDs are recorded too. Cargo uses all three local paths. Repeating setup verifies the existing checkout. A different revision, unrelated modified file, or untracked source file causes an error without resetting or removing it.
+The standalone root manifest pins Symbolica, Numerica and Graphica to the public Symbolica commit recorded in [PROVENANCE.toml](../PROVENANCE.toml). This preserves the original backend revision without requiring `DO_NOT_PUSH_REFERENCES` or the bootstrap script. The recorded local paths are optional research checkouts, not Cargo prerequisites.
+
+## Rust library consumers
+
+symGCAD declares Symbolica `3.0.1` with its GMP/MPFR and tracing features. Cargo applies `[patch]` only from the workspace root: a downstream application can pin one compatible Symbolica/Numerica source for both its own native objects and symGCAD. The standalone pins above do not force a second backend identity into that application. Check the resolved graph with `cargo tree -i symbolica` and `cargo tree -i numerica`; the consumer owns its lockfile, enabled features and compatibility tests. Public API compatibility with another revision is a tested property, not a promise for every future `3.x` release.
 
 Symbolica has its own [license terms](https://github.com/symbolica-dev/symbolica/blob/75f8350094b90254ee71dc2a391fde0d14b0204a/License.md). Supply `SYMBOLICA_LICENSE` through your environment when required. The Nix development shell may also read the optional ignored `.symgcad-env`; do not commit a license key. Solver workers use one symbolic thread. Parallel worker limits also remain subject to the backend license.
 
@@ -22,6 +25,8 @@ scripts/bootstrap-deps.sh --check --apply-patches
 ```
 
 Application is idempotent. Already-applied fixes are recognized and the complete source diff must match those fixes exactly. The direct linear-resultant identities in the solver and research helper work with both pristine and patched dependencies; they do not apply an extra correction to a backend result. The bootstrap never removes applied patches; preserve a separate pristine checkout for reproducing historical measurements. [Patch descriptions and regression commands](../patches/README.md) identify the exact changes. Check the current source state without changing it with `scripts/bootstrap-deps.sh --check`.
+
+Bootstrap fetches detached checkouts from `PROVENANCE.toml` and rejects a different revision or unrelated changes without resetting them. Applying patches there does **not** alter the default Cargo build. Run the patch regressions in that checkout as documented, or use a separate symGCAD working copy whose three root patch entries explicitly point to `DO_NOT_PUSH_REFERENCES/symbolica`, `DO_NOT_PUSH_REFERENCES/symbolica/lib/numerica` and `DO_NOT_PUSH_REFERENCES/symbolica/lib/graphica`. Retain the original public pins and lockfile for unmodified standalone builds.
 
 ## Independent upstream GCAD comparison
 
