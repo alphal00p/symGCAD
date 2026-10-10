@@ -8,6 +8,8 @@ All 28 unresolved problems timed out in their first one-hour slow campaign. The 
 
 The subsequent [positive Gluza33 continuation](reference/GLUZA33_AFFINE_ORDER_CONTINUATION.md) also timed out at two hours with a 50 GiB allowance and 3.81 GiB reported peak RSS. Its ground-truth decomposition remains unresolved.
 
+The [final checkpoint](reference/FINAL_CHECKPOINT.md) separates verified original results, tested improvements and remaining research. No timeout or conditional chamber is counted as an original completion.
+
 ## Quick start
 
 Requires Git and Nix with flakes enabled. External dependencies are fetched at exact revisions; they are not included in this repository.
@@ -100,6 +102,7 @@ Current physics-guided research studies [CFF-informed kinematic chambers](refere
 A [supplemental seeded sanity check](reference/SUPPLEMENTAL_SANITY.md) sampled two fresh interior points in each fixed A446 cell: all 8 cells, 16 exact F evaluations and 112 original-constraint checks passed. This check recomputes boundaries at each new prefix and is excluded from benchmark timings; it does not replace the coverage proof.
 
 - [Benchmark document](benchmark/benchmark.pdf) and [Typst source](benchmark/benchmark.typ): per-problem comparison and methodology.
+- [Ordering and MCTS companion](benchmark/ordering-mcts.pdf): search mechanics and evidence.
 - [Validation record](BENCHMARKS.md): measured milestones, limits, artifact hashes and unresolved cases.
 - [Reference reproduction](reference/README.md): corpus extraction, native adapter and audit protocols.
 - [Implementation plan](SYMGCAD_PLAN.MD) and [algorithm research](ALGORITHM_RESEARCH.md): design, evidence and remaining work.

@@ -45,10 +45,23 @@ The reference builder makes an isolated `.reference/gcad` copy, compiles against
 The default Nix shell includes Typst and pinned Libertinus/Noto font packages. It sets `TYPST_FONT_PATHS` to their Nix store paths:
 
 ```sh
-nix develop -c typst compile benchmark/benchmark.typ benchmark/benchmark.pdf
+benchmark/render.sh
 ```
 
-The document's table data and source are committed separately from generated solver proofs.
+This renders the main benchmark and its separately preserved ordering/MCTS
+companion. The table data and Typst sources are committed separately from
+generated solver proofs. Regenerating measurements requires the retained
+source evidence; rendering the published snapshot does not.
+
+## Isolated root-isolation experiments
+
+The [positive-axis replay package](../reference/research/positive_axis_api/README.md)
+prepares a fresh tree with two separate Symbolica patches: exact unit Taylor
+shifts and strictly positive root isolation. It includes focused regressions,
+bounded measurements and exact inventory comparisons. Its setup leaves the
+normal dependency checkout unchanged. These experimental APIs do not change
+production cell boundaries or the published corpus completion count; see the
+[measurement record](../reference/POSITIVE_AXIS_ISOLATION_RESEARCH.md).
 
 ## Optional graph input from FastSecDec
 
