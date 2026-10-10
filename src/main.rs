@@ -240,7 +240,10 @@ fn forward(
 }
 
 fn run_search(problem: &Problem) -> Result<Value> {
-    use symgcad::search::{SearchOptions, TrialOutcome, TrialStatus, search};
+    use symgcad::search::{
+        CheckpointReport, SearchCheckpointOptions, SearchOptions, TrialOutcome, TrialStatus,
+        search, search_checkpointed,
+    };
     let n = problem.variables.len();
     let mut groups: Vec<Vec<usize>> = if problem.variable_groups.is_empty() {
         vec![(0..n).collect()]
@@ -279,8 +282,10 @@ fn run_search(problem: &Problem) -> Result<Value> {
     if let Some(seconds) = problem.solver.search_time_secs {
         options.wall_time_secs = seconds.min(options.wall_time_secs);
     }
+    let search_budget = options.wall_time_secs;
     let default_order = groups.iter().flatten().copied().collect::<Vec<_>>();
     let mut seeds = vec![default_order.clone()];
+    let mut normalized_context = None;
     {
         let mut seed = problem.clone();
         seed.solver.order.clear();
@@ -292,6 +297,7 @@ fn run_search(problem: &Problem) -> Result<Value> {
         let (out, path, _) = bounded(&seed, "seed_orders", None)?;
         if out.status == "completed" {
             if let Ok(value) = serde_json::from_slice::<Value>(&fs::read(&path)?) {
+                normalized_context = value.get("search_context").cloned();
                 if let Some(orders) = value["orders"].as_array() {
                     for order in orders {
                         let indices: Vec<usize> = serde_json::from_value(order.clone())?;
@@ -311,9 +317,8 @@ fn run_search(problem: &Problem) -> Result<Value> {
         .rev()
         .copied()
         .collect::<Vec<_>>();
-    options.wall_time_secs = (options.wall_time_secs - start.elapsed().as_secs_f64()).max(0.001);
     let mut projection_progress = Vec::new();
-    let report = search(&groups, &priority, &seeds, &options, |request| {
+    let evaluate = |request: &symgcad::search::TrialRequest| {
         let mut trial = problem.clone();
         trial.solver.order = request
             .order
@@ -376,14 +381,44 @@ fn run_search(problem: &Problem) -> Result<Value> {
             message: if complete { None } else { Some(process.stderr) },
             abandoned_prefix,
         })
-    })?;
+    };
+    let mut context_problem = serde_json::to_value(problem)?;
+    context_problem.as_object_mut().unwrap().remove("name");
+    context_problem["limits"]
+        .as_object_mut()
+        .unwrap()
+        .remove("wall_time_secs");
+    for key in ["checkpoint_dir", "search_time_secs", "max_rollouts"] {
+        context_problem["solver"]
+            .as_object_mut()
+            .unwrap()
+            .remove(key);
+    }
+    options.wall_time_secs = (search_budget - start.elapsed().as_secs_f64()).max(f64::MIN_POSITIVE);
+    let report = if let (Some(directory), Some(normalized)) =
+        (&problem.solver.checkpoint_dir, normalized_context)
+    {
+        let checkpoint = SearchCheckpointOptions {
+            directory: directory.clone(),
+            context: serde_json::to_string(
+                &json!({"problem":context_problem,"normalized":normalized,"scheduler":"uct-journal-v1"}),
+            )?,
+        };
+        search_checkpointed(&groups, &priority, &seeds, &options, &checkpoint, evaluate)?
+    } else {
+        let mut report = search(&groups, &priority, &seeds, &options, evaluate)?;
+        if let Some(directory) = &problem.solver.checkpoint_dir {
+            report.checkpoint=Some(CheckpointReport{path:directory.join("searches"),rejected:Some("bounded normalization/seed worker did not return an exact context; search persistence disabled".into()),..Default::default()});
+        }
+        report
+    };
     Ok(
         json!({"schema_version":1,"problem":problem,"search":report,"projection_progress":projection_progress,"total_seconds":start.elapsed().as_secs_f64()}),
     )
 }
 
 fn enable_search_checkpoints(problem: &mut Problem) {
-    if problem.solver.engine == "optimized" && problem.solver.checkpoint_dir.is_none() {
+    if problem.solver.checkpoint_dir.is_none() {
         problem.solver.checkpoint_dir = Some(PathBuf::from("artifacts/checkpoints"));
     }
 }
@@ -464,6 +499,20 @@ fn worker(operation: &str, input: &Path, output: &Path) -> Result<()> {
         }
         "seed_orders" => {
             let normalized = symgcad::problem::normalize(&problem, &problem.variables)?;
+            // Normalize and hash inside the same killable seed worker. A parent
+            // without this complete context must not load a search checkpoint.
+            use sha2::{Digest, Sha256};
+            let mut executable = fs::File::open(std::env::current_exe()?)?;
+            let mut hasher = Sha256::new();
+            let mut buffer = [0u8; 65536];
+            loop {
+                let n = std::io::Read::read(&mut executable, &mut buffer)?;
+                if n == 0 {
+                    break;
+                }
+                hasher.update(&buffer[..n]);
+            }
+            let search_context = json!({"variables":normalized.algebra.names,"positive":normalized.positives.iter().map(ToString::to_string).collect::<Vec<_>>(),"split":normalized.split.iter().map(ToString::to_string).collect::<Vec<_>>(),"backend":symbolica::prelude::LicenseManager::get_version(),"executable_sha256":format!("{:x}",hasher.finalize())});
             let mut all = normalized.positives;
             all.extend(normalized.split);
             let groups = if problem.variable_groups.is_empty() {
@@ -480,7 +529,7 @@ fn worker(operation: &str, input: &Path, output: &Path) -> Result<()> {
                     .collect()
             };
             emit(
-                &json!({"orders":symgcad::ordering::cheap_seed_orders(&all, &groups)}),
+                &json!({"orders":symgcad::ordering::cheap_seed_orders(&all, &groups),"search_context":search_context}),
                 Some(output),
             )?;
         }

@@ -10,6 +10,9 @@ use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 use std::time::Instant;
 
+pub mod checkpoint;
+pub use checkpoint::{CheckpointReport, SearchCheckpointOptions, search_checkpointed};
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct SearchOptions {
     pub max_rollouts: usize,
@@ -90,6 +93,9 @@ pub enum TrialStatus {
     /// Heuristic early abandonment. This has no logical implication.
     Pruned,
     Failed,
+    /// A completion claimed by a restored search log. It is only a heuristic
+    /// until this invocation obtains a fresh complete solve of that order.
+    Unverified,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -134,6 +140,10 @@ pub struct SearchReport {
     pub iterations: usize,
     pub wall_time_secs: f64,
     pub stopped: SearchStop,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub revalidations: Vec<TrialRecord>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub checkpoint: Option<CheckpointReport>,
 }
 
 #[derive(Default)]
@@ -161,6 +171,31 @@ pub fn search<F>(
     elimination_priority: &[usize],
     seeds: &[Vec<usize>],
     options: &SearchOptions,
+    evaluate: F,
+) -> Result<SearchReport>
+where
+    F: FnMut(&TrialRequest) -> Result<TrialOutcome>,
+{
+    search_impl(
+        groups,
+        elimination_priority,
+        seeds,
+        options,
+        None,
+        None,
+        false,
+        evaluate,
+    )
+}
+
+fn search_impl<F>(
+    groups: &[Vec<usize>],
+    elimination_priority: &[usize],
+    seeds: &[Vec<usize>],
+    options: &SearchOptions,
+    restored: Option<&checkpoint::Archive>,
+    mut journal: Option<&mut checkpoint::Journal>,
+    replay_only: bool,
     mut evaluate: F,
 ) -> Result<SearchReport>
 where
@@ -201,10 +236,74 @@ where
     let mut promotions = 0;
     let mut iterations = 0;
     let mut stopped = SearchStop::RolloutLimit;
+    let restored_iterations = restored.map_or(0, |a| a.iterations);
+    let mut replay_cursor = 0;
+    let mut revalidations = restored.map_or_else(Vec::new, |a| a.revalidations.clone());
+    let old_revalidations = revalidations.len();
+    let mut revalidated = restored.is_none();
+    let mut revalidated_best: Option<TrialRecord> = None;
     while iterations < options.max_rollouts {
+        let replaying = iterations < restored_iterations;
+        ensure!(
+            !replay_only || started.elapsed().as_secs_f64() < options.wall_time_secs,
+            "checkpoint replay exceeded invocation wall budget"
+        );
+        if !replaying && !revalidated && !replay_only {
+            ensure!(
+                replay_cursor == restored.unwrap().records.len(),
+                "unused restored trials"
+            );
+            // Archived successful statuses are untrusted. Re-run the best
+            // historical candidates before allowing any of them to win.
+            let mut completed: Vec<_> = candidates
+                .iter()
+                .filter(|c| c.last.status == TrialStatus::Completed)
+                .collect();
+            completed.sort_by(|a, b| {
+                a.last
+                    .elapsed_secs
+                    .total_cmp(&b.last.elapsed_secs)
+                    .then_with(|| a.last.cells.cmp(&b.last.cells))
+                    .then_with(|| a.order.cmp(&b.order))
+            });
+            for c in completed.into_iter().take(options.max_rollouts) {
+                let remaining = options.wall_time_secs - started.elapsed().as_secs_f64();
+                if remaining <= 0.0 {
+                    break;
+                }
+                let request = TrialRequest {
+                    order: c.order.clone(),
+                    elimination_prefix: c.prefix.clone(),
+                    timeout_secs: options.candidate_timeouts_secs[c.tier].min(remaining),
+                    tier: c.tier,
+                    seed: options.seed,
+                };
+                let outcome = evaluate(&request)?;
+                validate_outcome(&request, &outcome, variables)?;
+                let record = TrialRecord { request, outcome };
+                if record.outcome.status == TrialStatus::Completed
+                    && revalidated_best.as_ref().is_none_or(|b| {
+                        completed_cost(&record.outcome) < completed_cost(&b.outcome)
+                    })
+                {
+                    revalidated_best = Some(record.clone());
+                }
+                revalidations.push(record);
+                if let Some(j) = journal.as_deref_mut() {
+                    j.save(iterations, &records, &revalidations);
+                }
+            }
+            revalidated = true;
+        }
         let remaining = options.wall_time_secs - started.elapsed().as_secs_f64();
-        if remaining <= 0.0 {
+        if !replaying && remaining <= 0.0 {
             stopped = SearchStop::TimeLimit;
+            break;
+        }
+        if !replaying
+            && iterations - restored_iterations + revalidations.len() - old_revalidations
+                >= options.max_rollouts
+        {
             break;
         }
         let promote = promotion_candidate(&candidates, options, promotions);
@@ -246,20 +345,29 @@ where
             if let Some(&id) = seen.get(&order) {
                 backpropagate(&mut nodes, &path, reward(&candidates[id].last));
                 iterations += 1;
+                if !replaying {
+                    if let Some(j) = journal.as_deref_mut() {
+                        j.save(iterations, &records, &revalidations);
+                    }
+                }
                 continue;
             }
             fresh_since_promotion += 1;
             (order, prefix, path, 0, None)
         };
 
-        let request = TrialRequest {
+        let mut request = TrialRequest {
             order: order.clone(),
             elimination_prefix: prefix.clone(),
-            timeout_secs: options.candidate_timeouts_secs[tier].min(remaining),
+            timeout_secs: options.candidate_timeouts_secs[tier].min(if replaying {
+                options.wall_time_secs
+            } else {
+                remaining
+            }),
             tier,
             seed: options.seed,
         };
-        let outcome = if let Some((prefix, score)) = abandoned.iter().find(|(prefix, _)| {
+        let cached_outcome = if let Some((prefix, score)) = abandoned.iter().find(|(prefix, _)| {
             request
                 .order
                 .iter()
@@ -268,27 +376,48 @@ where
                 .take(prefix.len())
                 .eq(prefix.iter().copied())
         }) {
-            TrialOutcome {
+            Some(TrialOutcome {
                 status: TrialStatus::Pruned,
                 elapsed_secs: 0.0,
                 cells: None,
                 progress_score: *score,
                 message: Some("shared prefix abandoned earlier in this search campaign".into()),
                 abandoned_prefix: Some(prefix.clone()),
+            })
+        } else {
+            None
+        };
+        let outcome = if replaying {
+            let saved = restored
+                .unwrap()
+                .records
+                .get(replay_cursor)
+                .ok_or_else(|| anyhow::anyhow!("restored trial journal ended early"))?;
+            ensure!(
+                saved.request.timeout_secs.is_finite()
+                    && saved.request.timeout_secs > 0.0
+                    && saved.request.timeout_secs <= options.candidate_timeouts_secs[tier],
+                "invalid restored trial deadline"
+            );
+            request.timeout_secs = saved.request.timeout_secs;
+            ensure!(
+                serde_json::to_value(&request)? == serde_json::to_value(&saved.request)?,
+                "restored trial does not match deterministic scheduler"
+            );
+            if let Some(cached) = &cached_outcome {
+                ensure!(
+                    serde_json::to_value(cached)? == serde_json::to_value(&saved.outcome)?,
+                    "restored shared-prefix decision differs"
+                );
             }
+            replay_cursor += 1;
+            saved.outcome.clone()
+        } else if let Some(cached) = cached_outcome {
+            cached
         } else {
             evaluate(&request)?
         };
-        ensure!(
-            outcome.elapsed_secs.is_finite() && outcome.elapsed_secs >= 0.0,
-            "worker returned an invalid elapsed time"
-        );
-        ensure!(
-            outcome
-                .progress_score
-                .is_none_or(|x| x.is_finite() && x >= 0.0),
-            "worker returned an invalid progress score"
-        );
+        validate_outcome(&request, &outcome, variables)?;
         if let Some(prefix) = &outcome.abandoned_prefix {
             ensure!(
                 outcome.status == TrialStatus::Pruned
@@ -327,31 +456,160 @@ where
                 id
             }
         };
-        if outcome.status == TrialStatus::Completed
+        if !replaying
+            && outcome.status == TrialStatus::Completed
             && best.is_none_or(|b| completed_cost(&outcome) < completed_cost(&candidates[b].last))
         {
             best = Some(id);
         }
         records.push(TrialRecord { request, outcome });
         iterations += 1;
+        if !replaying {
+            if let Some(j) = journal.as_deref_mut() {
+                j.save(iterations, &records, &revalidations);
+            }
+        }
     }
-    let fallback = candidates
+    ensure!(
+        iterations >= restored_iterations
+            && replay_cursor == restored.map_or(0, |a| a.records.len()),
+        "restored journal cannot be replayed within rollout limit"
+    );
+    // A finished checkpoint may have exhausted its scheduler limit. It still
+    // must revalidate a completion before returning a winner; allow a separate
+    // bounded validation pass without adding scheduler iterations.
+    if !revalidated && !replay_only {
+        let mut completed: Vec<_> = candidates
+            .iter()
+            .filter(|c| c.last.status == TrialStatus::Completed)
+            .collect();
+        completed.sort_by(|a, b| {
+            a.last
+                .elapsed_secs
+                .total_cmp(&b.last.elapsed_secs)
+                .then_with(|| a.last.cells.cmp(&b.last.cells))
+                .then_with(|| a.order.cmp(&b.order))
+        });
+        for c in completed.into_iter().take(options.max_rollouts) {
+            let remaining = options.wall_time_secs - started.elapsed().as_secs_f64();
+            if remaining <= 0.0 {
+                break;
+            }
+            let request = TrialRequest {
+                order: c.order.clone(),
+                elimination_prefix: c.prefix.clone(),
+                timeout_secs: options.candidate_timeouts_secs[c.tier].min(remaining),
+                tier: c.tier,
+                seed: options.seed,
+            };
+            let outcome = evaluate(&request)?;
+            validate_outcome(&request, &outcome, variables)?;
+            let record = TrialRecord { request, outcome };
+            if record.outcome.status == TrialStatus::Completed
+                && revalidated_best
+                    .as_ref()
+                    .is_none_or(|b| completed_cost(&record.outcome) < completed_cost(&b.outcome))
+            {
+                revalidated_best = Some(record.clone());
+            }
+            revalidations.push(record);
+            if let Some(j) = journal.as_deref_mut() {
+                j.save(iterations, &records, &revalidations);
+            }
+        }
+    }
+    let historical_restart = candidates
         .iter()
-        .filter(|c| matches!(c.last.status, TrialStatus::Timeout | TrialStatus::Pruned))
-        .min_by(|a, b| partial_cost(&a.last).total_cmp(&partial_cost(&b.last)))
-        .map(|c| c.order.clone())
+        .filter(|c| c.last.status == TrialStatus::Completed)
+        .min_by(|a, b| {
+            a.last
+                .elapsed_secs
+                .total_cmp(&b.last.elapsed_secs)
+                .then_with(|| a.last.cells.cmp(&b.last.cells))
+                .then_with(|| a.order.cmp(&b.order))
+        })
+        .map(|c| c.order.clone());
+    let fallback = historical_restart
+        .or_else(|| {
+            candidates
+                .iter()
+                .filter(|c| matches!(c.last.status, TrialStatus::Timeout | TrialStatus::Pruned))
+                .min_by(|a, b| partial_cost(&a.last).total_cmp(&partial_cost(&b.last)))
+                .map(|c| c.order.clone())
+        })
         .or_else(|| seeds.first().cloned())
         .unwrap_or_else(|| groups.iter().flatten().copied().collect());
-    let best_order = best.map(|b| candidates[b].order.clone());
+    let mut best_order = best.map(|b| candidates[b].order.clone());
+    let mut best_elapsed_secs = best.map(|b| candidates[b].last.elapsed_secs);
+    if let Some(validated) = revalidated_best {
+        if best.is_none_or(|b| {
+            completed_cost(&validated.outcome) < completed_cost(&candidates[b].last)
+        }) {
+            best_order = Some(validated.request.order);
+            best_elapsed_secs = Some(validated.outcome.elapsed_secs);
+        }
+    }
+    for record in records
+        .iter_mut()
+        .take(replay_cursor)
+        .chain(revalidations.iter_mut().take(old_revalidations))
+    {
+        if record.outcome.status == TrialStatus::Completed {
+            record.outcome.status = TrialStatus::Unverified;
+        }
+    }
     Ok(SearchReport {
         suggested_order: best_order.clone().unwrap_or(fallback),
         best_order,
-        best_elapsed_secs: best.map(|b| candidates[b].last.elapsed_secs),
+        best_elapsed_secs,
         trials: records,
         iterations,
         wall_time_secs: started.elapsed().as_secs_f64(),
         stopped,
+        revalidations,
+        checkpoint: None,
     })
+}
+
+fn validate_outcome(
+    request: &TrialRequest,
+    outcome: &TrialOutcome,
+    variables: usize,
+) -> Result<()> {
+    ensure!(
+        outcome.status != TrialStatus::Unverified,
+        "worker returned an unverified completion claim"
+    );
+    ensure!(
+        outcome.elapsed_secs.is_finite() && outcome.elapsed_secs >= 0.0,
+        "worker returned an invalid elapsed time"
+    );
+    ensure!(
+        outcome
+            .progress_score
+            .is_none_or(|x| x.is_finite() && x >= 0.0),
+        "worker returned an invalid progress score"
+    );
+    ensure!(
+        outcome.status != TrialStatus::Completed || outcome.cells.is_some(),
+        "completed worker omitted its cell count"
+    );
+    if let Some(prefix) = &outcome.abandoned_prefix {
+        ensure!(
+            outcome.status == TrialStatus::Pruned
+                && !prefix.is_empty()
+                && prefix.len() < variables
+                && request
+                    .order
+                    .iter()
+                    .rev()
+                    .copied()
+                    .take(prefix.len())
+                    .eq(prefix.iter().copied()),
+            "worker returned an invalid abandoned prefix"
+        );
+    }
+    Ok(())
 }
 
 fn validate_order(order: &[usize], groups: &[Vec<usize>]) -> Result<()> {
