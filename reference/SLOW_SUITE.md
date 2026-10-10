@@ -175,3 +175,28 @@ The auditor executable has SHA-256
 `7b3e6eb10acdcb990f4e247612495542ad834c14779c3f834d57b16763427ec3`.
 It exited nonzero as required while originals remain unverified. No live
 runner, campaign configuration or previous evidence was changed.
+
+## Fourth one-hour wave
+
+The 10:30 UTC read-only audit found sixteen finished incomplete attempts,
+four running and eight still queued. The four additional symbolic originals
+all timed out; no result or verification file was produced:
+
+| Original | Bounded solve, seconds | Peak RSS, MiB |
+| --- | ---: | ---: |
+| B471 | 3600.038791 | 950.2 |
+| Ax12-B471 | 3600.026922 | 252.5 |
+| C215 | 3600.025886 | 600.1 |
+| C231 | 3600.007674 | 562.6 |
+
+The original mathematical inputs, ledger hashes and actual worker input hashes
+were checked again. Coverage remains **303 / 331**, with all 28 slow originals
+unresolved. These censored attempts are not completion times or speed ratios.
+
+The final snapshot is `artifacts/slow-suite-one-hour-audit-06/audit.json`,
+SHA-256 `8d48005661d1ee891c371f131fd2fd2f7ca68e76248bbae684d780536e4715d0`;
+its queue snapshot has SHA-256
+`a723ffb3f977fb211dee4c52cf2773eb20709cfb3d2d53492d899c46e6228d0e`.
+The directory retains final ledger/input copies and `fourth-wave-outcomes.json`.
+The immediately preceding audit-05 ran just before this wave finished and
+therefore retains the unchanged twelve-incomplete audit; it has not been replaced.
