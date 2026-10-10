@@ -1,9 +1,11 @@
 //! Certified positive-axis linear/quadratic peeling.
 //!
-//! If q(z)=a*z^2+b*z+c with a>0,b>=0 on the complete base domain,
-//! q is strictly increasing and unbounded on z>0. For c<0 its unique
+//! If q(z)=a*z^2+b*z+c with a>0 and either b>=0 or a certified
+//! h>0, h*b-c>0 on the complete base domain, its positive-ray zero
+//! pattern depends only on c. For c<0 its unique
 //! positive root separates exactly two sectors; for c>=0 the entire positive
-//! axis has positive sign. Linear q uses the same argument with a>0.
+//! axis has positive sign. The second condition implies b>0 when c>=0;
+//! it does not assert that q is globally increasing. Linear q uses a>0.
 //! Endpoint sign cells and exact coefficient certificates therefore replace
 //! global discriminants of irrelevant negative roots without losing coverage.
 
@@ -27,6 +29,9 @@ use std::{
 };
 use symbolica::prelude::*;
 
+mod conditional_linear;
+pub use conditional_linear::ConditionalLinearEvidence;
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct MonotoneStep {
     pub variable: String,
@@ -34,9 +39,13 @@ pub struct MonotoneStep {
     pub endpoint: String,
     pub degree: u32,
     pub leading: DomainCertificate,
-    /// Quadratic linear coefficient: None means exactly zero. Linear
-    /// polynomials have no separate linear-coefficient obligation.
+    /// Direct quadratic linear-coefficient proof. Without conditional evidence,
+    /// None means exactly zero. Linear polynomials have neither obligation.
     pub linear: Option<DomainCertificate>,
+    /// Alternative to a globally nonnegative quadratic linear coefficient.
+    /// Historical proofs omit this field and retain their original meaning.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub conditional_linear: Option<ConditionalLinearEvidence>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -131,18 +140,22 @@ fn candidate(
     if leading.sign != 1 {
         return Ok(None);
     }
+    let mut conditional_linear = None;
     let linear = if degree == 2 {
         let b = coefficient(p, variable, 1);
         if b.is_zero() {
             None
         } else {
-            let Some(certificate) = certify_nonzero(algebra, &b, &domain, &options)? else {
-                return Ok(None);
-            };
-            if certificate.sign != 1 {
-                return Ok(None);
+            let direct = certify_nonzero(algebra, &b, &domain, &options)?
+                .filter(|certificate| certificate.sign == 1);
+            if direct.is_none() {
+                conditional_linear =
+                    conditional_linear::discover(normalized, p, variable, &domain, &options)?;
+                if conditional_linear.is_none() {
+                    return Ok(None);
+                }
             }
-            Some(certificate)
+            direct
         }
     } else {
         None
@@ -154,6 +167,7 @@ fn candidate(
         degree,
         leading,
         linear,
+        conditional_linear,
     }))
 }
 
@@ -495,7 +509,13 @@ fn check_steps(problem: &Problem, order: &[String], steps: &[MonotoneStep]) -> R
         )?;
         if step.degree == 2 {
             let b = coefficient(&p, variable, 1);
-            if b.is_zero() {
+            if let Some(evidence) = &step.conditional_linear {
+                ensure!(
+                    step.linear.is_none() && !b.is_zero(),
+                    "conditional linear proof duplicates another coefficient proof"
+                );
+                conditional_linear::verify(&normalized, &p, variable, evidence)?;
+            } else if b.is_zero() {
                 ensure!(
                     step.linear.is_none(),
                     "zero linear coefficient has unexpected evidence"
@@ -519,7 +539,7 @@ fn check_steps(problem: &Problem, order: &[String], steps: &[MonotoneStep]) -> R
             }
         } else {
             ensure!(
-                step.linear.is_none(),
+                step.linear.is_none() && step.conditional_linear.is_none(),
                 "linear polynomial has a quadratic-only proof"
             );
         }
