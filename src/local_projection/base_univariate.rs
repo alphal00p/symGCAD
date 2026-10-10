@@ -267,6 +267,38 @@ pub(super) struct Validated {
     pub typed: BTreeSet<usize>,
 }
 
+impl Validated {
+    /// Match only an already checked canonical product. A freshly recomputed
+    /// guard may carry a rational unit larger than the discovery admission cap.
+    /// Do not normalize it or apply that cap again merely to identify its zeros.
+    /// Validation bounds this scan to 128 sources of at most 4096 terms each;
+    /// map/support comparisons precede arithmetic on the existing raw values.
+    pub(super) fn proportional_ids(&self, raw: &Poly) -> Option<&[usize]> {
+        if raw.is_constant() || raw.nterms() > MAX_TERMS {
+            return None;
+        }
+        for (source, ids) in &self.sources {
+            if raw.variables() != source.variables()
+                || raw.nterms() != source.nterms()
+                || !raw.exponents_iter().eq(source.exponents_iter())
+            {
+                continue;
+            }
+            let scale = &raw.coefficients[0] / &source.coefficients[0];
+            if !scale.is_zero()
+                && raw
+                    .coefficients
+                    .iter()
+                    .zip(&source.coefficients)
+                    .all(|(actual, expected)| actual == &(expected * &scale))
+            {
+                return Some(ids);
+            }
+        }
+        None
+    }
+}
+
 pub(super) fn validate(
     algebra: &Algebra,
     polynomials: &[Poly],
@@ -332,6 +364,121 @@ pub(super) fn validate(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use symbolica::domains::integer::Integer;
+
+    fn source_evidence(algebra: &Algebra, source: &Poly) -> BaseUnivariateBasis {
+        BaseUnivariateBasis {
+            schema_version: 1,
+            sources: vec![BaseUnivariateSource {
+                polynomial: algebra.format(source),
+                blocks: vec![BaseUnivariateBlock {
+                    polynomial: 0,
+                    multiplicity: 1,
+                }],
+            }],
+        }
+    }
+
+    #[test]
+    fn validated_lookup_requires_exact_full_map_support_and_proportionality() {
+        let a = Algebra::new(&["s".into(), "z".into()]).unwrap();
+        let source = a.parse("s^2-1").unwrap();
+        let evidence = source_evidence(&a, &source);
+        let validated = validate(&a, std::slice::from_ref(&source), Some(&evidence), true).unwrap();
+        let huge = Integer::from(2).pow(20_001);
+        let raw = source
+            .clone()
+            .mul_coeff(Rational::from((huge, Integer::from(3))));
+        assert!(source_cost(&raw).is_none());
+        assert_eq!(validated.proportional_ids(&raw), Some([0].as_slice()));
+        // Same monomials and almost the same large coefficients are not enough.
+        let nearby = &raw + &a.parse("s^2").unwrap();
+        assert_eq!(nearby.nterms(), raw.nterms());
+        assert!(validated.proportional_ids(&nearby).is_none());
+        for text in ["0", "1", "s^2-2", "z^2-1", "s^2+s-1"] {
+            assert!(
+                validated
+                    .proportional_ids(&a.parse(text).unwrap())
+                    .is_none()
+            );
+        }
+        let other = Algebra::new(&["s".into()]).unwrap();
+        assert!(
+            validated
+                .proportional_ids(&other.parse("s^2-1").unwrap())
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn checker_raw_guard_lookup_accepts_large_signed_rational_units_only() {
+        let problem = Problem {
+            variables: vec!["s".into(), "z".into()],
+            ..Default::default()
+        };
+        let normalized = normalize(&problem, &problem.variables).unwrap();
+        let a = &normalized.algebra;
+        let source = a.parse("s^2-1").unwrap();
+        let ordinary = a.parse("s-5").unwrap();
+        // Deliberately retain a composite source, with no s-1 or s+1 IDs:
+        // a fallback to irreducible factoring cannot accidentally pass this test.
+        let polynomials = vec![source.clone(), ordinary.clone()];
+        let evidence = source_evidence(a, &source);
+        let mut checker = Checker {
+            normalized: &normalized,
+            polynomials: &polynomials,
+            ids: polynomials
+                .iter()
+                .cloned()
+                .enumerate()
+                .map(|(i, p)| (p, i))
+                .collect(),
+            input_factors: &[],
+            guard_certificates: &[],
+            guard_domains: Vec::new(),
+            protected: BTreeSet::new(),
+            domain_pruning: false,
+            positive_ray: false,
+            positive_pair_separation: false,
+            positive_pair_cancellations: 0,
+            positive_pair_witnesses: false,
+            strict_bezout: false,
+            bezout_registry: std::cell::RefCell::new(strict_bezout::Registry::default()),
+            stable_sector_samples: false,
+            descartes_one: false,
+            descartes_witnesses: false,
+            descartes_intervals: false,
+            base_point_projection: true,
+            adjacent_pairs: false,
+            binary_discriminants: false,
+            base_basis: validate(a, &polynomials, Some(&evidence), true).unwrap(),
+        };
+        checker.check_registry().unwrap();
+        let huge = Integer::from(2).pow(20_001);
+        for unit in [
+            Rational::from((huge.clone(), Integer::from(3))),
+            Rational::from((-huge.clone(), Integer::from(3))),
+            Rational::from((Integer::from(3), huge.clone())),
+            Rational::from((Integer::from(-3), huge)),
+        ] {
+            let raw = source.clone().mul_coeff(unit);
+            assert!(source_cost(&raw).is_none());
+            assert_eq!(checker.guard_basis(&[raw]).unwrap(), BTreeSet::from([0]));
+        }
+        assert!(checker.guard_basis(&[a.parse("s^2-2").unwrap()]).is_err());
+        assert_eq!(
+            checker
+                .guard_basis(std::slice::from_ref(&ordinary))
+                .unwrap(),
+            BTreeSet::from([1])
+        );
+        checker.base_basis = Validated::default();
+        assert_eq!(
+            checker.guard_basis(&[ordinary]).unwrap(),
+            BTreeSet::from([1])
+        );
+    }
+
     #[test]
     fn composite_repeated_shared_blocks_replay_without_irreducibility() {
         let a = Algebra::new(&["x".into(), "z".into()]).unwrap();

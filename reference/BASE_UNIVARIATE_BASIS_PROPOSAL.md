@@ -66,6 +66,20 @@ verifies their exact product equals the canonical source. It independently
 recovers the signed rational content of each regenerated raw guard and
 checks the full signed identity too.
 
+Raw-guard lookup compares the complete variable map and ordered monomial
+support before checking every coefficient against one nonzero rational
+scale. It scans only the at most 128 already validated sources, each with
+at most 4,096 terms. It neither primitive-normalizes the raw polynomial nor
+reapplies discovery's coefficient-height limit to its rational unit: a
+fresh signed discriminant can be a large scalar multiple of an admissible
+canonical source. Arithmetic uses the existing raw coefficients, so the
+verifier's process limits still bound large temporary rational values.
+Without an exact proportional match, ordinary factorization remains the
+fallback; source admission and product-validation caps are unchanged.
+Direct checker regressions exercise units `±2^20001/3` and
+`±3/2^20001`, nearby nonproportional coefficients, different maps/support,
+and the ordinary fallback.
+
 Replay enforces all of these obligations:
 
 1. Every source is nonconstant of degree at least two, canonical, in the

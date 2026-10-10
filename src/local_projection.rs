@@ -2929,17 +2929,9 @@ impl Checker<'_> {
             return Ok(result);
         }
         for p in raw {
-            if base_univariate::source_cost(p).is_some() {
-                let source = canonical(p);
-                if let Some(ids) = self.base_basis.sources.get(&source) {
-                    let scale = p.lcoeff() / source.lcoeff();
-                    ensure!(
-                        &source * &source.constant(scale) == *p,
-                        "base support signed source mismatch"
-                    );
-                    result.extend(ids);
-                    continue;
-                }
+            if let Some(ids) = self.base_basis.proportional_ids(p) {
+                result.extend(ids);
+                continue;
             }
             for q in factors_checked(std::slice::from_ref(p))? {
                 result.insert(
