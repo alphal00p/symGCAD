@@ -214,3 +214,55 @@ new executable. Its initial-cache manifest digest is
 the launch record digest is
 `772953b0dd528800284aa73adbef2590f8b18a8d477dfc0d86f959f28f039f27`.
 This records a warm attempt starting, not a completion or cold benchmark.
+
+### Third-continuation snapshot and the next larger operand
+
+At 12:20:16 UTC, the third continuation had retained **167 additional
+completed discriminants**, bringing its operation cache to 2,048 entries.
+All 1,881 carried entries remained byte-identical. Every saved output checksum
+and filename/key matched. The initial degree-18 discriminant completed in
+9.418092 seconds; the longest newly recorded operation took 89.958847 seconds.
+These are saved operation durations, not a completed-case timing. The snapshot
+is `artifacts/research/a377-warm03-progress-01/cache-snapshot.json`, SHA-256
+`ccbd1a10b1784a4e136408165bacc1184f66bc8baa8e94949786a7b9dae9a1b2`.
+
+The active capture then contained a new degree-32 discriminant in `t`:
+
+| Quantity | Exact inspection |
+|---|---:|
+| Input terms | 2,502 |
+| Degrees in `(s,t)` | `(84,32)` |
+| Maximum coefficient bits | 691 |
+| Resultant degree bound in `s` | 4,772 |
+| Encoding digits / bits per digit | 4,773 / 44,035 |
+| Encoded output bit bound | 210,179,055 |
+
+This exceeds the production 96-million-bit bound. The current dispatch
+therefore correctly uses its ordinary fallback without entering segmentation.
+The immutable capture digest is
+`bd8bb1416f3154a312f1849dad4a9ceba0f41761f1ac9bfcbd1c36af14ef0d75`;
+its operand-array digest is
+`99f94af85a41a5dd07ae6f18f51b78b7b041d3c5ed47007e8179107f320b2de7`.
+The inspected layout is retained alongside the snapshot, SHA-256
+`b583beab7b90d34b282fce7308f180d4cc51059e2d5586f8778780f999a3d8b9`.
+
+A separate research-only attempt allowed 256 million encoded bits, CPU9,
+4 GiB, and 600 seconds. It **timed out after 600.145446 seconds**, using
+1,267,020 KiB peak RSS, with no discriminant candidate. No result was inserted
+into a solver cache and no production cap changed. The retained process
+report is `artifacts/research/a377-degree32-segmentation-01/process.supervisor.json`,
+SHA-256 `5db91d9381aa215bdada5677e6f099d5c01dc62fafa7a0a3c8eea8124486981c`.
+
+The modest memory use justified a longer bounded research attempt after the
+separate polynomial-centering test declined this operand. At **12:22:49 UTC**,
+`artifacts/research/a377-degree32-segmentation-02/` began on CPU9 with 4 GiB
+and an outer one-hour deadline. Computation receives at most 2,400 seconds;
+if it completes, the script constructs the signed resultant candidate and
+uses only the remaining campaign time for the independent full-degree grid.
+A missing or interrupted grid remains unverified. The frozen computation
+helper is the same `44428e76…` executable as above; the adapter digest is
+`2b5143864a964b80f00aad7a6ce786d672f64f595b038be5f451ebf0b8a8db4a`.
+The launch script digest is
+`bd4b615ee0bc9eb4b565d160c2c2f543898d76ce6a65a1002416d3c94351c23c`.
+This is a launched operation diagnostic, not a completed algebra identity or
+an original-problem decomposition. All interior-boundary obligations remain.
