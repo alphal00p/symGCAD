@@ -79,6 +79,9 @@ struct Args {
     /// Rebuild unfinished stack cut inventories for the learned-hint ablation.
     #[arg(long)]
     no_learned_cuts: bool,
+    /// Reuse visited rational samples after exact membership in refined sectors.
+    #[arg(long)]
+    stable_samples: bool,
     /// Retain high-degree discriminants instead of using Descartes one variation.
     #[arg(long)]
     no_descartes_one: bool,
@@ -220,6 +223,7 @@ fn run_trial(campaign: &Campaign, trial: Trial) -> Result<Record> {
     problem.solver.local_descartes_one = campaign.descartes_one;
     problem.solver.local_descartes_witnesses = campaign.descartes_witnesses;
     problem.solver.local_positive_pair_witnesses = campaign.positive_pair_witnesses;
+    problem.solver.local_stable_samples = campaign.stable_samples;
     problem.solver.local_base_point_projection = campaign.base_point_projection;
     problem.solver.local_adjacent_pairs = campaign.adjacent_pairs;
     problem.solver.local_subtree_cache_mib = campaign.subtree_cache_mib;

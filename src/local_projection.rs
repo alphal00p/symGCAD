@@ -65,6 +65,7 @@ use symbolica::prelude::*;
 mod descartes;
 mod learned_cuts;
 mod pair_witnesses;
+mod stack_samples;
 mod subtree_cache;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -108,6 +109,10 @@ pub struct LocalOptions {
     /// The hints contain no accepted cells or unverified proof obligations.
     #[serde(default)]
     pub reuse_learned_cuts: bool,
+    /// Reuse visited rationals inside refined sectors at the same exact prefix.
+    /// This only changes sample selection; children are visited and checked.
+    #[serde(default)]
+    pub stable_sector_samples: bool,
     /// Use one Descartes sign variation to certify a simple positive root.
     /// Historical evidence retains its full discriminant obligations.
     #[serde(default)]
@@ -148,6 +153,7 @@ impl Default for LocalOptions {
             batch_sibling_discovery: true,
             reuse_completed_subtrees: true,
             reuse_learned_cuts: true,
+            stable_sector_samples: false,
             descartes_one: true,
             descartes_witnesses: false,
             base_point_projection: true,
@@ -210,6 +216,11 @@ pub struct LocalReport {
     pub pair_witness_templates: usize,
     pub pair_witness_template_reuses: usize,
     pub pair_witness_budget_fallbacks: usize,
+    pub stable_sample_hits: usize,
+    pub stable_sample_misses: usize,
+    pub stable_sample_recorded: usize,
+    pub stable_sample_evictions: usize,
+    pub stable_sample_peak_bytes: usize,
     pub second_cancellation_pairs_omitted: usize,
     pub subtree_cache_hits: usize,
     pub subtree_cache_misses: usize,
@@ -1822,6 +1833,13 @@ impl Builder<'_> {
         if self.options.reuse_learned_cuts {
             self.learned_cuts.seed(prefix, &mut cuts);
         }
+        // The ancestor prefix is restored after every child and remains fixed
+        // throughout this loop. Pool hints never escape this visit or carry a
+        // child proof. Every selected sample goes through the ordinary visitor.
+        let mut sample_pool = self
+            .options
+            .stable_sector_samples
+            .then(stack_samples::StackSamples::new);
         loop {
             self.check_budget()?;
             let cut_list: Vec<_> = cuts.iter().copied().collect();
@@ -1851,8 +1869,16 @@ impl Builder<'_> {
                     discovery_siblings += 1;
                     self.report.discovery_siblings += 1;
                 }
-                let sample =
-                    sector_sample(if i > 0 { roots.get(i - 1) } else { None }, roots.get(i));
+                let lower = if i > 0 { roots.get(i - 1) } else { None };
+                let upper = roots.get(i);
+                let retained = sample_pool
+                    .as_ref()
+                    .and_then(|pool| pool.choose(lower, upper));
+                if sample_pool.is_some() {
+                    self.report.stable_sample_hits += usize::from(retained.is_some());
+                    self.report.stable_sample_misses += usize::from(retained.is_none());
+                }
+                let sample = retained.unwrap_or_else(|| sector_sample(lower, upper));
                 prefix.push(sample.clone());
                 let child = if i == 0 {
                     if let Some(ray) = &projection.positive_ray {
@@ -1870,6 +1896,15 @@ impl Builder<'_> {
                     self.visit(prefix)
                 };
                 prefix.pop();
+                if !(i == 0 && projection.positive_ray.is_some()) {
+                    if let Some(pool) = &mut sample_pool {
+                        let (recorded, evictions) = pool.remember(&sample);
+                        self.report.stable_sample_recorded += usize::from(recorded);
+                        self.report.stable_sample_evictions += evictions;
+                        self.report.stable_sample_peak_bytes =
+                            self.report.stable_sample_peak_bytes.max(pool.bytes());
+                    }
+                }
                 match child {
                     Err(Stop::Guard(id)) if highest(&self.polynomials[id]) == Some(level) => {
                         if cuts.contains(&id) {
@@ -2322,6 +2357,7 @@ struct Checker<'a> {
     positive_pair_separation: bool,
     positive_pair_cancellations: usize,
     positive_pair_witnesses: bool,
+    stable_sector_samples: bool,
     descartes_one: bool,
     descartes_witnesses: bool,
     base_point_projection: bool,
@@ -2605,14 +2641,23 @@ impl Checker<'_> {
                             );
                         }
                     }
-                    let expected = sector_sample(
-                        if i > 0 { actual_roots.get(i - 1) } else { None },
-                        actual_roots.get(i),
-                    );
-                    ensure!(
-                        sector.sample == expected.to_string(),
-                        "local sample is not the certified sector sample"
-                    );
+                    let lower = if i > 0 { actual_roots.get(i - 1) } else { None };
+                    let upper = actual_roots.get(i);
+                    let expected = if self.stable_sector_samples {
+                        let sample = crate::algebra::rational(&sector.sample)?;
+                        ensure!(
+                            stack_samples::strictly_inside(&sample, lower, upper),
+                            "local sample is not strictly inside its certified sector"
+                        );
+                        sample
+                    } else {
+                        let expected = sector_sample(lower, upper);
+                        ensure!(
+                            sector.sample == expected.to_string(),
+                            "local sample is not the certified sector sample"
+                        );
+                        expected
+                    };
                     prefix.push(expected);
                     let child_required = self.walk(&sector.child, prefix)?;
                     prefix.pop();
@@ -2758,6 +2803,7 @@ pub fn verify_local_parts(
         positive_pair_separation: options.positive_pair_separation,
         positive_pair_cancellations: options.positive_pair_cancellations,
         positive_pair_witnesses: options.positive_pair_witnesses,
+        stable_sector_samples: options.stable_sector_samples,
         descartes_one: options.descartes_one,
         descartes_witnesses: options.descartes_witnesses,
         base_point_projection: options.base_point_projection,

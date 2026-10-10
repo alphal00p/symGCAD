@@ -47,6 +47,9 @@ pub struct SolverOptions {
     /// Retain bounded learned cuts as hints; every stack is re-certified.
     #[serde(skip_serializing_if = "is_true")]
     pub local_reuse_learned_cuts: bool,
+    /// Retain bounded rational sampling hints across refinements of one stack.
+    #[serde(skip_serializing_if = "is_false")]
+    pub local_stable_samples: bool,
     /// Bounded leading-term cancellations used to separate positive roots.
     #[serde(skip_serializing_if = "is_two")]
     pub local_pair_cancellations: usize,
@@ -99,6 +102,7 @@ impl Default for SolverOptions {
             local_batch_siblings: true,
             local_reuse_subtrees: true,
             local_reuse_learned_cuts: true,
+            local_stable_samples: false,
             local_pair_cancellations: 2,
             local_descartes_one: true,
             local_descartes_witnesses: false,
