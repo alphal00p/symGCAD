@@ -193,3 +193,55 @@ fn diagnostic_write_failure_does_not_change_fallback_or_failure_routing() {
     assert_eq!(report.post_entry_resource_stops, 1);
     assert_eq!(report.post_entry_failures, 1);
 }
+
+#[test]
+fn source_text_decline_is_bounded_and_published_before_either_algebra_backend() {
+    use symbolica::domains::integer::Integer;
+    let directory = Directory::new();
+    let problem = Problem {
+        variables: vec!["x".into()],
+        ..Default::default()
+    };
+    let normalized = normalize(&problem, &problem.variables).unwrap();
+    let options = LocalOptions {
+        base_univariate_basis: true,
+        ..Default::default()
+    };
+    let mut b = builder(&problem, &normalized, &options);
+    let c = Rational::from(Integer::from(2).pow(31_999) + Integer::from(1));
+    let mut source = normalized.algebra.parse("1").unwrap();
+    for exponent in 1..3999 {
+        source.append_monomial(c.clone(), &[exponent]);
+    }
+    let bits = base_univariate::source_cost(&source).unwrap();
+    assert!(bits > 64_000_000 && bits < 128_000_000);
+    assert!(base_univariate::cost(&source).is_none());
+    let report = b.report.base_univariate_basis.as_mut().unwrap();
+    report.begin(&source, 0);
+    report.source(&source, bits);
+    let path = directory.0.join("text-decline.json");
+    b.progress_path = Some(path.clone());
+    // The real 32-MiB limit applies. This shared preparation runs before
+    // either SQF or the ordinary fallback; no large native call is made.
+    assert!(b.prepare_base_text(&source).unwrap().is_none());
+    let saved: LocalReport = serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
+    assert_eq!(saved.active_phase, "base_univariate_fallback");
+    assert_eq!(saved.cache.factor_misses, 0);
+    let report = saved.base_univariate_basis.unwrap();
+    assert_eq!(report.declines.source_text, 1);
+    assert_eq!(report.static_declines, 1);
+    assert_eq!(report.sources, 0);
+    assert_eq!(report.decomposition_seconds, 0.0);
+    assert_eq!(
+        report.last_attempt.unwrap().decline,
+        Some(BaseUnivariateDecline::SourceText)
+    );
+    for exponent in 3999..4002 {
+        source.append_monomial(c.clone(), &[exponent]);
+    }
+    assert!(base_univariate::source_cost(&source).is_none());
+    assert_eq!(
+        base_univariate::source_decline(&source),
+        BaseUnivariateDecline::CoefficientStorage
+    );
+}

@@ -106,6 +106,15 @@ struct Args {
     /// Parse and report exact operand sizes without executing the operation.
     #[arg(long)]
     inspect_only: bool,
+    /// Inspect only the production binary kernel's bounded static plan.
+    #[arg(long, requires_all = ["capture_sha256", "seconds"], conflicts_with_all = [
+        "strategy", "factor_start", "reverse_variable", "collapse_sum", "expected_result",
+        "inspect_only", "prefix", "positive_root_diagnostics"
+    ])]
+    binary_plan_only: bool,
+    /// Expected hash of the complete capture, required for plan-only inspection.
+    #[arg(long, requires = "binary_plan_only")]
+    capture_sha256: Option<String>,
     /// Exact earlier-coordinate values for inexpensive coefficient-sign inspection.
     #[arg(
         long,
@@ -126,6 +135,176 @@ struct Args {
     worker: bool,
 }
 
+const PLAN_CAPTURE_BYTES: usize = 8 * 1024 * 1024;
+
+fn bounded_capture_bytes(path: &Path) -> Result<Vec<u8>> {
+    ensure!(
+        std::fs::symlink_metadata(path)?.file_type().is_file(),
+        "plan capture must be a regular file"
+    );
+    let file = File::open(path)?;
+    ensure!(
+        file.metadata()?.len() <= PLAN_CAPTURE_BYTES as u64,
+        "plan capture byte cap"
+    );
+    let mut bytes = Vec::new();
+    file.take(PLAN_CAPTURE_BYTES as u64 + 1)
+        .read_to_end(&mut bytes)?;
+    ensure!(
+        bytes.len() <= PLAN_CAPTURE_BYTES,
+        "plan capture grew beyond cap"
+    );
+    Ok(bytes)
+}
+
+/// Captures contain literal sparse monomials, not general expressions. Check
+/// bounds before rational construction and never expand powers of sums here.
+fn plan_operand(algebra: &Algebra, text: &str) -> Result<Poly> {
+    ensure!(text.len() <= PLAN_CAPTURE_BYTES, "plan operand byte cap");
+    if text == "0" {
+        return algebra.parse("0");
+    }
+    let mut entries = Vec::new();
+    for term in text.split('+') {
+        ensure!(entries.len() < 8192, "plan operand term cap");
+        let (coefficient, suffix) = term
+            .strip_prefix('(')
+            .and_then(|s| s.split_once(')'))
+            .ok_or_else(|| anyhow::anyhow!("plan operand requires sparse terms"))?;
+        let unsigned = coefficient.strip_prefix('-').unwrap_or(coefficient);
+        let mut parts = unsigned.split('/');
+        let numerator = parts.next().unwrap_or("");
+        let denominator = parts.next();
+        ensure!(
+            parts.next().is_none()
+                && [Some(numerator), denominator]
+                    .into_iter()
+                    .flatten()
+                    .all(|s| {
+                        !s.is_empty() && s.len() <= 1234 && s.bytes().all(|b| b.is_ascii_digit())
+                    }),
+            "plan coefficient grammar/decimal cap"
+        );
+        let mut exponents = vec![0; algebra.names.len()];
+        if !suffix.is_empty() {
+            let suffix = suffix
+                .strip_prefix('*')
+                .ok_or_else(|| anyhow::anyhow!("plan monomial grammar"))?;
+            for power in suffix.split('*') {
+                let (name, exponent) = if let Some((name, exponent)) = power.split_once('^') {
+                    ensure!(
+                        !exponent.is_empty()
+                            && exponent.len() <= 10
+                            && exponent.bytes().all(|b| b.is_ascii_digit()),
+                        "plan exponent grammar"
+                    );
+                    (name, exponent.parse::<u32>()?)
+                } else {
+                    (power, 1)
+                };
+                let axis = algebra
+                    .names
+                    .iter()
+                    .position(|n| n == name)
+                    .ok_or_else(|| anyhow::anyhow!("plan monomial has unknown variable"))?;
+                ensure!(
+                    exponent > 0
+                        && u64::from(exponent) <= symgcad::algebra::MAX_DEGREE
+                        && exponents[axis] == 0,
+                    "plan exponent cap or duplicate axis"
+                );
+                exponents[axis] = exponent;
+            }
+        }
+        entries.push((coefficient, exponents));
+    }
+    let mut p = algebra.parse("0")?;
+    for (coefficient, exponents) in entries {
+        let c = rational(coefficient)?;
+        ensure!(
+            !c.is_zero()
+                && c.numerator_ref().significant_bits() <= 4096
+                && c.denominator_ref().significant_bits() <= 4096,
+            "plan coefficient height cap"
+        );
+        p.append_monomial(c, &exponents);
+    }
+    ensure!(
+        algebra.format(&p) == text,
+        "plan operand spelling or support order changed"
+    );
+    Ok(p)
+}
+
+fn binary_plan_report(bytes: &[u8], expected_hash: &str) -> Result<serde_json::Value> {
+    let started = Instant::now();
+    ensure!(bytes.len() <= PLAN_CAPTURE_BYTES, "plan capture byte cap");
+    let capture_hash = format!("{:x}", Sha256::digest(bytes));
+    ensure!(
+        expected_hash.len() == 64 && expected_hash == capture_hash,
+        "plan capture hash mismatch"
+    );
+    let capture: OperationCapture = serde_json::from_slice(bytes)?;
+    ensure!(
+        capture.schema_version == 1 && capture.coefficient_domain == "Q",
+        "plan capture schema/domain"
+    );
+    ensure!(
+        !capture.variable_names.is_empty()
+            && capture.variable_names.len() <= 128
+            && capture.variable_names.iter().all(|n| n.len() <= 1024),
+        "plan variable map cap"
+    );
+    let variable = capture
+        .variable
+        .ok_or_else(|| anyhow::anyhow!("plan variable absent"))?;
+    ensure!(
+        variable < capture.variable_names.len(),
+        "plan variable out of range"
+    );
+    let count = match capture.operation {
+        AlgebraOperation::Discriminant => 1,
+        AlgebraOperation::Resultant => 2,
+        _ => anyhow::bail!("binary plan supports only resultants/discriminants"),
+    };
+    let operands = capture
+        .operands
+        .as_ref()
+        .ok_or_else(|| anyhow::anyhow!("plan operands absent"))?;
+    ensure!(operands.len() == count, "plan operand count");
+    ensure!(
+        capture.input_hash == format!("{:x}", Sha256::digest(serde_json::to_vec(operands)?)),
+        "plan input checksum mismatch"
+    );
+    let algebra = Algebra::new(&capture.variable_names)?;
+    let polynomials = operands
+        .iter()
+        .map(|p| plan_operand(&algebra, p))
+        .collect::<Result<Vec<_>>>()?;
+    let mut options = symgcad::resultant_segmentation::Options::default();
+    let derivative;
+    let right = if capture.operation == AlgebraOperation::Discriminant {
+        options.min_parameters = 1;
+        options.max_parameters = 2;
+        derivative = polynomials[0].derivative(variable);
+        &derivative
+    } else {
+        &polynomials[1]
+    };
+    let plan = symgcad::resultant_segmentation::plan(&polynomials[0], right, variable, &options)?;
+    Ok(
+        json!({"schema_version":1,"mode":"binary_plan_only","capture_sha256":capture_hash,
+        "input_hash":capture.input_hash,"operation":capture.operation,"variables":algebra.names,
+        "variable":variable,"input_terms":[polynomials[0].nterms(),right.nterms()],
+        "elimination_degrees":[polynomials[0].degree(variable),right.degree(variable)],
+        "backend":LicenseManager::get_version(),"admitted":plan.is_some(),"plan":plan,
+        "max_input_terms":options.max_input_terms,"max_output_bits":options.max_output_bits,
+        "max_total_input_bits":options.max_total_input_bits,
+        "preflight_seconds":started.elapsed().as_secs_f64(),"original_coverage_claimed":false,
+        "note":"Static binary-kernel preflight only: no encoded resultant or discriminant was computed. Ordinary discriminant interpolation still has priority."}),
+    )
+}
+
 fn supervise(args: &Args, seconds: f64) -> Result<()> {
     ensure!(
         seconds.is_finite() && seconds > 0.0 && seconds <= 3600.0,
@@ -134,6 +313,10 @@ fn supervise(args: &Args, seconds: f64) -> Result<()> {
     ensure!(
         args.memory_mib > 0 && args.memory_mib <= 65536,
         "operation memory cap must be in [1, 65536] MiB"
+    );
+    ensure!(
+        !args.binary_plan_only || seconds <= 60.0,
+        "plan-only deadline exceeds 60 seconds"
     );
     let output = args.output.as_ref().expect("clap requires output");
     let sidecar = output.with_extension("process.json");
@@ -162,13 +345,26 @@ fn supervise(args: &Args, seconds: f64) -> Result<()> {
     if result.is_some() {
         process.stdout.clear();
     }
+    let capture_bytes = if args.binary_plan_only {
+        bounded_capture_bytes(&args.capture)?
+    } else {
+        std::fs::read(&args.capture)?
+    };
+    let capture_hash = format!("{:x}", Sha256::digest(capture_bytes));
+    let capture_unchanged =
+        !args.binary_plan_only || args.capture_sha256.as_deref() == Some(capture_hash.as_str());
     let report = json!({"schema_version":1,"capture":args.capture,
-        "capture_sha256":format!("{:x}",Sha256::digest(std::fs::read(&args.capture)?)),
+        "capture_sha256":capture_hash,
+        "capture_unchanged":args.binary_plan_only.then_some(capture_unchanged),
         "binary_sha256":format!("{:x}",Sha256::digest(std::fs::read(&executable)?)),
         "limits":limits,"process":process,"result":result,
         "verification_note":"Backend strategy profiling only. Matching canonical hashes are comparison evidence; alternative resultant outputs require independent exact validation before production reuse."});
     std::fs::write(sidecar, serde_json::to_vec_pretty(&report)?)?;
     println!("{}", serde_json::to_string(&report)?);
+    ensure!(
+        capture_unchanged,
+        "plan capture changed during worker execution"
+    );
     Ok(())
 }
 
@@ -423,6 +619,105 @@ fn reverse_variable(p: &Poly, variable: usize) -> Result<Poly> {
 mod tests {
     use super::*;
 
+    fn plan_capture(operands: Vec<String>, operation: AlgebraOperation) -> Vec<u8> {
+        serde_json::to_vec(&OperationCapture {
+            schema_version: 1,
+            backend_version: "test".into(),
+            coefficient_domain: "Q".into(),
+            variable_names: vec!["s".into(), "x".into(), "unused".into()],
+            operation,
+            variable: Some(1),
+            key: "diagnostic-only".into(),
+            input_hash: format!(
+                "{:x}",
+                Sha256::digest(serde_json::to_vec(&operands).unwrap())
+            ),
+            operands: Some(operands),
+            operands_omitted_for_size: false,
+            complete: false,
+            elapsed_seconds: None,
+            output_hash: None,
+        })
+        .unwrap()
+    }
+
+    #[test]
+    fn binary_plan_only_uses_the_public_planner_and_binds_both_hashes() {
+        let a = Algebra::new(&["s".into(), "x".into(), "unused".into()]).unwrap();
+        let p = a.parse("-2/3*((x+1)^10+(s+1)^44)").unwrap();
+        let bytes = plan_capture(vec![a.format(&p)], AlgebraOperation::Discriminant);
+        let hash = format!("{:x}", Sha256::digest(&bytes));
+        let report = binary_plan_report(&bytes, &hash).unwrap();
+        let options = symgcad::resultant_segmentation::Options {
+            min_parameters: 1,
+            ..Default::default()
+        };
+        let expected = symgcad::resultant_segmentation::plan(&p, &p.derivative(1), 1, &options)
+            .unwrap()
+            .unwrap();
+        assert_eq!(report["plan"], serde_json::to_value(expected).unwrap());
+        assert_eq!(report["original_coverage_claimed"], false);
+        assert!(binary_plan_report(&bytes, &"0".repeat(64)).is_err());
+        let mut tampered: OperationCapture = serde_json::from_slice(&bytes).unwrap();
+        tampered.operands = Some(vec!["(1)*x^10+(1)*s".into()]);
+        let bytes = serde_json::to_vec(&tampered).unwrap();
+        assert!(binary_plan_report(&bytes, &format!("{:x}", Sha256::digest(&bytes))).is_err());
+        // Ordinary pair eligibility still requires two surviving parameters.
+        let bytes = plan_capture(
+            vec![a.format(&p), a.format(&p.derivative(1))],
+            AlgebraOperation::Resultant,
+        );
+        let report = binary_plan_report(&bytes, &format!("{:x}", Sha256::digest(&bytes))).unwrap();
+        assert_eq!(report["admitted"], false);
+    }
+
+    #[test]
+    fn plan_sparse_parser_rejects_expansion_and_oversized_literals() {
+        let a = Algebra::new(&["s".into(), "x".into(), "unused".into()]).unwrap();
+        let p = a.parse("-3/7*x^3+2*s+1").unwrap();
+        assert_eq!(plan_operand(&a, &a.format(&p)).unwrap(), p);
+        for text in [
+            "(s+1)^100000",
+            "(1)*other",
+            "(1)*x*x",
+            "(1)*x^-1",
+            "(1/0)*x",
+            "(1)*x^4294967295",
+        ] {
+            assert!(plan_operand(&a, text).is_err(), "{text}");
+        }
+        assert!(plan_operand(&a, &format!("({})*x", "9".repeat(1235))).is_err());
+        let bytes = vec![b' '; PLAN_CAPTURE_BYTES + 1];
+        assert!(binary_plan_report(&bytes, &"0".repeat(64)).is_err());
+    }
+
+    #[test]
+    fn plan_cli_cannot_select_calculation_or_unbounded_execution() {
+        let base = [
+            "profile_operation",
+            "capture.json",
+            "--binary-plan-only",
+            "--capture-sha256",
+            "hash",
+            "--seconds",
+            "10",
+            "--output",
+            "new.json",
+        ];
+        assert!(Args::try_parse_from(base).is_ok());
+        assert!(Args::try_parse_from(["p", "capture.json", "--binary-plan-only"]).is_err());
+        for extra in [
+            vec!["--strategy", "auto"],
+            vec!["--factor-start", "auto"],
+            vec!["--inspect-only"],
+            vec!["--reverse-variable"],
+            vec!["--expected-result", "saved.json"],
+            vec!["--collapse-sum", "s,t"],
+        ] {
+            assert!(Args::try_parse_from(base.into_iter().chain(extra)).is_err());
+        }
+    }
+
     #[test]
     fn expected_result_binds_inputs_and_preserves_exact_scale_and_sign() {
         let a = Algebra::new(&["a".into(), "x".into()]).unwrap();
@@ -566,6 +861,20 @@ fn main() -> Result<()> {
     let args = Args::parse();
     if let Some(seconds) = args.seconds.filter(|_| !args.worker) {
         return supervise(&args, seconds);
+    }
+    if args.binary_plan_only {
+        let bytes = bounded_capture_bytes(&args.capture)?;
+        let report = binary_plan_report(&bytes, args.capture_sha256.as_deref().unwrap())?;
+        let report = serde_json::to_vec_pretty(&report)?;
+        if let Some(path) = &args.output {
+            use std::fs::OpenOptions;
+            let mut file = OpenOptions::new().write(true).create_new(true).open(path)?;
+            file.write_all(&report)?;
+            file.write_all(b"\n")?;
+        }
+        std::io::stdout().write_all(&report)?;
+        println!();
+        return Ok(());
     }
     let bytes = std::fs::read(&args.capture)?;
     let capture: OperationCapture = serde_json::from_slice(&bytes)?;

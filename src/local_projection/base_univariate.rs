@@ -4,17 +4,22 @@ use super::*;
 use symbolica::{domains::InternalOrdering, poly::factor::Factorize};
 
 pub(super) const MAX_SOURCES: usize = 128;
-pub(super) const MAX_RETAINED_BITS: u64 = 128_000_000;
+pub(super) const MAX_RETAINED_BITS: u64 = 512_000_000;
 const MAX_DEGREE: u32 = 4096;
 const MAX_TERMS: usize = 4096;
 const MAX_AXES: usize = 64;
-const MAX_HEIGHT: u64 = 20_000;
+const MAX_BLOCK_HEIGHT: u64 = 20_000;
+const MAX_SOURCE_HEIGHT: u64 = 65_536;
+const MAX_BLOCK_BITS: u64 = 64_000_000;
+const MAX_SOURCE_BITS: u64 = 128_000_000;
+// ceil(65536 * log10(2)); the exact bit bound is checked after parsing.
+const MAX_SOURCE_DECIMAL_DIGITS: usize = 19_729;
 const MAX_BLOCKS: usize = 64;
 const MAX_TEXT: usize = 32 * 1024 * 1024;
 
 pub(super) fn map_admissible(algebra: &Algebra) -> bool {
-    // Together with degree/term/coefficient caps this bounds formatted source
-    // text before allocation; inactive names do not occur in a source string.
+    // Source text has a separate exact preflight before native work. Inactive
+    // names do not occur in that string.
     !algebra.names.is_empty() && algebra.names.len() <= MAX_AXES && algebra.names[0].len() <= 1024
 }
 
@@ -84,6 +89,7 @@ pub struct BaseUnivariateDeclines {
     pub denominator_storage: usize,
     pub source_count: usize,
     pub registry_storage: usize,
+    pub source_text: usize,
 }
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -97,6 +103,7 @@ pub enum BaseUnivariateDecline {
     DenominatorStorage,
     SourceCount,
     RegistryStorage,
+    SourceText,
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
@@ -179,6 +186,7 @@ impl BaseUnivariateReport {
             BaseUnivariateDecline::DenominatorStorage => &mut self.declines.denominator_storage,
             BaseUnivariateDecline::SourceCount => &mut self.declines.source_count,
             BaseUnivariateDecline::RegistryStorage => &mut self.declines.registry_storage,
+            BaseUnivariateDecline::SourceText => &mut self.declines.source_text,
         };
         *count += 1;
         if let Some(attempt) = &mut self.last_attempt {
@@ -212,7 +220,7 @@ pub(super) fn source_decline(p: &Poly) -> BaseUnivariateDecline {
     for c in &p.coefficients {
         let n = c.numerator_ref().significant_bits();
         let d = c.denominator_ref().significant_bits();
-        if n > MAX_HEIGHT || d > MAX_HEIGHT {
+        if n > MAX_SOURCE_HEIGHT || d > MAX_SOURCE_HEIGHT {
             return CoefficientHeight;
         }
         let Some(next) = bits.checked_add(n).and_then(|x| x.checked_add(d)) else {
@@ -224,7 +232,7 @@ pub(super) fn source_decline(p: &Poly) -> BaseUnivariateDecline {
         };
         denominators = next;
     }
-    if bits > 64_000_000 {
+    if bits > MAX_SOURCE_BITS {
         CoefficientStorage
     } else if denominators > 65_536 {
         DenominatorStorage
@@ -234,7 +242,7 @@ pub(super) fn source_decline(p: &Poly) -> BaseUnivariateDecline {
 }
 
 /// Static admission is checked before primitive normalization or native work.
-pub(super) fn cost(p: &Poly) -> Option<u64> {
+fn cost_with_limits(p: &Poly, max_height: u64, max_bits: u64) -> Option<u64> {
     if p.nvars() == 0
         || p.nvars() > MAX_AXES
         || p.nterms() > MAX_TERMS
@@ -249,13 +257,17 @@ pub(super) fn cost(p: &Poly) -> Option<u64> {
     for c in &p.coefficients {
         let numerator = c.numerator_ref().significant_bits();
         let denominator = c.denominator_ref().significant_bits();
-        if numerator > MAX_HEIGHT || denominator > MAX_HEIGHT {
+        if numerator > max_height || denominator > max_height {
             return None;
         }
         bits = bits.checked_add(numerator.checked_add(denominator)?)?;
         denominator_bits = denominator_bits.checked_add(denominator)?;
     }
-    (bits <= 64_000_000 && denominator_bits <= 65_536).then_some(bits)
+    (bits <= max_bits && denominator_bits <= 65_536).then_some(bits)
+}
+
+pub(super) fn cost(p: &Poly) -> Option<u64> {
+    cost_with_limits(p, MAX_BLOCK_HEIGHT, MAX_BLOCK_BITS)
 }
 
 /// Degree-one sources already have a cheap ordinary factor identity. Preserve
@@ -264,8 +276,72 @@ pub(super) fn source_cost(p: &Poly) -> Option<u64> {
     if p.nvars() == 0 || p.degree(0) < 2 {
         None
     } else {
-        cost(p)
+        cost_with_limits(p, MAX_SOURCE_HEIGHT, MAX_SOURCE_BITS)
     }
+}
+
+/// Preserve the stable sparse spelling, bounding each term before retaining
+/// it and the complete expression before joining. The accepted string is
+/// reused as evidence; no unbounded second formatting follows native SQF.
+pub(super) fn source_text(algebra: &Algebra, p: &Poly) -> Result<Option<String>> {
+    source_text_bounded(algebra, p, MAX_TEXT)
+}
+
+fn source_text_bounded(algebra: &Algebra, p: &Poly, limit: usize) -> Result<Option<String>> {
+    ensure!(
+        map_admissible(algebra) && p.variables() == &algebra.variables && source_cost(p).is_some(),
+        "base source text map/support/size"
+    );
+    let mut terms = Vec::with_capacity(p.nterms());
+    let mut bytes = 0usize;
+    let mut previous = None;
+    for (c, powers) in p.coefficients.iter().zip(p.exponents_iter()) {
+        ensure!(
+            c.denominator_ref().is_one() && !c.is_zero(),
+            "base source text must be integral"
+        );
+        let exponent = powers[0];
+        ensure!(
+            previous.is_none_or(|old| old < exponent),
+            "base source text exponent order"
+        );
+        previous = Some(exponent);
+        let coefficient = c.to_string();
+        let exponent_text = (exponent > 1).then(|| exponent.to_string());
+        let term_bytes = coefficient.len()
+            + 2
+            + usize::from(exponent > 0) * (1 + algebra.names[0].len())
+            + exponent_text.as_ref().map_or(0, |s| s.len() + 1);
+        let Some(next) = bytes.checked_add(term_bytes + usize::from(!terms.is_empty())) else {
+            return Ok(None);
+        };
+        if next > limit {
+            return Ok(None);
+        }
+        bytes = next;
+        let mut term = String::with_capacity(term_bytes);
+        term.push('(');
+        term.push_str(&coefficient);
+        term.push(')');
+        if exponent > 0 {
+            term.push('*');
+            term.push_str(&algebra.names[0]);
+        }
+        if let Some(exponent) = exponent_text {
+            term.push('^');
+            term.push_str(&exponent);
+        }
+        terms.push(term);
+    }
+    let mut text = String::with_capacity(bytes);
+    for term in terms {
+        if !text.is_empty() {
+            text.push('+');
+        }
+        text.push_str(&term);
+    }
+    ensure!(text.len() == bytes, "base source text accounting changed");
+    Ok(Some(text))
 }
 
 /// Replays a canonical product with degree/height bounds checked before powers.
@@ -283,6 +359,7 @@ pub(super) fn check_product(
     bounded(blocks.len() <= MAX_BLOCKS, "base support block count cap")?;
     let mut degree = 0u64;
     let mut bound = 0u64;
+    let mut block_bits = 0u64;
     for (p, multiplicity) in blocks {
         budget()?;
         ensure!(*multiplicity > 0, "invalid base support multiplicity");
@@ -291,7 +368,13 @@ pub(super) fn check_product(
             p.variables() == source.variables() && highest(p) == Some(0),
             "base support block map or support changed"
         );
-        bounded(cost(p).is_some(), "base support block size cap")?;
+        let cost = cost(p);
+        bounded(cost.is_some(), "base support block size cap")?;
+        block_bits = block_bits.saturating_add(cost.unwrap());
+        bounded(
+            block_bits <= MAX_BLOCK_BITS,
+            "base support block storage cap",
+        )?;
         ensure!(canonical(p) == *p, "noncanonical base support block");
         degree = degree
             .checked_add(u64::from(p.degree(0)) * u64::from(*multiplicity))
@@ -420,7 +503,7 @@ fn parse_source(algebra: &Algebra, text: &str) -> Result<Poly> {
         let digits = coefficient.strip_prefix('-').unwrap_or(coefficient);
         ensure!(
             !digits.is_empty()
-                && digits.len() <= 6021
+                && digits.len() <= MAX_SOURCE_DECIMAL_DIGITS
                 && digits.bytes().all(|b| b.is_ascii_digit()),
             "invalid base source integer"
         );
@@ -441,7 +524,7 @@ fn parse_source(algebra: &Algebra, text: &str) -> Result<Poly> {
         previous = Some(exponent);
         let c = crate::algebra::rational(coefficient)?;
         ensure!(
-            !c.is_zero() && c.numerator_ref().significant_bits() <= MAX_HEIGHT,
+            !c.is_zero() && c.numerator_ref().significant_bits() <= MAX_SOURCE_HEIGHT,
             "base source coefficient cap"
         );
         let mut exponents = vec![0; algebra.names.len()];
@@ -449,7 +532,9 @@ fn parse_source(algebra: &Algebra, text: &str) -> Result<Poly> {
         p.append_monomial(c, &exponents);
     }
     ensure!(
-        source_cost(&p).is_some() && canonical(&p) == p && algebra.format(&p) == text,
+        source_cost(&p).is_some()
+            && canonical(&p) == p
+            && source_text(algebra, &p)?.as_deref() == Some(text),
         "noncanonical base source"
     );
     Ok(p)
@@ -517,7 +602,7 @@ pub(super) fn validate(
             "base support block count cap"
         );
         let source = parse_source(algebra, &record.polynomial)?;
-        retained_bits += cost(&source).unwrap();
+        retained_bits += source_cost(&source).unwrap();
         ensure!(
             retained_bits <= MAX_RETAINED_BITS,
             "base support retained source cap"
@@ -539,7 +624,10 @@ pub(super) fn validate(
                 .get(block.polynomial)
                 .ok_or_else(|| anyhow!("invalid base support block ID"))?;
             block_bits += cost(p).ok_or_else(|| anyhow!("invalid base support block"))?;
-            ensure!(block_bits <= 64_000_000, "base support block storage cap");
+            ensure!(
+                block_bits <= MAX_BLOCK_BITS,
+                "base support block storage cap"
+            );
             blocks.push((p.clone(), block.multiplicity));
         }
         retained_bits += block_bits;
@@ -561,6 +649,124 @@ mod tests {
     use symbolica::domains::integer::Integer;
 
     #[test]
+    fn source_and_block_heights_are_distinct_and_signed_products_still_replay() {
+        let a = Algebra::new(&["x".into(), "unused".into()]).unwrap();
+        let coefficient = Integer::from(2).pow(11_000);
+        let block =
+            a.parse("x").unwrap().mul_coeff(Rational::from(coefficient)) + a.parse("1").unwrap();
+        let source = block.pow(2);
+        assert!(cost(&block).is_some());
+        assert!(cost(&source).is_none());
+        assert!(source_cost(&source).is_some());
+        check_product(&source, &[(block.clone(), 2)], || Ok(())).unwrap();
+        let text = source_text(&a, &source).unwrap().unwrap();
+        assert_eq!(text, a.format(&source));
+        assert_eq!(parse_source(&a, &text).unwrap(), source);
+        let basis = BaseUnivariateBasis {
+            schema_version: 1,
+            sources: vec![BaseUnivariateSource {
+                polynomial: text,
+                blocks: vec![BaseUnivariateBlock {
+                    polynomial: 0,
+                    multiplicity: 2,
+                }],
+            }],
+        };
+        let validated = validate(&a, &[block], Some(&basis), true).unwrap();
+        let raw = source.mul_coeff(Rational::from((-3, 7)));
+        assert_eq!(validated.proportional_ids(&raw), Some([0].as_slice()));
+        let blocked = a
+            .parse("x")
+            .unwrap()
+            .mul_coeff(Rational::from(Integer::from(2).pow(20_000)))
+            + a.parse("1").unwrap();
+        assert!(cost(&blocked).is_none());
+        assert!(source_cost(&blocked.pow(2)).is_some());
+    }
+
+    #[test]
+    fn source_parser_enforces_exact_height_after_its_decimal_preflight() {
+        let a = Algebra::new(&["x".into()]).unwrap();
+        let at_limit = a
+            .parse("x^2")
+            .unwrap()
+            .mul_coeff(Rational::from(Integer::from(2).pow(MAX_SOURCE_HEIGHT - 1)))
+            + a.parse("1").unwrap();
+        assert!(source_cost(&at_limit).is_some());
+        let text = source_text(&a, &at_limit).unwrap().unwrap();
+        assert_eq!(parse_source(&a, &text).unwrap(), at_limit);
+        let over_limit = a
+            .parse("x^2")
+            .unwrap()
+            .mul_coeff(Rational::from(Integer::from(2).pow(MAX_SOURCE_HEIGHT)))
+            + a.parse("1").unwrap();
+        assert!(source_cost(&over_limit).is_none());
+        assert!(parse_source(&a, &a.format(&over_limit)).is_err());
+        // 19729 digits pass lexical length but may exceed the bit cap.
+        let too_large = format!("(1)+({})*x^2", "9".repeat(MAX_SOURCE_DECIMAL_DIGITS));
+        assert!(parse_source(&a, &too_large).is_err());
+        let too_long = format!("(1)+({})*x^2", "1".repeat(MAX_SOURCE_DECIMAL_DIGITS + 1));
+        assert!(parse_source(&a, &too_long).is_err());
+        for malformed in [
+            "(1)+(1)*x^2+(1)*x^2",
+            "(1)+(1)*other^2",
+            "(1)+(1)*x^4097",
+            "(1)+(1)*x^2*(x+1)",
+            "(01)+(1)*x^2",
+        ] {
+            assert!(parse_source(&a, malformed).is_err());
+        }
+    }
+
+    #[test]
+    fn exact_source_text_bound_preserves_stable_historical_spelling() {
+        let a = Algebra::new(&["x".into(), "unused".into()]).unwrap();
+        for expression in ["x^2-1", "x^2+2*x+1", "x^2*(x+1)^3", "x^4096-3*x+11"] {
+            let p = canonical(&a.parse(expression).unwrap());
+            let text = a.format(&p);
+            assert_eq!(
+                source_text_bounded(&a, &p, text.len()).unwrap().as_deref(),
+                Some(text.as_str())
+            );
+            assert!(
+                source_text_bounded(&a, &p, text.len() - 1)
+                    .unwrap()
+                    .is_none()
+            );
+            assert_eq!(parse_source(&a, &text).unwrap(), p);
+        }
+    }
+
+    #[test]
+    fn complete_block_inventory_is_bounded_before_product_arithmetic() {
+        let a = Algebra::new(&["x".into()]).unwrap();
+        let c = Rational::from(Integer::from(2).pow(19_998) + Integer::from(1));
+        let mut block = a.parse("1").unwrap();
+        for exponent in 1..=1601 {
+            block.append_monomial(c.clone(), &[exponent]);
+        }
+        assert!(cost(&block).is_some());
+        let other = &block + &a.parse("2").unwrap();
+        assert_ne!(block, other);
+        assert!(cost(&other).is_some());
+        assert!(cost(&block).unwrap() + cost(&other).unwrap() > MAX_BLOCK_BITS);
+        let source = a.parse("x^3202+1").unwrap();
+        let mut checks = 0;
+        let error = check_product(&source, &[(block, 1), (other, 1)], || {
+            checks += 1;
+            Ok(())
+        })
+        .unwrap_err();
+        assert_eq!(checks, 2);
+        assert!(
+            error
+                .downcast_ref::<crate::resultant_interpolation::Stopped>()
+                .is_some()
+        );
+        assert!(error.to_string().contains("block storage"));
+    }
+
+    #[test]
     fn diagnostic_decline_reasons_follow_existing_size_gates() {
         let a = Algebra::new(&["x".into(), "z".into()]).unwrap();
         for (text, reason) in [
@@ -572,7 +778,7 @@ mod tests {
             assert!(source_cost(&p).is_none());
             assert_eq!(source_decline(&p), reason);
         }
-        let huge = Integer::from(2).pow(20_000);
+        let huge = Integer::from(2).pow(MAX_SOURCE_HEIGHT);
         let p = a.parse("x^2").unwrap().mul_coeff(Rational::from(huge)) + a.parse("1").unwrap();
         assert!(source_cost(&p).is_none());
         assert_eq!(source_decline(&p), BaseUnivariateDecline::CoefficientHeight);
@@ -663,7 +869,7 @@ mod tests {
         let source = a.parse("s^2-1").unwrap();
         let evidence = source_evidence(&a, &source);
         let validated = validate(&a, std::slice::from_ref(&source), Some(&evidence), true).unwrap();
-        let huge = Integer::from(2).pow(20_001);
+        let huge = Integer::from(2).pow(MAX_SOURCE_HEIGHT + 1);
         let raw = source
             .clone()
             .mul_coeff(Rational::from((huge, Integer::from(3))));
@@ -732,7 +938,7 @@ mod tests {
             base_basis: validate(a, &polynomials, Some(&evidence), true).unwrap(),
         };
         checker.check_registry().unwrap();
-        let huge = Integer::from(2).pow(20_001);
+        let huge = Integer::from(2).pow(MAX_SOURCE_HEIGHT + 1);
         for unit in [
             Rational::from((huge.clone(), Integer::from(3))),
             Rational::from((-huge.clone(), Integer::from(3))),

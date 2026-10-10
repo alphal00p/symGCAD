@@ -125,7 +125,7 @@ Static admission bounds the complete map, first-axis name, degree, term
 count and rational coefficient height before primitive normalization and
 native work. Sources have degree 2–4096; linear blocks remain allowed. The
 registry permits at most 128 sources and 64 blocks per source, with a
-128-million-coefficient-bit cumulative source-plus-block allowance. Source
+512-million-coefficient-bit cumulative source-plus-block allowance. Source
 strings use a bounded sparse integer grammar, not arbitrary expression
 expansion. Degree, multiplicity and coefficient/product-work estimates are
 checked before powers and products; the source-text cap is 32 MiB.
@@ -134,13 +134,19 @@ checked before powers and products; the source-text cap is 32 MiB.
 |---|---:|
 | Complete variable map / first-axis name | 64 axes / 1,024 bytes |
 | Source degree / terms | 2–4,096 / 4,096 |
-| Individual rational numerator or denominator | 20,000 bits |
-| Per-polynomial coefficient bits / summed denominator bits | 64,000,000 / 65,536 |
+| Source numerator or denominator / coefficient storage | 65,536 / 128,000,000 bits |
+| Block numerator or denominator / coefficient storage | 20,000 / 64,000,000 bits |
+| Complete block inventory per source | 64,000,000 coefficient bits |
+| Summed denominator bits before normalization | 65,536 |
 | Sources / blocks per source / multiplicity | 128 / 64 / 4,096 |
 | Product coefficient-bound estimate / `(degree + 1) × bound` work | 65,536 / 256,000,000 |
 
 These are algebraic size estimates, not a process-memory guarantee; the
 separate hard worker memory and wall limits remain necessary.
+The [differentiated resource policy](BASE_UNIVARIATE_RESOURCE_POLICY.md)
+records the generic source/block distinction and exact text preflight before
+native work. These larger source and registry limits do not enlarge the block,
+product, degree, source-count or root-inventory contracts.
 
 Static inapplicability can use ordinary factorization. Once the optional
 algebra stage starts, a deadline or output/storage/work cap returns

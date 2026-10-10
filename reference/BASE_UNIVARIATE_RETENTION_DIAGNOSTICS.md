@@ -26,10 +26,12 @@ candidate is never admitted.
 `declines` counts the first existing failed check per static decline: map or
 support, degree, term count, coefficient height, coefficient storage,
 denominator storage, source count, or registry storage. Hits remain separate.
-The existing `static_declines` counter is their total. There is no fabricated
-builder text-size decline: the current builder has no separate text gate,
-and the existing polynomial/name caps imply its text bound. The independent
-source parser still enforces its existing 32-MiB and decimal-literal limits.
+The existing `static_declines` counter is their total. The initial telemetry
+commit added no new text admission check. The subsequent
+[differentiated resource policy](BASE_UNIVARIATE_RESOURCE_POLICY.md) adds an
+exact 32-MiB source formatter preflight and a `source_text` decline, while the
+independent parser keeps the same complete-text bound. Text peaks now include
+successfully formatted candidates before native SQF.
 
 `last_attempt` contains only raw degree/term metadata, known canonical source
 cost, proposed block/total costs, retention before the attempt, a fixed phase

@@ -1797,6 +1797,19 @@ impl Builder<'_> {
         self.publish_base_progress();
         stop
     }
+    fn prepare_base_text(&mut self, source: &Poly) -> Work<Option<String>> {
+        let text = base_univariate::source_text(&self.normalized.algebra, source)
+            .map_err(base_stage_stop)?;
+        let report = self.report.base_univariate_basis.as_mut().unwrap();
+        if let Some(text) = &text {
+            report.peak_source_text_bytes = report.peak_source_text_bytes.max(text.len());
+        } else {
+            report.decline(BaseUnivariateDecline::SourceText);
+            self.report.active_phase = "base_univariate_fallback".into();
+            self.publish_base_progress();
+        }
+        Ok(text)
+    }
     /// Only projection-generated guards enter this separate support registry.
     /// Initial inputs and the ordinary factor cache keep their old contracts.
     fn guard_basis(&mut self, raw: &[Poly]) -> Work<BTreeSet<usize>> {
@@ -1862,6 +1875,12 @@ impl Builder<'_> {
                 continue;
             }
             let source = source.unwrap();
+            let Some(text) = self.prepare_base_text(&source)? else {
+                for factor in self.operations.factors(std::slice::from_ref(p))? {
+                    result.insert(self.intern(factor));
+                }
+                continue;
+            };
             self.report.active_phase = "base_univariate_decomposition".into();
             self.report
                 .base_univariate_basis
@@ -1945,8 +1964,6 @@ impl Builder<'_> {
             let ids = references.iter().map(|b| b.polynomial).collect();
             self.base_sources.insert(source.clone(), ids);
             self.base_retained_bits += retained_cost;
-            let text = self.normalized.algebra.format(&source);
-            let text_bytes = text.len();
             self.base_records.push(BaseUnivariateSource {
                 polynomial: text,
                 blocks: references,
@@ -1957,7 +1974,6 @@ impl Builder<'_> {
             report.retained_source_bits += cost.unwrap();
             report.retained_block_bits += retained_cost - cost.unwrap();
             report.retained_total_bits = self.base_retained_bits;
-            report.peak_source_text_bytes = report.peak_source_text_bytes.max(text_bytes);
             report.phase("admitted");
             self.report.active_phase = "base_univariate_admitted".into();
             self.publish_base_progress();
