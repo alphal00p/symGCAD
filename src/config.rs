@@ -41,6 +41,10 @@ pub struct SolverOptions {
     /// directly. Unsupported targets retain the ordinary sign-filter fallback.
     #[serde(skip_serializing_if = "is_false")]
     pub monotone_negative_target: bool,
+    /// Optional positive linear comparison polynomial for the negative-ray
+    /// engine. This is a proposed algebraic witness, never a domain assumption.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub negative_linear_guide: Option<String>,
     /// Batch tentative sibling discoveries in the experimental local engine.
     /// Omit the default to keep ordinary inputs readable by older workers.
     #[serde(skip_serializing_if = "is_true")]
@@ -111,6 +115,7 @@ impl Default for SolverOptions {
             prune_operations: false,
             monotone_base_engine: "optimized".into(),
             monotone_negative_target: false,
+            negative_linear_guide: None,
             local_batch_siblings: true,
             local_reuse_subtrees: true,
             local_reuse_learned_cuts: true,
@@ -244,7 +249,14 @@ impl Problem {
             }
         }
         ensure!(
-            ["baseline", "optimized", "monotone", "local"].contains(&self.solver.engine.as_str()),
+            [
+                "baseline",
+                "optimized",
+                "monotone",
+                "local",
+                "linear_negative"
+            ]
+            .contains(&self.solver.engine.as_str()),
             "unknown engine"
         );
         ensure!(
@@ -266,7 +278,8 @@ impl Problem {
         );
         ensure!(
             !self.solver.positivity
-                || ["optimized", "monotone", "local"].contains(&self.solver.engine.as_str()),
+                || ["optimized", "monotone", "local", "linear_negative"]
+                    .contains(&self.solver.engine.as_str()),
             "positivity certificates require an optimized engine"
         );
         ensure!(

@@ -7,6 +7,7 @@ pub mod config;
 pub mod corpus;
 pub mod domain;
 pub mod homogeneity;
+pub mod linear_negative;
 pub mod local_projection;
 pub mod monotone;
 pub mod optimized_projection;

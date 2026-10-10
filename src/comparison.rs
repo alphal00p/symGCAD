@@ -67,17 +67,24 @@ fn contains(
                 .max()
                 .unwrap_or_else(Rational::zero)
                 + Rational::from(2);
-            let count = match bound.index_domain {
+            let above = match bound.index_domain {
                 crate::output::RootIndexDomain::Real => {
                     roots_in_open_interval(&fiber, &(-cauchy).min(x.clone() - Rational::one()), x)
+                        > bound.index
                 }
                 crate::output::RootIndexDomain::Positive if x > &Rational::zero() => {
-                    roots_in_open_interval(&fiber, &Rational::zero(), x)
+                    roots_in_open_interval(&fiber, &Rational::zero(), x) > bound.index
                 }
-                crate::output::RootIndexDomain::Positive => 0,
+                crate::output::RootIndexDomain::Positive => false,
+                crate::output::RootIndexDomain::RealDescending => {
+                    // For descending root i, x lies above it iff at most i
+                    // distinct roots lie above x. The refinement sample is
+                    // not a root, including at a repeated-root seam.
+                    roots_in_open_interval(&fiber, x, &cauchy.max(x.clone() + Rational::one()))
+                        <= bound.index
+                }
             };
-            // count roots strictly below x: x is above root i iff count > i.
-            if (count > bound.index) != lower {
+            if above != lower {
                 return Ok(false);
             }
         }
@@ -210,4 +217,124 @@ pub fn compare_generic(
         report.equivalent = Some(true);
     }
     Ok(report)
+}
+
+#[cfg(test)]
+mod root_selection_tests {
+    use super::*;
+    use crate::output::{Axis, RootBound, RootIndexDomain};
+
+    // These tests exercise exact membership only. A result's independent
+    // coverage verifier must separately establish continuity of its selector.
+    fn member(
+        polynomial: &str,
+        domain: RootIndexDomain,
+        index: usize,
+        lower: bool,
+        t: i64,
+        z: i64,
+    ) -> Result<bool> {
+        let problem = Problem {
+            variables: vec!["t".into(), "z".into()],
+            ..Default::default()
+        };
+        let mut result = SolveResult::failure(problem, Status::Incomplete, "membership-only test");
+        result.order = vec!["t".into(), "z".into()];
+        result.polynomials = vec![polynomial.into()];
+        let bound = Some(RootBound {
+            polynomial: 0,
+            index,
+            index_domain: domain,
+            lower: "0".into(),
+            upper: "0".into(),
+        });
+        let cell = Cell {
+            axes: vec![
+                Axis {
+                    variable: "t".into(),
+                    sample: "0".into(),
+                    lower: None,
+                    upper: None,
+                },
+                Axis {
+                    variable: "z".into(),
+                    sample: "1".into(),
+                    lower: lower.then(|| bound.clone()).flatten(),
+                    upper: (!lower).then_some(bound).flatten(),
+                },
+            ],
+            signs: vec![],
+        };
+        contains(
+            &result,
+            &Algebra::new(&result.order)?,
+            &cell,
+            &BTreeMap::from([
+                ("t".into(), Rational::from(t)),
+                ("z".into(), Rational::from(z)),
+            ]),
+        )
+    }
+
+    #[test]
+    fn largest_root_crosses_zero_and_remains_distinct_at_collision() {
+        for t in [-2, 0, 2] {
+            let largest = t.max(0);
+            assert!(
+                member(
+                    "z*(z-t)",
+                    RootIndexDomain::RealDescending,
+                    0,
+                    true,
+                    t,
+                    largest + 1
+                )
+                .unwrap()
+            );
+            assert!(
+                !member(
+                    "z*(z-t)",
+                    RootIndexDomain::RealDescending,
+                    0,
+                    true,
+                    t,
+                    largest - 1
+                )
+                .unwrap()
+            );
+            assert!(
+                member(
+                    "z*(z-t)",
+                    RootIndexDomain::RealDescending,
+                    0,
+                    false,
+                    t,
+                    largest - 1
+                )
+                .unwrap()
+            );
+        }
+        assert!(member("z*(z-t)", RootIndexDomain::RealDescending, 0, true, 0, 0).is_err());
+    }
+
+    #[test]
+    fn descending_indices_count_distinct_roots_and_preserve_legacy_domains() {
+        let p = "z^2*(z-2)^3*(z+2)";
+        for (index, inside, outside) in [(0, 3, 1), (1, 1, -1), (2, -1, -3)] {
+            assert!(member(p, RootIndexDomain::RealDescending, index, true, 0, inside).unwrap());
+            assert!(!member(p, RootIndexDomain::RealDescending, index, true, 0, outside).unwrap());
+        }
+        for z in [1, 3] {
+            let descending =
+                member("z*(z-t)", RootIndexDomain::RealDescending, 0, true, 2, z).unwrap();
+            assert_eq!(
+                descending,
+                member("z*(z-t)", RootIndexDomain::Real, 1, true, 2, z).unwrap()
+            );
+            assert_eq!(
+                descending,
+                member("z*(z-t)", RootIndexDomain::Positive, 0, true, 2, z).unwrap()
+            );
+        }
+    }
 }

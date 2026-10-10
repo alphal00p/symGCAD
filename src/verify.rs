@@ -209,6 +209,9 @@ impl Checker<'_> {
 }
 
 pub fn verify(result: &SolveResult) -> Result<Verification> {
+    if result.linear_negative.is_some() {
+        return crate::linear_negative::verify(result);
+    }
     if result.sign_filter.is_some() {
         return crate::sign_filter::verify(result);
     }
@@ -221,6 +224,10 @@ pub fn verify(result: &SolveResult) -> Result<Verification> {
 /// A local engine's explicitly labeled global fallback uses the ordinary
 /// certificate checker without redispatching through its fallback metadata.
 pub(crate) fn verify_nonlocal(result: &SolveResult) -> Result<Verification> {
+    ensure!(
+        result.linear_negative.is_none(),
+        "unexpected negative linear coverage evidence"
+    );
     if result.homogeneous.is_some() {
         return crate::homogeneity::verify_homogeneous(result);
     }

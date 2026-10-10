@@ -195,6 +195,7 @@ fn solve_plan(problem: &Problem, plan: Plan, started: Instant) -> Result<SolveRe
         homogeneous: None,
         monotone: None,
         local: None,
+        linear_negative: None,
         sign_filter: Some(Box::new(SignFilterEvidence {
             constraint_index: plan.constraint_index,
             normalized_target: plan.normalized_target,
@@ -253,7 +254,8 @@ pub fn verify(result: &SolveResult) -> Result<Verification> {
         result.trace.is_none()
             && result.homogeneous.is_none()
             && result.monotone.is_none()
-            && result.local.is_none(),
+            && result.local.is_none()
+            && result.linear_negative.is_none(),
         "unexpected alternate sign-filter coverage evidence"
     );
     let evidence = result

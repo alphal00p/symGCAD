@@ -20,6 +20,9 @@ use std::{
 use symbolica::prelude::*;
 
 pub fn selected_order(problem: &Problem) -> Result<Vec<String>> {
+    if problem.solver.engine == "linear_negative" {
+        return crate::linear_negative::selected_order(problem);
+    }
     if problem.solver.engine == "monotone" && problem.split.is_empty() {
         if problem.solver.monotone_negative_target {
             // The constrained original problem supplies the positive-scale
@@ -567,6 +570,9 @@ fn classify_solve_result(problem: &Problem, result: Result<SolveResult>) -> Resu
 
 fn solve_impl(problem: &Problem) -> Result<SolveResult> {
     problem.validate()?;
+    if problem.solver.engine == "linear_negative" {
+        return crate::linear_negative::solve(problem);
+    }
     if problem.solver.engine == "monotone" && problem.split.is_empty() {
         if problem.solver.monotone_negative_target {
             if problem.solver.homogeneous_anchor.is_some() {
@@ -720,6 +726,7 @@ fn solve_impl(problem: &Problem) -> Result<SolveResult> {
         monotone: None,
         local: None,
         sign_filter: None,
+        linear_negative: None,
     })
 }
 

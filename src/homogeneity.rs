@@ -445,6 +445,7 @@ fn reconstruct(
         monotone: None,
         local: None,
         sign_filter: None,
+        linear_negative: None,
     })
 }
 
@@ -549,7 +550,11 @@ pub fn verify_homogeneous(result: &SolveResult) -> Result<Verification> {
         "reconstructed compatibility merge was modified"
     );
     ensure!(
-        result.trace.is_none(),
+        result.trace.is_none()
+            && result.local.is_none()
+            && result.monotone.is_none()
+            && result.sign_filter.is_none()
+            && result.linear_negative.is_none(),
         "homogeneous coverage must use its reduced exhaustive certificate"
     );
     // A new positive-scale stack is inserted once per distinct reduced prefix
@@ -566,4 +571,44 @@ pub fn verify_homogeneous(result: &SolveResult) -> Result<Verification> {
         stacks: verified.stacks + prefixes.len(),
         rejected_branches: verified.rejected_branches,
     })
+}
+
+#[cfg(test)]
+mod descending_transport_tests {
+    use super::*;
+    use crate::{
+        algebra::{Algebra, rational},
+        output::RootIndexDomain,
+        roots::roots_in_open_interval,
+    };
+
+    #[test]
+    fn positive_scaling_preserves_largest_distinct_root_selection() {
+        let algebra = Algebra::new(&["r".into(), "z".into()]).unwrap();
+        let reduced = algebra.parse("z*(z-2)").unwrap();
+        let restored = restore_checked(&reduced, &[0, 1], &[1], 0).unwrap();
+        assert_eq!(restored, algebra.parse("z*(z-2*r)").unwrap());
+        for scale in [rational("1/2").unwrap(), Rational::one(), Rational::from(3)] {
+            let fiber = algebra
+                .specialize_univariate(&restored, 1, &[scale.clone()])
+                .unwrap();
+            let largest = scale * Rational::from(2);
+            assert!(fiber.evaluate(&largest).is_zero());
+            assert_eq!(
+                roots_in_open_interval(&fiber, &largest, &(largest.clone() + Rational::from(10))),
+                0
+            );
+        }
+        let selected = Some(RootBound {
+            polynomial: 7,
+            index: 0,
+            index_domain: RootIndexDomain::RealDescending,
+            lower: "2".into(),
+            upper: "2".into(),
+        });
+        let shifted = shifted_bound(&selected).unwrap();
+        assert_eq!(shifted.polynomial, 8);
+        assert_eq!(shifted.index, 0);
+        assert_eq!(shifted.index_domain, RootIndexDomain::RealDescending);
+    }
 }

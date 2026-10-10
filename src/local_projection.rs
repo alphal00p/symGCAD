@@ -2491,6 +2491,7 @@ pub fn solve_local(problem: &Problem, options: &LocalOptions) -> Result<LocalSol
         monotone: None,
         local: None,
         sign_filter: None,
+        linear_negative: None,
     };
     Ok(LocalSolveResult {
         solution,
@@ -2862,6 +2863,10 @@ pub fn verify_local_parts(
     ensure!(
         solution.status == Status::CompleteGeneric,
         "only complete local results can be certified"
+    );
+    ensure!(
+        solution.linear_negative.is_none(),
+        "incompatible additional negative-linear evidence"
     );
     let (input_factors, guard_certificates, root, options) = match evidence {
         LocalEvidence::GlobalFallback { .. } => return crate::verify::verify_nonlocal(solution),

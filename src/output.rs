@@ -17,6 +17,10 @@ pub enum RootIndexDomain {
     #[default]
     Real,
     Positive,
+    /// Distinct real roots counted from +infinity. Index zero is the largest.
+    /// This selector alone does not assert that its root is a continuous
+    /// section; the enclosing coverage certificate must prove that property.
+    RealDescending,
 }
 impl RootIndexDomain {
     fn is_real(&self) -> bool {
@@ -30,6 +34,7 @@ pub struct RootBound {
     /// Zero-based index among distinct roots in index_domain on the fiber.
     pub index: usize,
     /// Positive indices count strictly positive roots; zero is never included.
+    /// RealDescending reverses real-root order and includes zero.
     #[serde(default, skip_serializing_if = "RootIndexDomain::is_real")]
     pub index_domain: RootIndexDomain,
     pub lower: String,
@@ -120,6 +125,8 @@ pub struct SolveResult {
     pub local: Option<Box<crate::local_projection::LocalEvidence>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sign_filter: Option<Box<crate::sign_filter::SignFilterEvidence>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub linear_negative: Option<Box<crate::linear_negative::LinearNegativeEvidence>>,
 }
 
 impl SolveResult {
@@ -143,6 +150,33 @@ impl SolveResult {
             monotone: None,
             local: None,
             sign_filter: None,
+            linear_negative: None,
         }
+    }
+}
+
+#[cfg(test)]
+mod root_selector_serialization_tests {
+    use super::*;
+
+    #[test]
+    fn descending_root_selector_is_explicit_and_historical_defaults_survive() {
+        let old = r#"{"polynomial":0,"index":0,"lower":"0","upper":"0"}"#;
+        let mut bound: RootBound = serde_json::from_str(old).unwrap();
+        assert_eq!(bound.index_domain, RootIndexDomain::Real);
+        bound.index_domain = RootIndexDomain::RealDescending;
+        let encoded = serde_json::to_value(&bound).unwrap();
+        assert_eq!(encoded["index_domain"], "real_descending");
+        assert_eq!(serde_json::from_value::<RootBound>(encoded).unwrap(), bound);
+
+        let failed = SolveResult::failure(Problem::default(), Status::Incomplete, "old result");
+        let encoded = serde_json::to_value(&failed).unwrap();
+        assert!(encoded.get("linear_negative").is_none());
+        assert!(
+            serde_json::from_value::<SolveResult>(encoded)
+                .unwrap()
+                .linear_negative
+                .is_none()
+        );
     }
 }
