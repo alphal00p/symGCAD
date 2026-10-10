@@ -538,6 +538,70 @@ fn progress(output: &Path, report: &Value) -> Result<()> {
     fs::rename(temp, output.with_extension("progress.json"))?;
     Ok(())
 }
+
+/// Example-only reuse by the bounded per-block root diagnostic. No native SQF
+/// is called; the supplied proposal gains authority only from product replay.
+#[allow(dead_code)]
+pub(crate) fn replay_for_roots(
+    capture_path: &Path,
+    candidate_path: &Path,
+    proposal_path: &Path,
+    expected_capture: &str,
+    expected_candidate: &str,
+    expected_proposal: &str,
+    mut observe: impl FnMut(&str) -> Result<()>,
+) -> Result<(Value, Vec<(Poly, usize)>)> {
+    let started = Instant::now();
+    observe("authenticate_and_parse")?;
+    let capture_bytes = read(capture_path)?;
+    let candidate_bytes = read(candidate_path)?;
+    let (capture, candidate) = authenticate(
+        &capture_bytes,
+        &candidate_bytes,
+        expected_capture,
+        expected_candidate,
+    )?;
+    let (_, raw) = parse(&capture.variable_names, &candidate.result)?;
+    ensure!(
+        raw.nterms() == candidate.result_terms,
+        "candidate term count"
+    );
+    let (primitive, scale) = content(&raw)?;
+    reconstruction(&raw, &primitive, &scale)?;
+    let report = json!({"capture_sha256":hash(&capture_bytes),"candidate_sha256":hash(&candidate_bytes),
+        "candidate_expression_sha256":candidate.result_sha256,"input_hash":candidate.input_hash,
+        "full_variable_map":capture.variable_names,"canonical":summary(&primitive)?});
+    let binding = factor_binding(&report, &scale);
+    observe("load_unverified_proposal")?;
+    let (mut factors, native_seconds) = load_proposal(
+        &read(proposal_path)?,
+        expected_proposal,
+        &capture.variable_names,
+        &primitive,
+        &binding,
+    )?;
+    observe("exact_signed_product_replay")?;
+    let replay_started = Instant::now();
+    reconstruct_factors(&raw, &primitive, &scale, &mut factors)?;
+    let factor_replay_seconds = replay_started.elapsed().as_secs_f64();
+    let metadata = factors
+        .iter()
+        .enumerate()
+        .map(|(id, (p, m))| {
+            Ok(json!({
+                "block":id,"multiplicity":m,"polynomial":summary(p)?
+            }))
+        })
+        .collect::<Result<Vec<_>>>()?;
+    Ok((
+        json!({"binding":binding,"proposal_sha256":expected_proposal,
+        "exact_canonical_product":true,"exact_signed_raw_product":true,
+        "native_square_free_called":false,"proposal_historical_native_seconds":native_seconds,
+        "factor_replay_seconds":factor_replay_seconds,"total_replay_seconds":started.elapsed().as_secs_f64(),
+        "blocks":metadata}),
+        factors,
+    ))
+}
 fn worker(args: &Args) -> Result<()> {
     let started = Instant::now();
     let capture_bytes = read(&args.capture)?;
