@@ -200,3 +200,29 @@ its queue snapshot has SHA-256
 The directory retains final ledger/input copies and `fourth-wave-outcomes.json`.
 The immediately preceding audit-05 ran just before this wave finished and
 therefore retains the unchanged twelve-incomplete audit; it has not been replaced.
+
+## Fifth one-hour wave
+
+The 11:30 UTC read-only audit found twenty finished incomplete attempts,
+four running and four still queued. The next four symbolic originals again
+timed out without result or verification files:
+
+| Original | Bounded solve, seconds | Peak RSS, MiB |
+| --- | ---: | ---: |
+| C470 | 3600.022469 | 1172.7 |
+| C476 | 3600.026180 | 2125.9 |
+| C247 | 3600.037470 | 723.4 |
+| C478 | 3600.035741 | 728.3 |
+
+All twenty finished ledger hashes were rechecked. The four new original,
+prepared and actual worker inputs also match their recorded hashes, and
+the parsed mathematical inputs are unchanged. Coverage remains **303 / 331**;
+none of these censored attempts supplies a completion time or performance ratio.
+
+The snapshot `artifacts/slow-suite-one-hour-audit-07/audit.json` has SHA-256
+`90db4a5a300769c580486100721a4d397deaa05cf7f1e4b1aa55d5ce1b9a63aa`;
+its queue snapshot has SHA-256
+`efc0dfa94a6c759d709c7b1545784cfc6855898803497034db81257e80792a06`.
+Final ledger/input copies and `fifth-wave-outcomes.json` remain beside it;
+the outcomes digest is
+`bb005db12e7eb3dc4af68c2b446a0bb72d1e6a9de87bfe4c84c1470cdbc0f636`.
