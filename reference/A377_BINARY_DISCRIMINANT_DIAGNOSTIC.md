@@ -266,3 +266,33 @@ The launch script digest is
 `bd4b615ee0bc9eb4b565d160c2c2f543898d76ce6a65a1002416d3c94351c23c`.
 This is a launched operation diagnostic, not a completed algebra identity or
 an original-problem decomposition. All interior-boundary obligations remain.
+
+### Third-continuation outcome
+
+The third continuation timed out at 12:52 UTC after **3600.022407 seconds**,
+with 613,324 KiB peak RSS and no result or verification file. Its final cache
+contains the same 2,048 completed operations seen in the earlier snapshot:
+all 1,881 inherited files are unchanged, and the 167 new records are completed
+discriminants. Their recorded algebra time totals 179.382270 seconds; that
+sum excludes all other solver work and is not a solved-case timing.
+
+Every output checksum and filename/key was rechecked. The original mathematics,
+actual worker input, and frozen executable hashes still match. The final active
+capture is the same degree-32 operand above; this attempt supplies no value
+for that discriminant. All completed work remains available for a later bounded
+continuation. Verified original coverage remains **303 / 331**.
+
+The final audit is
+`artifacts/research/a377-segmentation-warm-hour-03/final-audit.json`, SHA-256
+`73be22ca104a3d32d470e104bd610c02f76beabcae54a4de3c153d3034c64825`.
+The final cache manifest has SHA-256
+`053435cb2d173274bdf845c9ffd5005b6eef6ba9a9239ff5644b5a23dbfe253e`;
+the final ledger has SHA-256
+`b23781a4160426756abc9bcf91008fd0b599de50d570b71c6b09398c1059ea72`.
+
+A separate 60-second release probe of Symbolica's existing primitive-resultant
+strategy on that same degree-32 operand also timed out (60.034019 seconds,
+90,176 KiB peak RSS). It produced no candidate. This bounded diagnostic does
+not establish that the strategy cannot finish; it provides no measured reason
+to change the production dispatch. Evidence is retained in
+`artifacts/research/a377-degree32-native-strategies-01/primitive.process.json`.
