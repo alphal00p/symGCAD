@@ -28,7 +28,67 @@ pub(crate) fn evaluate(p: &Poly, prefix: &[Rational]) -> Result<Rational> {
         (prefix.len()..p.nvars()).all(|i| p.degree(i) == 0),
         "guard depends on a later coordinate"
     );
-    Ok(integer_value(p, prefix).unwrap_or_else(|| p.replace_all(prefix)))
+    Ok(affine_value(p, prefix)
+        .or_else(|| integer_value(p, prefix))
+        .unwrap_or_else(|| p.replace_all(prefix)))
+}
+
+/// Bounded single-coordinate integer affine guards need no power tables.
+/// Full support is validated by `evaluate` before reaching this shortcut.
+/// All original integer-path admission limits still apply; declined inputs
+/// continue through that path and then the exact Symbolica fallback.
+fn affine_value(p: &Poly, prefix: &[Rational]) -> Option<Rational> {
+    if p.nterms() > 2 || p.nvars() > MAX_ACTIVE_AXES {
+        return None;
+    }
+    let mut linear = None;
+    let mut constant = None;
+    for term in p {
+        if !term.coefficient.is_integer()
+            || term.coefficient.numerator_ref().significant_bits() > MAX_COEFFICIENT_BITS
+        {
+            return None;
+        }
+        let mut axis = None;
+        for (i, &exponent) in term.exponents.iter().enumerate() {
+            if exponent == 0 {
+                continue;
+            }
+            if exponent != 1 || axis.is_some() {
+                return None;
+            }
+            axis = Some(i);
+        }
+        if let Some(i) = axis {
+            if linear.is_some() {
+                return None;
+            }
+            linear = Some((i, term.coefficient));
+        } else {
+            constant = Some(term.coefficient);
+        }
+    }
+    let (i, coefficient) = linear?;
+    let value = prefix.get(i)?;
+    if value.denominator_ref().is_zero() || value.denominator_ref().is_negative() {
+        return None;
+    }
+    let bits = u128::from(value.numerator_ref().significant_bits())
+        + u128::from(value.denominator_ref().significant_bits())
+        + 2;
+    // Same degree-one power/scratch admission limits as the legacy evaluator.
+    if bits > MAX_POWER_BITS || 6 * (64 + bits.div_ceil(8)) > MAX_SCRATCH_ESTIMATE {
+        return None;
+    }
+    let product = if coefficient.is_one() {
+        value.clone()
+    } else {
+        coefficient * value
+    };
+    Some(match constant {
+        Some(offset) => &product + offset,
+        None => product,
+    })
 }
 
 /// `evaluate` validates complete support before calling this private helper.
@@ -245,5 +305,71 @@ mod tests {
             assert_eq!(integer_value(&p, &point), Some(p.replace_all(&point)));
             assert_eq!(evaluate(&p, &point).unwrap(), p.replace_all(&point));
         }
+    }
+    #[test]
+    fn seeded_single_axis_families_match_symbolica_and_legacy() {
+        let a = Algebra::new(&["s".into(), "unused".into(), "x".into(), "later".into()]).unwrap();
+        let mut state = 19377u64;
+        for _ in 0..1000 {
+            state = state
+                .wrapping_mul(6364136223846793005)
+                .wrapping_add(1442695040888963407);
+            let coefficient = (state % 41) as i64 - 20;
+            let offset = ((state >> 8) % 53) as i64 - 26;
+            let axis = if state & 1 == 0 { "s" } else { "x" };
+            let p = a
+                .parse(&format!("({coefficient})*{axis}+({offset})"))
+                .unwrap();
+            let prefix = [
+                Rational::from((coefficient, 17)),
+                Rational::from(-999),
+                Rational::from((offset, 23)),
+            ];
+            if coefficient != 0 {
+                assert_eq!(affine_value(&p, &prefix), Some(p.replace_all(&prefix)));
+            }
+            assert_eq!(evaluate(&p, &prefix).unwrap(), p.replace_all(&prefix));
+            assert_eq!(
+                evaluate(&p, &prefix).unwrap(),
+                integer_value(&p, &prefix).unwrap()
+            );
+        }
+    }
+
+    #[test]
+    fn unsupported_support_and_caps_never_bypass_validation() {
+        let a = Algebra::new(&["x".into(), "unused".into(), "y".into()]).unwrap();
+        let prefix = [
+            rational("-2/3").unwrap(),
+            Rational::zero(),
+            rational("7/11").unwrap(),
+        ];
+        for text in ["x*y", "x+y", "x^2-1", "x/7+1/3", "7", "0"] {
+            let p = a.parse(text).unwrap();
+            assert!(affine_value(&p, &prefix).is_none());
+            assert_eq!(evaluate(&p, &prefix).unwrap(), p.replace_all(&prefix));
+        }
+        for text in ["y", "x*y", "y-4"] {
+            assert!(evaluate(&a.parse(text).unwrap(), &[Rational::zero()]).is_err());
+        }
+        assert!(evaluate(&a.parse("0").unwrap(), &vec![Rational::zero(); 4]).is_err());
+        let huge = Integer::from(Integer::one().to_multi_prec() << 17000usize);
+        let p = a.parse("x-4").unwrap();
+        let point = [Rational::from((huge, Integer::from(3)))];
+        assert!(affine_value(&p, &point).is_none());
+        assert_eq!(evaluate(&p, &point).unwrap(), p.replace_all(&point));
+        let coefficient = Integer::from(Integer::one().to_multi_prec() << 4096usize);
+        let p = a.parse(&format!("{coefficient}*x-1")).unwrap();
+        assert!(affine_value(&p, &prefix).is_none());
+        assert_eq!(evaluate(&p, &prefix).unwrap(), p.replace_all(&prefix));
+
+        let names = (0..17).map(|i| format!("v{i}")).collect::<Vec<_>>();
+        let p = Algebra::new(&names).unwrap().parse("v0-4").unwrap();
+        let small_point = [rational("-2/3").unwrap()];
+        assert!(affine_value(&p, &small_point).is_none());
+        assert_eq!(
+            evaluate(&p, &small_point).unwrap(),
+            p.replace_all(&small_point)
+        );
     }
 }
