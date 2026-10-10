@@ -66,6 +66,7 @@ mod descartes;
 mod interval_descartes;
 pub use interval_descartes::{PositiveInterval, PositiveIntervalEndpoint, PositiveIntervalWitness};
 mod hint_archive;
+mod lazy_projection;
 mod learned_cuts;
 pub use hint_archive::HintArchiveReport;
 mod pair_witnesses;
@@ -123,6 +124,10 @@ pub struct LocalOptions {
     /// This only changes sample selection; children are visited and checked.
     #[serde(default)]
     pub stable_sector_samples: bool,
+    /// Defer stack projection until the child frontier is complete.
+    /// Requires stable samples; old evidence preserves eager construction.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub defer_projection: bool,
     /// Use one Descartes sign variation to certify a simple positive root.
     /// Historical evidence retains its full discriminant obligations.
     #[serde(default)]
@@ -181,6 +186,7 @@ impl Default for LocalOptions {
             reuse_completed_subtrees: true,
             reuse_learned_cuts: true,
             stable_sector_samples: false,
+            defer_projection: false,
             descartes_one: true,
             descartes_witnesses: false,
             descartes_intervals: false,
@@ -220,6 +226,16 @@ pub struct LocalReport {
     pub multi_cut_refinements: usize,
     /// Tentative siblings visited after another sibling invalidated the stack.
     pub discovery_siblings: usize,
+    /// Opt-in complete-child discovery before the ordinary final projection.
+    pub deferred_stacks: usize,
+    pub deferred_frontiers: usize,
+    pub deferred_projection_calls: usize,
+    /// Bounded scheduling declines which resumed the ordinary project-first loop.
+    pub deferred_fallbacks: usize,
+    /// Strictly decreasing cut-set passes; no new children run in these passes.
+    pub compaction_rounds: usize,
+    pub compacted_cuts: usize,
+    pub compacted_children: usize,
     /// Largest number of new cuts collected in one refinement round.
     pub max_refinement_cuts: usize,
     pub projected_pairs: usize,
@@ -2058,6 +2074,14 @@ impl Builder<'_> {
         }
         self.seed_archive(prefix, &mut cuts);
         self.observe_archive(prefix, &cuts);
+        if self.options.defer_projection {
+            if let Some(built) = self.visit_deferred(prefix, &mut cuts)? {
+                if self.options.reuse_completed_subtrees {
+                    self.completed_subtrees.insert(prefix, &built);
+                }
+                return Ok(built);
+            }
+        }
         // The ancestor prefix is restored after every child and remains fixed
         // throughout this loop. Pool hints never escape this visit or carry a
         // child proof. Every selected sample goes through the ordinary visitor.
@@ -2382,6 +2406,10 @@ pub fn solve_local(problem: &Problem, options: &LocalOptions) -> Result<LocalSol
     ensure!(
         options.subtree_cache_mib <= 65536 && options.learned_cut_cache_mib <= 65536,
         "local cache budget exceeds memory ceiling"
+    );
+    ensure!(
+        !options.defer_projection || options.stable_sector_samples,
+        "deferred projection requires stable sector samples"
     );
     let started = Instant::now();
     let order = match selected_order(problem) {

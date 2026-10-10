@@ -75,6 +75,9 @@ pub struct SolverOptions {
     /// Retain bounded rational sampling hints across refinements of one stack.
     #[serde(skip_serializing_if = "is_false")]
     pub local_stable_samples: bool,
+    /// Experimental deferred stack projection with stable rational samples.
+    #[serde(skip_serializing_if = "is_false")]
+    pub local_deferred_projection: bool,
     /// Bounded leading-term cancellations used to separate positive roots.
     #[serde(skip_serializing_if = "is_two")]
     pub local_pair_cancellations: usize,
@@ -145,6 +148,7 @@ impl Default for SolverOptions {
             local_reuse_learned_cuts: true,
             local_hint_archive: false,
             local_stable_samples: false,
+            local_deferred_projection: false,
             local_pair_cancellations: 2,
             local_descartes_one: true,
             local_descartes_witnesses: false,
@@ -216,6 +220,10 @@ impl Problem {
         ensure!(
             (2..=8).contains(&self.solver.local_descartes_interval_template_limit),
             "local_descartes_interval_template_limit must be between two and eight"
+        );
+        ensure!(
+            !self.solver.local_deferred_projection || self.solver.local_stable_samples,
+            "local_deferred_projection requires local_stable_samples"
         );
         let names: BTreeSet<_> = self.variables.iter().collect();
         ensure!(names.len() == self.variables.len(), "duplicate variables");

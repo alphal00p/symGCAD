@@ -607,6 +607,7 @@ fn solve_impl(problem: &Problem) -> Result<SolveResult> {
                 reuse_completed_subtrees: problem.solver.local_reuse_subtrees,
                 reuse_learned_cuts: problem.solver.local_reuse_learned_cuts,
                 stable_sector_samples: problem.solver.local_stable_samples,
+                defer_projection: problem.solver.local_deferred_projection,
                 positive_pair_cancellations: problem.solver.local_pair_cancellations,
                 descartes_one: problem.solver.local_descartes_one,
                 descartes_witnesses: problem.solver.local_descartes_witnesses,
