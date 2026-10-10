@@ -476,10 +476,14 @@ fn public_cli_resumes_the_exact_context_then_exports_a_fresh_verified_result() {
     };
     problem.solver.ordering = "mcts".into();
     problem.solver.max_rollouts = 2;
-    problem.solver.search_time_secs = Some(4.0);
+    // Context construction hashes the full debug executable inside the bounded
+    // seed worker. Leave its maximum five-second setup allowance available on
+    // loaded CI hosts; this one-order search still exits as soon as exhausted.
+    // Dedicated scheduler tests exercise the short-deadline behavior.
+    problem.solver.search_time_secs = Some(30.0);
     problem.solver.checkpoint_dir = Some(dir.join("cache"));
     problem.limits = symgcad::Limits {
-        wall_time_secs: 20.0,
+        wall_time_secs: 150.0,
         memory_mib: 1024,
         workers: 1,
         ..Default::default()
@@ -498,7 +502,10 @@ fn public_cli_resumes_the_exact_context_then_exports_a_fresh_verified_result() {
     };
     let first = call("order", &dir.join("first.json"));
     assert_eq!(first["search"]["checkpoint"]["loaded_trials"], 0);
-    assert!(first["search"]["checkpoint"]["writes"].as_u64().unwrap() > 0);
+    assert!(
+        first["search"]["checkpoint"]["writes"].as_u64().unwrap() > 0,
+        "{first}"
+    );
     let second = call("order", &dir.join("second.json"));
     assert!(
         second["search"]["checkpoint"]["loaded_trials"]
