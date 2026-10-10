@@ -47,11 +47,113 @@ fn builder<'a>(
         pair_witness_stock: pair_witnesses::WitnessStock::default(),
         bezout_registry: strict_bezout::Registry::default(),
         obstruction_observer: None,
-        base_sources: HashMap::new(),
+        base_sources: base_univariate::SourceIndex::default(),
         base_records: Vec::new(),
         base_typed: BTreeSet::new(),
         base_retained_bits: 0,
     }
+}
+
+#[test]
+fn more_than_128_small_sources_replay_with_exact_duplicate_and_scale_hits() {
+    let problem = Problem {
+        variables: vec!["x".into(), "z".into()],
+        ..Default::default()
+    };
+    let normalized = normalize(&problem, &problem.variables).unwrap();
+    let options = LocalOptions {
+        base_univariate_basis: true,
+        ..Default::default()
+    };
+    let mut b = builder(&problem, &normalized, &options);
+    let mut raw = Vec::new();
+    for i in 1..=160 {
+        raw.push(normalized.algebra.parse(&format!("x^2+{i}")).unwrap());
+    }
+    let ids = b.guard_basis(&raw).unwrap();
+    assert_eq!(b.base_records.len(), 160);
+    assert_eq!(ids.len(), 160);
+    let storage = b
+        .report
+        .base_univariate_basis
+        .as_ref()
+        .unwrap()
+        .retained_storage;
+    assert_eq!(storage.source_terms, 320);
+    assert_eq!(storage.block_terms, 320);
+    let scaled = raw
+        .iter()
+        .map(|p| p.clone().mul_coeff(Rational::from((-7, 3))))
+        .collect::<Vec<_>>();
+    assert_eq!(b.guard_basis(&scaled).unwrap(), ids);
+    assert_eq!(b.guard_basis(&raw).unwrap(), ids);
+    assert_eq!(b.base_records.len(), 160);
+    assert_eq!(
+        b.report
+            .base_univariate_basis
+            .as_ref()
+            .unwrap()
+            .retained_storage,
+        storage
+    );
+    assert_eq!(b.report.base_univariate_basis.as_ref().unwrap().hits, 320);
+    let evidence = BaseUnivariateBasis {
+        schema_version: base_univariate::SCHEMA,
+        sources: b.base_records.clone(),
+    };
+    let encoded = serde_json::to_vec(&evidence).unwrap();
+    let decoded: BaseUnivariateBasis = serde_json::from_slice(&encoded).unwrap();
+    let checked =
+        base_univariate::validate(&normalized.algebra, &b.polynomials, Some(&decoded), true)
+            .unwrap();
+    for p in &scaled {
+        assert!(checked.proportional_ids(p).is_some());
+    }
+    let mut legacy = decoded;
+    legacy.schema_version = 1;
+    assert!(
+        base_univariate::validate(&normalized.algebra, &b.polynomials, Some(&legacy), true)
+            .is_err()
+    );
+    legacy.sources.truncate(128);
+    base_univariate::validate(&normalized.algebra, &b.polynomials, Some(&legacy), true).unwrap();
+}
+
+#[test]
+fn source_aggregate_decline_precedes_native_and_blocks_remain_resource_stops() {
+    let problem = Problem {
+        variables: vec!["x".into(), "z".into()],
+        ..Default::default()
+    };
+    let normalized = normalize(&problem, &problem.variables).unwrap();
+    let options = LocalOptions {
+        base_univariate_basis: true,
+        ..Default::default()
+    };
+    let q = normalized.algebra.parse("(x-1)*(x-2)").unwrap();
+    let mut b = builder(&problem, &normalized, &options);
+    // Boundary routing only: no proof is constructed from synthetic counters.
+    b.report
+        .base_univariate_basis
+        .as_mut()
+        .unwrap()
+        .retained_storage
+        .source_terms = base_univariate::MAX_REGISTRY_TERMS;
+    assert_eq!(b.guard_basis(std::slice::from_ref(&q)).unwrap().len(), 2);
+    let report = b.report.base_univariate_basis.as_ref().unwrap();
+    assert_eq!(report.declines.registry_terms, 1);
+    assert_eq!(report.decomposition_seconds, 0.0);
+    assert_eq!(report.sources, 0);
+    let mut b = builder(&problem, &normalized, &options);
+    b.report
+        .base_univariate_basis
+        .as_mut()
+        .unwrap()
+        .retained_storage
+        .source_terms = base_univariate::MAX_REGISTRY_TERMS - q.nterms() as u64;
+    assert!(matches!(b.guard_basis(&[q]), Err(Stop::Resource(_))));
+    assert_eq!(b.operations.cache.report.cache.factor_misses, 0);
+    assert_eq!(b.report.base_univariate_basis.as_ref().unwrap().sources, 0);
 }
 
 struct Directory(PathBuf);

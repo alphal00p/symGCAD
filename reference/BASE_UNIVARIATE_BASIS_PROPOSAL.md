@@ -124,11 +124,14 @@ only the proof and original problem, independently of disk caches.
 Static admission bounds the complete map, first-axis name, degree, term
 count and rational coefficient height before primitive normalization and
 native work. Sources have degree 2–4096; linear blocks remain allowed. The
-registry permits at most 128 sources and 64 blocks per source, with a
+schema 2 registry permits at most 4,096 sources and 64 blocks per source, with a
 512-million-coefficient-bit cumulative source-plus-block allowance. Source
 strings use a bounded sparse integer grammar, not arbitrary expression
 expansion. Degree, multiplicity and coefficient/product-work estimates are
 checked before powers and products; the source-text cap is 32 MiB.
+Schema 1 retains its historical 128-source verification contract. Schema 2
+adds cumulative term, exponent-entry and text bounds; see the
+[registry-capacity policy and compatibility note](BASE_SUPPORT_REGISTRY_CAPACITY.md).
 
 | Bound | Prototype limit |
 |---|---:|

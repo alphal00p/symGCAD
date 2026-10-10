@@ -159,7 +159,7 @@ fn replay(
         pair_witness_stock: pair_witnesses::WitnessStock::default(),
         bezout_registry: strict_bezout::Registry::default(),
         obstruction_observer: None,
-        base_sources: HashMap::new(),
+        base_sources: base_univariate::SourceIndex::default(),
         base_records: Vec::new(),
         base_typed: BTreeSet::new(),
         base_retained_bits: 0,
@@ -237,7 +237,7 @@ fn replay(
         input_factors: Vec::new(),
         guard_certificates: Vec::new(),
         base_univariate_basis: Some(BaseUnivariateBasis {
-            schema_version: 1,
+            schema_version: base_univariate::SCHEMA,
             sources: builder.base_records.clone(),
         }),
         root: built.node,

@@ -96,19 +96,27 @@ fn payload_digest(value: &impl Serialize) -> Result<String> {
 
 fn policy_digest() -> Result<String> {
     Ok(digest(&serde_json::to_vec(&(
-        MAX_SOURCES,
-        MAX_RETAINED_BITS,
-        MAX_DEGREE,
-        MAX_TERMS,
-        MAX_AXES,
-        MAX_BLOCK_HEIGHT,
-        MAX_SOURCE_HEIGHT,
-        MAX_BLOCK_BITS,
-        MAX_SOURCE_BITS,
-        MAX_BLOCKS,
-        MAX_TEXT,
-        256_000_000u64,
-        MAX_BYTES,
+        (
+            MAX_SOURCES,
+            MAX_RETAINED_BITS,
+            MAX_DEGREE,
+            MAX_TERMS,
+            MAX_AXES,
+            MAX_BLOCK_HEIGHT,
+            MAX_SOURCE_HEIGHT,
+            MAX_BLOCK_BITS,
+            MAX_SOURCE_BITS,
+            MAX_BLOCKS,
+            MAX_TEXT,
+            256_000_000u64,
+            MAX_BYTES,
+        ),
+        (
+            super::SCHEMA,
+            MAX_REGISTRY_TERMS,
+            MAX_REGISTRY_EXPONENTS,
+            MAX_REGISTRY_TEXT,
+        ),
     ))?))
 }
 
@@ -397,6 +405,47 @@ mod tests {
     }
     fn rehash(value: &mut serde_json::Value) {
         value["blocks_sha256"] = digest(&serde_json::to_vec(&value["blocks"]).unwrap()).into();
+    }
+
+    #[test]
+    fn historical_policy_proposals_are_misses_without_becoming_proof_authority() {
+        let directory = Directory::new();
+        let (algebra, source, request) = context(&directory, "x^2+1");
+        let historical = digest(
+            &serde_json::to_vec(&(
+                LEGACY_MAX_SOURCES,
+                MAX_RETAINED_BITS,
+                MAX_DEGREE,
+                MAX_TERMS,
+                MAX_AXES,
+                MAX_BLOCK_HEIGHT,
+                MAX_SOURCE_HEIGHT,
+                MAX_BLOCK_BITS,
+                MAX_SOURCE_BITS,
+                MAX_BLOCKS,
+                MAX_TEXT,
+                256_000_000u64,
+                MAX_BYTES,
+            ))
+            .unwrap(),
+        );
+        assert_ne!(request.binding.policy_sha256, historical);
+        let mut old_binding = request.binding.clone();
+        old_binding.policy_sha256 = historical;
+        assert_ne!(
+            digest(&serde_json::to_vec(&old_binding).unwrap()),
+            digest(&serde_json::to_vec(&request.binding).unwrap())
+        );
+        save(&request, &source, &[(source.clone(), 1)], &mut || Ok(())).unwrap();
+        let mut record: Record =
+            serde_json::from_slice(&std::fs::read(&request.path).unwrap()).unwrap();
+        record.binding = old_binding;
+        std::fs::write(&request.path, serde_json::to_vec(&record).unwrap()).unwrap();
+        assert!(matches!(
+            load(&request, &algebra, &source, &mut || Ok(())).unwrap(),
+            Load::Rejected
+        ));
+        check_product(&source, &[(source.clone(), 1)], || Ok(())).unwrap();
     }
 
     #[test]

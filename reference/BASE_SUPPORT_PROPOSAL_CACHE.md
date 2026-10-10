@@ -30,6 +30,9 @@ Reads use a no-follow regular-file descriptor and a 32-MiB complete-file limit.
 Integer grammar, coefficient height, support, degree, term, multiplicity,
 collective block-storage and product-work bounds precede powers. The existing
 registry quota and source-plus-block accounting also apply to cache hits.
+The schema 2 registry's expanded count and cumulative allocation bounds are
+part of the policy key; historical proposal namespaces are not silently reused.
+See [registry capacity and proof compatibility](BASE_SUPPORT_REGISTRY_CAPACITY.md).
 The approximately 22-million-bit D32 block inventory fits this record envelope;
 no workload identifier participates in admission.
 

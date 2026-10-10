@@ -1663,7 +1663,7 @@ struct Builder<'a> {
     pair_witness_stock: pair_witnesses::WitnessStock,
     bezout_registry: strict_bezout::Registry,
     obstruction_observer: Option<obstruction_observer::Observer>,
-    base_sources: HashMap<Poly, Vec<usize>>,
+    base_sources: base_univariate::SourceIndex,
     base_records: Vec<BaseUnivariateSource>,
     base_typed: BTreeSet<usize>,
     base_retained_bits: u64,
@@ -1881,6 +1881,26 @@ impl Builder<'_> {
                 }
                 continue;
             };
+            let mut proposed_storage = self
+                .report
+                .base_univariate_basis
+                .as_ref()
+                .unwrap()
+                .retained_storage;
+            proposed_storage.add_source(&source, text.len());
+            if let Some(reason) = proposed_storage.decline() {
+                self.report
+                    .base_univariate_basis
+                    .as_mut()
+                    .unwrap()
+                    .decline(reason);
+                self.report.active_phase = "base_univariate_fallback".into();
+                self.publish_base_progress();
+                for factor in self.operations.factors(std::slice::from_ref(p))? {
+                    result.insert(self.intern(factor));
+                }
+                continue;
+            }
             self.report.active_phase = "base_univariate_decomposition".into();
             self.report
                 .base_univariate_basis
@@ -1938,6 +1958,12 @@ impl Builder<'_> {
             report.proposal_cache = old_cache;
             report.proposal_cache.accumulate(&timings.proposal_cache);
             let blocks = blocks.map_err(|error| self.observed_base_stop(base_stage_stop(error)))?;
+            for (block, _) in &blocks {
+                proposed_storage.add_block(block, self.normalized.algebra.names[0].len());
+            }
+            proposed_storage
+                .check()
+                .map_err(|error| self.observed_base_stop(base_stage_stop(error)))?;
             let retained_cost = blocks
                 .iter()
                 .try_fold(cost.unwrap(), |sum, (p, _)| {
@@ -1988,6 +2014,7 @@ impl Builder<'_> {
             report.retained_source_bits += cost.unwrap();
             report.retained_block_bits += retained_cost - cost.unwrap();
             report.retained_total_bits = self.base_retained_bits;
+            report.retained_storage = proposed_storage;
             report.phase("admitted");
             self.report.active_phase = "base_univariate_admitted".into();
             self.publish_base_progress();
@@ -2864,7 +2891,7 @@ pub fn solve_local(problem: &Problem, options: &LocalOptions) -> Result<LocalSol
         pair_witness_stock: pair_witnesses::WitnessStock::default(),
         bezout_registry,
         obstruction_observer,
-        base_sources: HashMap::new(),
+        base_sources: base_univariate::SourceIndex::default(),
         base_records: Vec::new(),
         base_typed: BTreeSet::new(),
         base_retained_bits: 0,
@@ -3011,7 +3038,7 @@ pub fn solve_local(problem: &Problem, options: &LocalOptions) -> Result<LocalSol
             guard_certificates: builder.guard_certificates,
             base_univariate_basis: (!builder.base_records.is_empty()).then_some(
                 BaseUnivariateBasis {
-                    schema_version: 1,
+                    schema_version: base_univariate::SCHEMA,
                     sources: builder.base_records,
                 },
             ),

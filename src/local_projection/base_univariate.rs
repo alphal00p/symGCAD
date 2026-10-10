@@ -4,8 +4,16 @@ use super::*;
 use symbolica::{domains::InternalOrdering, poly::factor::Factorize};
 
 mod proposal_cache;
+mod registry;
+pub use registry::RegistryStorage;
+pub(super) use registry::SourceIndex;
 
-pub(super) const MAX_SOURCES: usize = 128;
+pub(super) const LEGACY_MAX_SOURCES: usize = 128;
+pub(super) const MAX_SOURCES: usize = 4096;
+pub(super) const SCHEMA: u32 = 2;
+pub(super) const MAX_REGISTRY_TERMS: u64 = 1 << 21;
+pub(super) const MAX_REGISTRY_EXPONENTS: u64 = 1 << 25;
+pub(super) const MAX_REGISTRY_TEXT: u64 = 128 * 1024 * 1024;
 pub(super) const MAX_RETAINED_BITS: u64 = 512_000_000;
 const MAX_DEGREE: u32 = 4096;
 const MAX_TERMS: usize = 4096;
@@ -67,6 +75,9 @@ pub struct BaseUnivariateReport {
     pub retained_source_bits: u64,
     pub retained_block_bits: u64,
     pub retained_total_bits: u64,
+    /// Conservatively charges source and block payloads per source record,
+    /// including shared blocks again. Text includes an upper bound for blocks.
+    pub retained_storage: RegistryStorage,
     pub peak_source_bits: u64,
     pub peak_source_height_bits: u64,
     pub peak_source_terms: usize,
@@ -120,6 +131,9 @@ pub struct BaseUnivariateDeclines {
     pub source_count: usize,
     pub registry_storage: usize,
     pub source_text: usize,
+    pub registry_terms: usize,
+    pub registry_exponents: usize,
+    pub registry_text: usize,
 }
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -134,6 +148,9 @@ pub enum BaseUnivariateDecline {
     SourceCount,
     RegistryStorage,
     SourceText,
+    RegistryTerms,
+    RegistryExponents,
+    RegistryText,
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
@@ -217,6 +234,9 @@ impl BaseUnivariateReport {
             BaseUnivariateDecline::SourceCount => &mut self.declines.source_count,
             BaseUnivariateDecline::RegistryStorage => &mut self.declines.registry_storage,
             BaseUnivariateDecline::SourceText => &mut self.declines.source_text,
+            BaseUnivariateDecline::RegistryTerms => &mut self.declines.registry_terms,
+            BaseUnivariateDecline::RegistryExponents => &mut self.declines.registry_exponents,
+            BaseUnivariateDecline::RegistryText => &mut self.declines.registry_text,
         };
         *count += 1;
         if let Some(attempt) = &mut self.last_attempt {
@@ -659,7 +679,7 @@ fn parse_source(algebra: &Algebra, text: &str) -> Result<Poly> {
 
 #[derive(Default)]
 pub(super) struct Validated {
-    pub sources: HashMap<Poly, Vec<usize>>,
+    pub sources: SourceIndex,
     pub typed: BTreeSet<usize>,
 }
 
@@ -667,31 +687,10 @@ impl Validated {
     /// Match only an already checked canonical product. A freshly recomputed
     /// guard may carry a rational unit larger than the discovery admission cap.
     /// Do not normalize it or apply that cap again merely to identify its zeros.
-    /// Validation bounds this scan to 128 sources of at most 4096 terms each;
-    /// map/support comparisons precede arithmetic on the existing raw values.
+    /// Exact canonical hits are hashed; other requests visit only a support
+    /// shape bucket. Hash matches never replace exact coefficient checks.
     pub(super) fn proportional_ids(&self, raw: &Poly) -> Option<&[usize]> {
-        if raw.is_constant() || raw.nterms() > MAX_TERMS {
-            return None;
-        }
-        for (source, ids) in &self.sources {
-            if raw.variables() != source.variables()
-                || raw.nterms() != source.nterms()
-                || !raw.exponents_iter().eq(source.exponents_iter())
-            {
-                continue;
-            }
-            let scale = &raw.coefficients[0] / &source.coefficients[0];
-            if !scale.is_zero()
-                && raw
-                    .coefficients
-                    .iter()
-                    .zip(&source.coefficients)
-                    .all(|(actual, expected)| actual == &(expected * &scale))
-            {
-                return Some(ids);
-            }
-        }
-        None
+        self.sources.proportional_ids(raw)
     }
 }
 
@@ -706,13 +705,17 @@ pub(super) fn validate(
         return Ok(result);
     };
     ensure!(enabled, "base support evidence requires enabled option");
+    let source_limit = match evidence.schema_version {
+        1 => LEGACY_MAX_SOURCES,
+        SCHEMA => MAX_SOURCES,
+        _ => return Err(anyhow!("invalid base support schema")),
+    };
     ensure!(
-        evidence.schema_version == 1
-            && !evidence.sources.is_empty()
-            && evidence.sources.len() <= MAX_SOURCES,
+        !evidence.sources.is_empty() && evidence.sources.len() <= source_limit,
         "invalid base support schema/source count"
     );
     let mut retained_bits = 0u64;
+    let mut storage = RegistryStorage::default();
     for record in &evidence.sources {
         ensure!(
             !record.blocks.is_empty() && record.blocks.len() <= MAX_BLOCKS,
@@ -725,9 +728,14 @@ pub(super) fn validate(
             "base support retained source cap"
         );
         ensure!(
-            !result.sources.contains_key(&source),
+            result.sources.get(&source).is_none(),
             "duplicate base support source"
         );
+        let mut proposed = storage;
+        proposed.add_source(&source, record.polynomial.len());
+        if evidence.schema_version == SCHEMA {
+            proposed.check()?;
+        }
         let mut previous = None;
         let mut blocks = Vec::new();
         let mut block_bits = 0u64;
@@ -745,6 +753,10 @@ pub(super) fn validate(
                 block_bits <= MAX_BLOCK_BITS,
                 "base support block storage cap"
             );
+            proposed.add_block(p, algebra.names[0].len());
+            if evidence.schema_version == SCHEMA {
+                proposed.check()?;
+            }
             blocks.push((p.clone(), block.multiplicity));
         }
         retained_bits += block_bits;
@@ -756,6 +768,7 @@ pub(super) fn validate(
         let ids: Vec<_> = record.blocks.iter().map(|b| b.polynomial).collect();
         result.typed.extend(&ids);
         result.sources.insert(source, ids);
+        storage = proposed;
     }
     Ok(result)
 }

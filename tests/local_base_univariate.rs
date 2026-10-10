@@ -86,7 +86,7 @@ fn evidence_json(result: &LocalSolveResult) -> Value {
 fn basis(result: &LocalSolveResult) -> Value {
     let evidence = evidence_json(result);
     let basis = evidence["base_univariate_basis"].clone();
-    assert_eq!(basis["schema_version"], 1);
+    assert_eq!(basis["schema_version"], 2);
     assert!(!basis["sources"].as_array().unwrap().is_empty());
     basis
 }
@@ -362,6 +362,23 @@ fn missing_sectors_wrong_ordinals_and_a_nonbase_projection_are_rejected() {
             local_projection::verify_local(&wrong).is_err(),
             "mutation {case}"
         );
+    }
+}
+
+#[test]
+fn serialized_schema_one_and_two_proofs_replay_without_report_authority() {
+    let result = solve(&fixture(), &options());
+    for version in [1, 2] {
+        let mut encoded = serde_json::to_value(&result).unwrap();
+        encoded["evidence"]["base_univariate_basis"]["schema_version"] = json!(version);
+        // Historical reports did not contain cumulative allocation metadata.
+        encoded["evidence"]["report"]["base_univariate_basis"]
+            .as_object_mut()
+            .unwrap()
+            .remove("retained_storage");
+        let bytes = serde_json::to_vec(&encoded).unwrap();
+        let decoded: LocalSolveResult = serde_json::from_slice(&bytes).unwrap();
+        assert!(local_projection::verify_local(&decoded).unwrap().verified);
     }
 }
 
