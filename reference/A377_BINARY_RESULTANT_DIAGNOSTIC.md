@@ -57,3 +57,33 @@ The new campaign is explicitly warm and must account for the preceding
 `artifacts/research/a377-segmentation-warm-hour-01/`; the exact original
 mathematics, order and solver options remain unchanged. This follow-up is
 still running and contributes no completion credit.
+
+The warm run subsequently completed the largest tracked pair in 34.480010
+seconds with the same canonical output digest. All ten recovered historical
+pairs have therefore matched across the cold pilot and warm continuation.
+The subsequent live-worker profile sampled 1,452 events over 15 seconds at
+99 Hz, with no lost samples. Complete sampled callchains include
+`positive_projection_raw → ProjectionCache::resultant →
+exact_resultant_with_statistics → exact_resultant_ducos`; they identify an
+ordinary pair resultant after a static segmentation applicability decline.
+They do not identify its exact operands or which applicability cap declined.
+
+GMP basecase multiplication accounts for 81.43% of sampled self cost; dense
+integer exact division has 14.84% inclusive cost, and the ordinary resultant
+chain has 14.70% inclusive cost. Some stacks unwind incompletely, so the GMP
+self samples cannot all be assigned to that caller. Recording and bounded
+report analysis were pinned to the worker's allocated CPU 3. Their overhead
+is included in this research campaign's elapsed budget; this is not a matched
+benchmark. The first inline-symbol report encountered `addr2line` errors;
+the bounded `--no-inline` report succeeded. Neither the worker nor its limits
+were restarted or changed.
+
+The raw profile, readable report and analysis are retained beneath
+`artifacts/research/a377-segmentation-warm-hour-01/perf-0909/`:
+
+- `perf.data`: SHA-256 `e6f83bab51e6a623ea8fafef3a966a114cfd354f1d14827398a098685266076a`.
+- `report-no-inline.txt`: SHA-256 `b5c8f9e167df4cd263ab53e90fa26e048f35eb3b63c18c234bde1fe9ce5ed0bb`.
+- `analysis.json`: SHA-256 `67c6508afb50dc3e3d184fc020db052cb2d0f2d6865964de71627ff638584cca`.
+
+This run did not enable `SYMGCAD_CAPTURE_DIR`. Its stale progress record is
+not an operand capture, and the profile provides no additional proof coverage.
