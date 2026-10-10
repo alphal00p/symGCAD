@@ -20,6 +20,22 @@ The three core regressions above 2× are investigated below. A later optimized r
 
 ## Deterministic completion checkpoint
 
+The later indexed aggressive merge resolves the 131,256-cell disabled `ex38`
+timeout: all three release runs complete and the proof verifies, with median
+wall time 40.716 seconds and 4.772 seconds spent merging. Native medians are
+26.500 and 7.451 seconds respectively. The two smaller disabled cases retain
+verified raw outputs but different order-dependent merged counts, so that
+separate compatibility report still fails its strict count-parity criterion.
+[The merge note](reference/INDEXED_COMPATIBILITY_MERGE.md) records every limit,
+hash and policy difference; the M2 raw cohort above is unchanged.
+
+Two subsequent 600-second positive-Gluza30 release trials remain incomplete,
+including one with retained rational samples. The ordinary traversal visited
+15.2 million nodes with only 302 resultant cache misses; a separate five-variable
+base trial exceeded 8 GiB after producing more than 2.5 million tentative cells.
+[The release diagnosis](reference/GLUZA30_RELEASE_TRAVERSAL.md) records these
+failures and the profile, without treating counters as completed coverage.
+
 The full mathematical-identity and evidence audit currently certifies **302 of 331 distinct problems**, including **all 124/124 fixed ZZ problems**, 97/124 symbolic ZZ, and 81/83 core problems. All 331 were attempted; 408 retained attempts and three supplemental verification records have no hash, domain, variable-group, or explicit-order discrepancies. The 29 unresolved problems remain incomplete. Report `artifacts/completion-aggregate-302.json` has SHA-256 `0e993a4cd892dd1ef1b3bdc35874d79dd2782062ed9ef492d24ee17c2910f7dc`. Earlier aggregate reports remain unchanged.
 
 The two newest completions are the original negative **Gluza30** and **Gluza33** problems, with **one and three verified cells** respectively. The optional `linear_negative` engine independently proves positive guide coefficients and exact nonnegative square identities, then restores every fiber with a continuous largest-real-root lower boundary. Gluza30 reduces through four axes to a free positive orthant; Gluza33 reduces through two massless axes to a 21-term quadratic cone. Root coincidences at zero use the dedicated proof rule and do not weaken the ordinary CAD verifier. Cold debug public solve/verification times were 0.265087/0.021131 seconds and 0.348312/0.041349 seconds; peak solve RSS was 20,908/23,208 KiB. These single trials include startup and export, not earlier guide-discovery research. Both full original identities and legal orders passed the aggregate audit. See [Gluza30 evidence](reference/GLUZA30_RAYLEIGH_REDUCTION.md) and [Gluza33 evidence](reference/GLUZA33_RAYLEIGH_REDUCTION.md). Their positive-sign counterparts remain unresolved.
