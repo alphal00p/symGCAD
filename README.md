@@ -6,6 +6,8 @@ The audited checkpoint solves **303/331 distinct original problems**, including 
 
 All 28 unresolved problems timed out in their first one-hour slow campaign. The [benchmark](benchmark/benchmark.pdf) records those censored times and memory measurements; targeted continuations preserve completed algebra without claiming new coverage.
 
+The subsequent [positive Gluza33 continuation](reference/GLUZA33_AFFINE_ORDER_CONTINUATION.md) also timed out at two hours with a 50 GiB allowance and 3.81 GiB reported peak RSS. Its ground-truth decomposition remains unresolved.
+
 ## Quick start
 
 Requires Git and Nix with flakes enabled. External dependencies are fetched at exact revisions; they are not included in this repository.
@@ -92,6 +94,8 @@ New reference comparisons are capped at `max(300 s, 3 × symGCAD solve time)`, w
 Later certified reductions complete fixed A381/Ax381 with 836 cells each, negative Gluza30/Gluza33 with one/three cells, and positive Gluza30 with 80,980 cells. Discovery costs, verification costs, failed attempts and exact original-domain checks are recorded separately.
 
 The quadratic ladder also gives five verified cells for the crossed A446 chamber `t < 4`, retaining the original interior `F=0` sheet. Its [conditional proof and supplemental check](reference/QUADRATIC_LADDER_VALIDATION.md) leave the unrestricted symbolic problem unresolved.
+
+Current physics-guided research studies [CFF-informed kinematic chambers](reference/CFF_KINEMATIC_PROJECTION.md), [positive-root critical maps](reference/RATIONAL_KINEMATIC_PAIR_MAP.md), and [two-point matrix pencils](reference/TWO_POINT_MATRIX_PENCIL.md). Exact identity replays support these investigations; full projection and boundary-ordering obligations remain.
 
 A [supplemental seeded sanity check](reference/SUPPLEMENTAL_SANITY.md) sampled two fresh interior points in each fixed A446 cell: all 8 cells, 16 exact F evaluations and 112 original-constraint checks passed. This check recomputes boundaries at each new prefix and is excluded from benchmark timings; it does not replace the coverage proof.
 
