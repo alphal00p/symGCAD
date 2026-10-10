@@ -44,19 +44,41 @@ pub struct PositiveIntervalWitness {
     pub coefficient_signs: Vec<i8>,
 }
 
-/// A separate stock from global saturated witnesses: at most two interval
-/// templates plus two global templates per polynomial. Both are permanent
+/// A separate stock from global saturated witnesses: a bounded interval
+/// budget (default two) plus two global templates per polynomial. Both are permanent
 /// for this Builder, including failed tentative stacks. Downward-variable
 /// induction therefore still gives a finite set of possible projection guards.
-#[derive(Default)]
 pub(super) struct WitnessStock {
+    limit: usize,
     entries: HashMap<usize, Vec<Vec<PositiveInterval>>>,
     admitted: usize,
     reused: usize,
     budget_fallbacks: usize,
 }
 
+impl Default for WitnessStock {
+    fn default() -> Self {
+        Self {
+            limit: 2,
+            entries: HashMap::new(),
+            admitted: 0,
+            reused: 0,
+            budget_fallbacks: 0,
+        }
+    }
+}
+
 impl WitnessStock {
+    pub(super) fn new(limit: usize) -> Result<Self> {
+        ensure!(
+            (2..=8).contains(&limit),
+            "interval template limit must be between two and eight"
+        );
+        Ok(Self {
+            limit,
+            ..Self::default()
+        })
+    }
     pub(super) fn attempt(
         &mut self,
         id: usize,
@@ -75,7 +97,7 @@ impl WitnessStock {
                 return Ok(Some(proof));
             }
         }
-        if templates.len() >= 2 {
+        if templates.len() >= self.limit {
             self.budget_fallbacks += 1;
             return Ok(None);
         }
@@ -92,6 +114,7 @@ impl WitnessStock {
 
     pub(super) fn report(&self, report: &mut super::LocalReport) {
         report.descartes_interval_templates = self.admitted;
+        report.descartes_interval_template_limit = self.limit;
         report.descartes_interval_template_reuses = self.reused;
         report.descartes_interval_budget_fallbacks = self.budget_fallbacks;
     }
@@ -599,6 +622,48 @@ mod tests {
         assert!(fallback);
         assert_eq!(stock.entries[&0].len(), 2);
         assert!(stock.budget_fallbacks > 0);
+    }
+
+    #[test]
+    fn enlarged_stock_extends_but_never_replenishes_permanent_admissions() {
+        let (a, p) = setup("(z^2-2)^2-s");
+        let mut small = WitnessStock::new(2).unwrap();
+        let mut large = WitnessStock::new(8).unwrap();
+        let mut s = Rational::from((1, 2));
+        let mut extra_success = false;
+        for _ in 0..40 {
+            let small_proof = small.attempt(0, &a, &p, 1, &[s.clone()]).unwrap();
+            let large_proof = large.attempt(0, &a, &p, 1, &[s.clone()]).unwrap();
+            extra_success |= small_proof.is_none() && large_proof.is_some();
+            if let Some((case, guards)) = large_proof {
+                assert_eq!(guards, verify_witness(&p, 1, &[s.clone()], &case).unwrap());
+            }
+            if large.budget_fallbacks > 0 {
+                break;
+            }
+            s /= Rational::from(16);
+        }
+        assert!(extra_success);
+        assert_eq!(small.entries[&0].len(), 2);
+        assert_eq!(large.entries[&0].len(), 8);
+        assert_eq!(large.admitted, 8);
+        assert!(large.budget_fallbacks > 0);
+        let retained = large.entries[&0].clone();
+        for _ in 0..3 {
+            assert!(large.attempt(0, &a, &p, 1, &[s.clone()]).unwrap().is_none());
+        }
+        assert_eq!(large.entries[&0], retained);
+        // Old covers remain reusable after exhaustion, without replenishment.
+        assert!(
+            large
+                .attempt(0, &a, &p, 1, &[Rational::from((1, 2))])
+                .unwrap()
+                .is_some()
+        );
+        assert_eq!(large.admitted, 8);
+        assert!(large.reused > 0);
+        assert!(WitnessStock::new(1).is_err());
+        assert!(WitnessStock::new(9).is_err());
     }
 
     #[test]

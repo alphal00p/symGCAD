@@ -132,9 +132,15 @@ pub struct LocalOptions {
     #[serde(default)]
     pub descartes_witnesses: bool,
     /// Cover the positive ray with bounded rational Descartes intervals.
-    /// A separate permanent stock permits at most two covers per polynomial.
+    /// A separate permanent stock bounds covers per polynomial.
     #[serde(default)]
     pub descartes_intervals: bool,
+    /// Permanent interval templates per polynomial, from two through eight.
+    #[serde(
+        default = "two_interval_templates",
+        skip_serializing_if = "is_two_interval_templates"
+    )]
+    pub descartes_interval_template_limit: usize,
     /// At level zero isolate the complete univariate root union directly.
     /// Missing historical evidence retains ordinary local projection replay.
     #[serde(default)]
@@ -148,6 +154,12 @@ pub struct LocalOptions {
     pub subtree_cache_mib: usize,
     /// Retained cut-hint budget, clipped to 1/128 of process memory.
     pub learned_cut_cache_mib: usize,
+}
+fn two_interval_templates() -> usize {
+    2
+}
+fn is_two_interval_templates(value: &usize) -> bool {
+    *value == 2
 }
 fn one_cancellation() -> usize {
     1
@@ -172,6 +184,7 @@ impl Default for LocalOptions {
             descartes_one: true,
             descartes_witnesses: false,
             descartes_intervals: false,
+            descartes_interval_template_limit: 2,
             base_point_projection: true,
             adjacent_pairs: false,
             subtree_cache_mib: 32,
@@ -232,6 +245,7 @@ pub struct LocalReport {
     pub descartes_witness_budget_fallbacks: usize,
     pub descartes_interval_discriminants_omitted: usize,
     pub descartes_interval_templates: usize,
+    pub descartes_interval_template_limit: usize,
     pub descartes_interval_template_reuses: usize,
     pub descartes_interval_budget_fallbacks: usize,
     pub pair_separation_candidates: usize,
@@ -2362,6 +2376,10 @@ pub fn solve_local(problem: &Problem, options: &LocalOptions) -> Result<LocalSol
         "positive pair cancellations must be one or two"
     );
     ensure!(
+        (2..=8).contains(&options.descartes_interval_template_limit),
+        "interval template limit must be between two and eight"
+    );
+    ensure!(
         options.subtree_cache_mib <= 65536 && options.learned_cut_cache_mib <= 65536,
         "local cache budget exceeds memory ceiling"
     );
@@ -2455,7 +2473,9 @@ pub fn solve_local(problem: &Problem, options: &LocalOptions) -> Result<LocalSol
         ),
         hint_archive: hint_archive::HintArchive::new(problem, &normalized, options, started),
         descartes_stock: descartes::WitnessStock::default(),
-        interval_stock: interval_descartes::WitnessStock::default(),
+        interval_stock: interval_descartes::WitnessStock::new(
+            options.descartes_interval_template_limit,
+        )?,
         pair_witness_stock: pair_witnesses::WitnessStock::default(),
         bezout_registry,
     };
@@ -2978,6 +2998,10 @@ pub fn verify_local_parts(
     ensure!(
         (1..=2).contains(&options.positive_pair_cancellations),
         "positive pair cancellations must be one or two"
+    );
+    ensure!(
+        (2..=8).contains(&options.descartes_interval_template_limit),
+        "interval template limit must be between two and eight"
     );
     ensure!(solution.schema_version == 1, "unsupported output schema");
     ensure!(

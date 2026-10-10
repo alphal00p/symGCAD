@@ -88,6 +88,9 @@ pub struct SolverOptions {
     /// Exact finite rational interval covers with zero/one Descartes variation.
     #[serde(skip_serializing_if = "is_false")]
     pub local_descartes_intervals: bool,
+    /// Lifetime interval-template stock per polynomial (two through eight).
+    #[serde(skip_serializing_if = "is_two")]
+    pub local_descartes_interval_template_limit: usize,
     /// Separate positive roots of two delineable polynomials with exact
     /// rational-section guards, retaining resultant fallback.
     #[serde(skip_serializing_if = "is_false")]
@@ -146,6 +149,7 @@ impl Default for SolverOptions {
             local_descartes_one: true,
             local_descartes_witnesses: false,
             local_descartes_intervals: false,
+            local_descartes_interval_template_limit: 2,
             local_positive_pair_witnesses: false,
             local_strict_bezout_hints: Vec::new(),
             local_base_point_projection: true,
@@ -208,6 +212,10 @@ impl Problem {
         ensure!(
             (1..=2).contains(&self.solver.local_pair_cancellations),
             "local_pair_cancellations must be one or two"
+        );
+        ensure!(
+            (2..=8).contains(&self.solver.local_descartes_interval_template_limit),
+            "local_descartes_interval_template_limit must be between two and eight"
         );
         let names: BTreeSet<_> = self.variables.iter().collect();
         ensure!(names.len() == self.variables.len(), "duplicate variables");

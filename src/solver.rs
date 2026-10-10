@@ -611,6 +611,9 @@ fn solve_impl(problem: &Problem) -> Result<SolveResult> {
                 descartes_one: problem.solver.local_descartes_one,
                 descartes_witnesses: problem.solver.local_descartes_witnesses,
                 descartes_intervals: problem.solver.local_descartes_intervals,
+                descartes_interval_template_limit: problem
+                    .solver
+                    .local_descartes_interval_template_limit,
                 positive_pair_witnesses: problem.solver.local_positive_pair_witnesses,
                 strict_bezout: !problem.solver.local_strict_bezout_hints.is_empty(),
                 base_point_projection: problem.solver.local_base_point_projection,

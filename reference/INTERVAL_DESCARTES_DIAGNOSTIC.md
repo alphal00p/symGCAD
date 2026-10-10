@@ -29,15 +29,33 @@ zero is an obstruction, not an omitted guard. Structural zero coefficients
 are permitted. Exact sample isolation is used for discovery and a consistency
 check; the zero/one interval theorem supplies the lower bounds independently.
 
-This is not a production certificate. Before integrating it, the producer and
-checker would need complete interval/sign evidence, exact reconstruction of
-all coefficient guards, positive ordinals for original boundaries, and finite
-template admission per canonical polynomial. The same two-template lifetime
-stock used by global witnesses can bound new guards: never replenish slots
-after a failed speculative stack or cache eviction, and retain the ordinary
-discriminant when no stored template works. Supplied templates must be checked
-directly rather than rediscovered at a new sample. More ancestor guards may
-increase cell counts and refinement work even when their algebra is cheap.
+This rule is now implemented in production under the opt-in
+`solver.local_descartes_intervals` option. The producer and independent checker
+carry complete interval/sign evidence, reconstruct all coefficient guards, and
+export positive ordinals for original polynomial boundaries. The separate
+interval-template stock admits at most two covers per canonical polynomial by
+default. `solver.local_descartes_interval_template_limit` can opt into a fixed
+limit from two through eight; the chosen limit is recorded in local evidence
+and progress reports. Missing historical options retain two. Admissions are
+permanent even when a speculative stack later fails;
+cache eviction never replenishes them. The ordinary discriminant remains the
+fallback when no stored template works and the stock is exhausted. The checker
+validates supplied templates directly instead of rediscovering them at a new
+sample. More ancestor guards may increase cell counts and refinement work even
+when their algebra is cheap. The measurements below describe the original
+research diagnostic, not a whole production solve.
+
+The larger fixed limit preserves the same finiteness argument. At the highest
+axis, the input inventory is finite and each polynomial can introduce only a
+fixed finite number of coefficient/evaluation guard families. Ordinary
+fallback contributes finitely many discriminants and pair resultants. Repeat
+this argument down the variable order. No eviction, failed stack, cache hit,
+or ancestor restart resets the stock. The checker needs no admission history:
+it reconstructs the supplied cover and guards, and permits the stronger
+ordinary-discriminant proof. Durable learned-cut archives remain disabled
+when interval templates are enabled because those archives do not persist
+the lifetime admission ledger. A larger stock can increase ancestor cuts;
+it is an explicit performance experiment, not a claim of faster completion.
 
 ## Measured captures
 
@@ -100,3 +118,38 @@ captures and frozen helper/source are retained in
 | `a381-report.json` | `8e6f52c9bfb478b8df42f03aa0f868dea017a5c8c62581bc7ea4d0ddcf22165d` |
 
 No complete original decomposition or corpus completion is claimed here.
+
+## Reversed-parameter A446 follow-up
+
+The later capture `f09d4745806e20ec3490808ee1ebbc84cb4c86e34a41f8c82fa8af5a5aa820ce`
+has degree 8 and 1,127 terms. At `[t,s,x1,x2]=[-9,5,1/2,1/16]`, it has
+two distinct positive roots and four positive coefficient variations. The
+research adapter `examples/profile_interval_stock.rs` compiles the unmodified
+production interval producer and checker into a standalone bounded worker.
+With a fresh stock it accepted this exact polynomial, and independent replay
+returned the identical 41 guards (17,159 terms) in 0.1562 seconds. Its five
+intervals have variations `[0,0,0,1,1]`. Separately, checked factorization of all
+guards took 0.3116 seconds in a single diagnostic run.
+
+This establishes current applicability, not the interrupted worker's template
+history. That history was not exported. Its zero recorded interval-budget
+fallback count came from an earlier progress snapshot; it cannot establish
+that the final attempt still had a free slot. Exhaustion of the two-template
+stock is consistent with these measurements, but is not directly observed.
+
+The same adapter screened `(1+c*x)^k p(x)` with exact Symbolica arithmetic for
+all 13 dyadic values `c=2^j`, `-6<=j<=6`. None saturated the positive-root count
+through `k=24` (the degree-32 bound); a separate frozen diagnostic extended the
+same menu to `k=32` with no success. For `c=1`, the first numeric saturation
+was `k=52`. No degree-60 symbolic certificate was expanded or integrated.
+Positive multipliers preserve all positive roots and their ordinals, but
+their coefficient guards would still have to hold on the whole ancestor
+cell. These screens therefore provide no original decomposition.
+
+The exact report is retained as
+`artifacts/profile/a446-reversed-certificates-01/fresh-stock.json`
+(SHA-256 `4ff38130c81855277fada8ee57cc5a336a0e0d49de2473b884a9dd4fc24efc44`).
+The frozen adapter SHA-256 is
+`6aba79072270b88e529473cf7766fba507b2d893d6b53493c681297981e0b3a5`.
+Whole supervised diagnostic wall time was 0.2242 seconds, with 14,296 KiB
+peak RSS; these are single debug-helper measurements.
