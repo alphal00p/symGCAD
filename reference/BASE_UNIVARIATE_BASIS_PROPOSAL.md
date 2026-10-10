@@ -297,3 +297,21 @@ A377 solve including preprocessing and verification.
 Only those measurements can establish whole-solver benefit. The option
 remains default-off; this document does not authorize boundary removal or
 promotion to the default policy.
+
+### Frozen release smoke
+
+The release worker built from `9b7dd5649d2baa380c467ce05246ea21680b4b04`
+has SHA-256 `7bf9db11d4f8636ad09b57b52aaf6b87a3b61ab3a3cb61d70d9cef592c752657`.
+Compiled source hashes were checked before and after the 519-second build.
+Its build manifest is `artifacts/base-univariate-release-build-01.json`,
+SHA-256 `939511b27dd417b9b4e418fc8f912b65156a5c9e58b9caf073ef3fbb0a5e61e7`.
+
+The public CLI, with the new option enabled, solved the unrestricted
+two-coordinate split `y^2-(x-1)*(x-2)` into seven cells. A separate CLI verifier
+accepted all seven cells and four stacks. The generated first-axis guard
+remains the composite `x^2-3x+2`; both roots and all original sign boundaries
+are retained. This is an executable smoke check, outside benchmark timings.
+Evidence is in `artifacts/base-univariate-release-smoke-01/`; the result and
+verification digests are respectively
+`fa58e0fc8e3dde1db2080fb07a6be1528d893b099226c092ea05164c3bbca1a7` and
+`4eb6edaa43ee97a6377965472b7e2d39bc4e9c05861e237e4f4b7bf58091a01b`.
