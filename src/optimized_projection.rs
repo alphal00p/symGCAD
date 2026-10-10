@@ -57,7 +57,7 @@ pub struct OptimizedProjectionOptions {
     pub memory_cache_bytes: usize,
     pub max_checkpoint_bytes: usize,
     /// Opt-in exact binary segmentation for bounded pair resultants and
-    /// one-parameter discriminants after interpolation statically declines.
+    /// one- or two-parameter discriminants after interpolation statically declines.
     pub binary_resultants: bool,
     /// Include the complete normalized domain when domain certificates are
     /// enabled by the caller. The default algorithm does not use a domain.

@@ -158,7 +158,7 @@ pub fn discriminant(polynomial: &Poly, variable: usize) -> Result<Poly> {
 
 /// Opt-in exact discriminant backend. Low-degree identities are unchanged;
 /// ordinary bounded interpolation has priority. Only after its static decline
-/// may a one-parameter resultant use binary segmentation with the existing
+/// may a one- or two-parameter resultant use binary segmentation with the existing
 /// resource caps. No discovery cache or supplied polynomial is consulted.
 ///
 /// Like the ordinary library backend, individual native calls require an
@@ -188,11 +188,11 @@ pub fn discriminant_with_binary_statistics(
             None,
         ));
     }
-    // This changes the parameter-count envelope only for discriminants.
-    // General pair-resultant dispatch retains its existing two-axis envelope.
+    // Discriminants also admit one parameter; general pair-resultant dispatch
+    // keeps its existing two-parameter envelope. All size caps are shared.
     let options = crate::resultant_segmentation::Options {
         min_parameters: 1,
-        max_parameters: 1,
+        max_parameters: 2,
         ..crate::resultant_segmentation::Options::default()
     };
     let (resultant, stats) = if let Some((resultant, stats)) =

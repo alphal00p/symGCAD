@@ -35,7 +35,7 @@ pub struct SolverOptions {
     pub checkpoint_dir: Option<PathBuf>,
     pub cache_memory_mib: usize,
     /// Experimental exact binary segmentation of bounded two-parameter pairs
-    /// and one-parameter discriminants after interpolation declines. Static
+    /// and one- or two-parameter discriminants after interpolation declines. Static
     /// declines retain the ordinary exact backend.
     #[serde(skip_serializing_if = "is_false")]
     pub binary_resultants: bool,

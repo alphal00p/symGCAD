@@ -54,7 +54,7 @@ operation caches; reports separately count segmented resultants and their
 largest output-bit bound. Baseline projection and low-degree discriminant
 identities retain their existing backend.
 
-The same explicit flag also enables a narrow one-parameter discriminant path:
+The same explicit flag also enables discriminants with one or two surviving parameters:
 try existing exact interpolation first, and only after a static decline try
 segmentation for `Res(p,dp/dx)` with the unchanged size caps. The signed result
 is divided exactly by the leading coefficient and receives the conventional
@@ -65,6 +65,15 @@ operation results. Global proof replay and pair-resultant replay are unchanged.
 The [A377 discriminant diagnostic](A377_BINARY_DISCRIMINANT_DIAGNOSTIC.md)
 records the independently grid-verified input, downstream factor timeout and
 scope limitations.
+
+The two-parameter extension addresses the captured Ax318 degree-10
+discriminant described in [the continuation audit](CROSSED_DISCRIMINANT_CONTINUATION.md).
+Its 69,383,424-bit output bound fits the existing 96-million-bit ceiling;
+only the former one-parameter gate excluded it. No encoding, degree, memory
+or coefficient limit is enlarged, and all interior boundary polynomials
+retain their exact signed values. Three-parameter discriminants still use
+the ordinary backend. Actual native memory and time remain subject to
+killable worker limits rather than being inferred from the output bound.
 
 Eight focused module regressions compare exact signed rational results with
 ordinary Ducos, exercise variable maps, repeated/shared factors, centered

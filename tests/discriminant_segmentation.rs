@@ -53,6 +53,56 @@ fn repeated_factor_gives_exact_zero_without_division_artifacts() {
 }
 
 #[test]
+fn two_parameter_discriminants_retain_signed_scale_and_degree_drop_loci() {
+    let a = algebra(&["unused", "s", "x", "t", "tail"]);
+    for (n, sign) in [(9, 1), (10, -1)] {
+        let p = a
+            .parse(&format!("-2/3*((s-t)*x^{n}+(s+t+1)^10)"))
+            .unwrap();
+        let expected = a
+            .parse(&format!(
+                "({sign})*{n}^{n}*(-2/3)^{}*(s-t)^{}*(s+t+1)^{}",
+                2 * n - 2,
+                n - 1,
+                10 * (n - 1)
+            ))
+            .unwrap();
+        let (actual, stats) = discriminant_with_binary_statistics(&p, 2).unwrap();
+        let stats = stats.expect("two-parameter discriminant must reach the bounded kernel");
+        assert_eq!(stats.plan.parameters, vec![1, 3]);
+        assert!(stats.plan.output_bit_bound <= 96_000_000);
+        assert_eq!(actual, expected);
+        assert_eq!(actual, discriminant(&p, 2).unwrap());
+        assert_eq!(actual.variables(), p.variables());
+        // The formal identity retains both the vanishing leading coefficient
+        // and the repeated-root locus; neither can be cancelled from the result.
+        assert!(actual.replace(1, &1.into()).replace(3, &1.into()).is_zero());
+        assert!(actual.replace(1, &1.into()).replace(3, &(-2).into()).is_zero());
+    }
+}
+
+#[test]
+fn two_parameter_repeated_factor_keeps_exact_zero_and_full_map() {
+    let a = algebra(&["s", "x", "t", "unused"]);
+    let p = a.parse("(x^5+(s+t+1)^10)^2").unwrap();
+    let (actual, stats) = discriminant_with_binary_statistics(&p, 1).unwrap();
+    assert_eq!(stats.unwrap().plan.parameters, vec![0, 2]);
+    assert!(actual.is_zero());
+    assert_eq!(actual.variables(), p.variables());
+}
+
+#[test]
+fn three_parameter_discriminants_keep_the_ordinary_backend() {
+    let a = algebra(&["s", "t", "u", "x"]);
+    let p = a
+        .parse("(s+1)*(t+1)*(u+1)*(1+x+x^2+x^3+x^4+x^5+x^6+x^7+x^8+x^9)")
+        .unwrap();
+    let (actual, stats) = discriminant_with_binary_statistics(&p, 3).unwrap();
+    assert!(stats.is_none());
+    assert_eq!(actual, a.parse("10^8*(s+1)^16*(t+1)^16*(u+1)^16").unwrap());
+}
+
+#[test]
 fn ordinary_repeated_factor_discriminant_restores_mapless_native_zero() {
     let a = algebra(&["unused", "s", "x", "tail"]);
     // Too few terms for either optional strategy: this reaches native Ducos,
