@@ -203,3 +203,25 @@ Final evidence under `gluza33-x0-anchor-hour-01/`:
 
 The two completed cold attempts add no original coverage; the separate
 24 GiB `x3` continuation remains a live, unverified attempt.
+
+## Existing native CRT diagnostic
+
+A separate replay of the exact saved `x4` discriminant used the existing
+Symbolica CRT backend on CPU 2 with a 300-second, 4-GiB limit. It **timed out
+at 300.032155 seconds**, peak RSS **111,500 KiB**, without producing a
+candidate. The original 24-GiB solve continued untouched. Input, full variable
+map, frozen executable and launch-script hashes were rechecked after the run;
+no solver cache received research output.
+
+Native `resultant_crt` can stop either at its deterministic coefficient-bound
+threshold or after stable reconstruction and two fresh modular checks. The
+latter is Monte Carlo, and this profiler does not expose which branch or prime
+count it reaches. Even a completed output would therefore require deterministic
+validation before reuse. This censored trial establishes neither a deterministic
+CRT speedup nor its impossibility.
+
+Evidence is under `artifacts/research/gluza33-x4-discriminant-crt-01/`:
+`report.process.json` SHA-256
+`d479c267e6711bff5c9442095aa61c019462b4f502eaa57a39178cda50b7f6cf`,
+and `final-audit.json`
+`f90a485fb37def6fe4ea7703a2b602d3cb2e4ba844e16382b1024fab07212d5e`.
