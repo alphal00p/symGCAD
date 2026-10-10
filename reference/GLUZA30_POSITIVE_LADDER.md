@@ -6,6 +6,12 @@ the original coordinates. A completed reduced problem alone is not yet an
 independently verified decomposition of the original problem; the opt-in
 production wrapper below also reconstructs and checks the original fibers.
 
+The original positive Gluza30 problem has now completed and independently
+verified with **80,980 cells**, using the legal lifting order
+`[x1,x7,x2,x6,x5,x4,x0]`. The bounded search and retained unsuccessful trials
+are documented below; symbolic A446 and positive Gluza33 remain separate
+unresolved problems.
+
 The legal lifting order is
 `[x2,x6,x7,x5,x1,x4,x0]`. Write, without changing any variable,
 
@@ -170,8 +176,9 @@ exact common refinement against the baseline, all three delegated engines,
 original group/order preservation, malformed guides and domain premises,
 zero-width and zero-coefficient exclusions, cell/exception/sample/certificate
 tampering, incomplete bases, late restoration limits, and serialized replay.
-This establishes the general wrapper on the tested problems; the full
-positive Gluza 30 base remains unresolved in the bounded trials below.
+This establishes the general wrapper on the tested problems. The subsequent
+original Gluza30 proof also replays its complete delegated base and all
+80,980 restored cells independently.
 
 ## Reproduction and scope
 
@@ -237,8 +244,54 @@ Both timed out; their final elimination took 17.0/17.4 seconds. These short
 runs do not establish that the resulting finite lifting could not complete
 with a larger bound. They also do not show that merely putting coordinate
 thresholds first reduces global projection size. All five reduced problems
-above remain incomplete, and the original positive problem receives no new
-completion credit.
+above remain incomplete; they did not receive completion credit. The later
+successful search below retains all these unsuccessful observations.
+
+## Verified original problem after bounded ordering search
+
+A longer cold release search used seed zero, at most 256 rollouts, a
+300-second search cap, one CPU and 4 GiB. Its enclosing problem budget was
+1,500 seconds, so the 20% rule permitted the full search cap. It performed
+104 trials in 299.392 seconds (300.026 seconds including setup/export).
+Exactly one trial completed: order `[x1,x7,x2,x6,x5]`, with 15,389 base cells
+in 5.046 seconds. The trial was promoted to the ten-second tier; its actual
+remaining limit was 9.492 seconds. A fresh solve of that order took 4.974
+solver seconds and independently verified all 15,389 cells.
+
+The production wrapper preserves the original coordinate-constraint order
+when deriving its base. That order differs from the research preparation.
+An independent Symbolica check confirms identical ordered split polynomials,
+strict constraint multisets, coordinates and ordered groups. Nevertheless,
+local discovery is sensitive to input factor insertion order: the wrapper's
+equivalent base produced 59,536 cells, 459,310 speculative nodes and 34,830
+refinements, versus 15,389 cells, 127,187 nodes and 5,080 refinements for the
+research preparation. A fresh release solve of the actual wrapper base took
+18.924 seconds; its 59,536 cells independently verified. No smaller research
+proof was silently substituted into the original certificate.
+
+The original wrapper's first debug attempt hit its default local node cap
+and remains explicitly incomplete. A second attempt used the research caps
+of ten million nodes and one million refinements, with a 180-second solve
+budget and 4 GiB. It completed in 137.470 solver seconds and exported 80,980
+original cells. Independent verification checked all 34,251 base stacks,
+34,321 rejected branches, seven guide certificates, the exact original
+problem, every restored interval and the exceptional-set inventory.
+
+The production source is `ff22294`; its frozen debug worker has SHA-256
+`b11cec1d40d7fc45595b0f6ddbfe86017b3836f29d1862ad1f6e5c0f4e16ded5`.
+The full library/integration suite plus the two critical-geometry helper
+tests passed 467 tests across 32 targets. The public two-cell TOML example
+also independently verified.
+
+Artifact summary
+`artifacts/research/gluza-positive-ladder-original-verification-01.json`
+(SHA-256 `46bfb0df777f8ec67f2a245a09055f5956a4b8a963190d5640c4ecf4139a0cfc`)
+records original/input/proof/verification hashes and the full search report.
+These exploratory timings mix release base runs and a debug original run;
+they do not establish a matched speed ratio or a completed ordering
+ablation. The roughly 300-second discovery cost must remain included in an
+end-to-end comparison. Fresh release measurements and the original-problem
+completion ledger are recorded separately.
 
 ## Coordinate threshold chambers
 
