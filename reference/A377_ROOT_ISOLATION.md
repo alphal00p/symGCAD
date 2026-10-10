@@ -120,7 +120,7 @@ measurement, not a reusable factor sidecar. Its algebra timer does not
 separate factorization from product reconstruction. Ordinary irreducible
 factor isolation has not been measured by this control.
 
-The next useful experiment is a same-executable comparison starting from
+The follow-up below makes a same-executable comparison starting from
 the same original D: native square-free decomposition followed by exact
 reconstruction and root union, against native full factorization followed
 by the same reconstruction and union. Keep transient factors and stage
@@ -129,6 +129,74 @@ The current separate SQF and union runs should not be added into a claimed
 speedup over the release control. Until such evidence and the separate
 proof-format work exist, ordinary production factor/checker contracts remain
 unchanged; the already verified discriminant acceleration is independent.
+
+## Matched development-build follow-up
+
+The helper now has `native-squarefree-union` and `native-factor-union`
+modes. Both start from the authentic same signed D, parsed into the same
+one-variable `s` map. Neither uses a factor sidecar, predeflates a threshold,
+or reads an operation cache. Each invokes its named native decomposition,
+checks the complete signed multiplicity product, and calls the identical
+root-union path. Constants retain exact rational content and contribute no
+roots; nonconstant blocks may share roots. The input, map, factor count,
+multiplicity, degree and coefficient bounds are checked, and the external
+wall-time limit is explicitly capped at 300 seconds.
+
+One fresh sequential pair used the same frozen development executable,
+CPU10, and a 4 GiB limit per worker:
+
+| Pipeline | Process wall | Decomposition | Signed reconstruction | Root union | Peak RSS | Outcome |
+|---|---:|---:|---:|---:|---:|---|
+| Native square-free decomposition, then union | 107.719 s | 30.524 s | 2.614 s | 73.873 s | 76,968 KiB | 84 distinct roots |
+| Native full factorization, then union | 300.039 s | incomplete | not reported | not reached | 56,656 KiB | timeout |
+
+The full-factor worker's last published phase was `native_decomposition`;
+no factor list or root inventory was accepted. The square-free run again
+has 46 roots below 4, the exact root 4, and 37 above 4. Every one of its 84
+ordered intervals intersects the corresponding interval from the prior
+checked sidecar union, using exact rational endpoint comparisons. This
+checks consistency between the two completed square-free routes, **not**
+a comparison against an unavailable full-factor root inventory.
+
+These are single bounded diagnostics. The development-build timeout does
+not negate the successful 177.241-second release factorization above, and
+does not establish factorization intractability. It supplies no numerical
+speedup claim. A production decision would need an optimized matched
+comparison and the independent evidence-format work described in the
+support-basis proposal. No production proof format or default changed.
+
+Whole process wall time is the comparison metric. Named stage timers exclude
+some metadata formatting/writes; the post-parse pipeline timer and process
+wall retain that overhead. All eight helper tests passed, including the two
+native modes' exact root-set agreement with repeated roots and negative
+rational content, shared blocks, invalid maps/caps, constants, tampering,
+the 300-second limit and refusal of leftover progress paths. Independent
+read-only review found no algebraic or measurement-contract blocker.
+
+The ignored follow-up directory is
+`artifacts/research/a377-isolation-matched-01/`. Its frozen executable SHA-256
+is `313236752ae3b911d56a7cce3f87bce2ad7ff1df47d872b3f732f2b79ad40e39`,
+and source SHA-256 is
+`3e61df29f941721a94dc0e4d9e3a302fea31423c7c14a8aa0daa2754116bff54`.
+The passing eight-test log is `artifacts/a377-matched-isolation-tests-01.log`,
+SHA-256 `830148b6c9ffbd36543410805a2aeabd260d979a3d3b9ee67a4bef41a46f93df`.
+
+| Follow-up artifact | SHA-256 |
+|---|---|
+| Square-free process report | `81e60b5be9bbfb156a84c6f84db234a9d20204ee04901d10ea1c67f092906f96` |
+| Square-free worker report | `a44798fbf92875d95489a7882d637ede3b435436c69bd08cac53a251501a5a0d` |
+| Full-factor timeout report | `7bd7b39469320f92c99ee85083f5e787676ceaa134018a36a69a93edc4ddbf8c` |
+| Full-factor final progress | `d9678879715abf77fcaf175742461045983a1ffa2bf718b66e6ceaddefe7527e` |
+| Input bindings and exact interval comparison | `786575de6f73a3746087c620132075d1b4997ae9db13e330536d3f115b5dad09` |
+
+```sh
+profile_univariate_isolation discriminant.json \
+  --operand native-squarefree-union --output squarefree.json \
+  --cpu 10 --seconds 300
+profile_univariate_isolation discriminant.json \
+  --operand native-factor-union --output factor.json \
+  --cpu 10 --seconds 300
+```
 
 ## Reproduction and bindings
 
