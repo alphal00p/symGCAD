@@ -269,3 +269,35 @@ and the captured request is
 Original input/order/domain bindings and all cache tuple checksums were
 rechecked. The independently scheduled warm03 cache-budget comparison
 continues separately; warm02 adds no original completion credit.
+
+
+Warm03, with larger conditional caches, also finished with a
+**3,600.028137-second timeout**, **1,036,176 KiB peak RSS**, no result or
+verification. Both variants saved exactly the same 569 new operation keys,
+input hashes and canonical output hashes, and ended with the byte-identical
+pending `D_t` request. The larger caches reduced the last recorded speculative
+nodes from 8,086,465 to 1,435,182 and refinements from 2,227,576 to 258,885;
+subtree evictions fell from 3,617,325 to 313,047. The snapshots share prefix
+`13/3`, level one and polynomial inventory, but were written at 1,912.528444
+and 1,540.954213 seconds. These are partial progress observations, not completed
+operation timings or whole-solve speed ratios. Neither policy resolved the
+new algebraic request within the hour.
+
+Warm03's final audit is
+`3ed015b41f504d812384e6ca138b16557a0ede84ed1a81a00db6e1908aad10b6`;
+its final manifest is
+`5d5772bd88b232684e50fccb8ad93908fb8ec881ea1d41b32ceddf03fc6bb362`.
+The paired comparison is `paired-final-metadata-audit.json`,
+`297b673e5a94e92fe8294ed37160f1323eaa664e93f9f11466ed57b452d6e441`.
+
+A separate static production-plan check of that exact `D_t` request completed
+in **0.102627 seconds**, **12,672 KiB**, without computing a resultant or
+discriminant. The current 8,192-term/256-million-output-bit/512-million-input-bit
+envelope **declines** the operand: `p,p'` contain 2,857/2,789 terms and have
+elimination degrees 42/41. The frozen planner does not report which size gate
+first declined. A new release alone is therefore not demonstrated to accelerate
+this frontier. Evidence under `artifacts/research/ax318-d42-production-plan-01/`:
+`report.json` SHA-256
+`e44e8242795f44d525f794b577d03e25d5df7620cfa77cdf576eab4af8edf137`,
+`report.process.json`
+`a169d6ad0006a8538345a654a9962b512e1f9ba84adcca6e0129b73520ad79f1`.
