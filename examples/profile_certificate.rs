@@ -16,6 +16,9 @@ struct Args {
     /// Each expression is an original strict positivity constraint p > 0.
     #[arg(long)]
     constraint: Vec<String>,
+    /// Original constraint indices omitted to certify a larger domain.
+    #[arg(long)]
+    exclude_constraint: Vec<usize>,
     #[arg(long)]
     output: Option<PathBuf>,
 }
@@ -38,7 +41,7 @@ fn main() -> Result<()> {
         .iter()
         .map(|p| algebra.parse(p))
         .collect::<Result<Vec<_>>>()?;
-    let domain = derive_domain(&algebra, &constraints, &[])?;
+    let domain = derive_domain(&algebra, &constraints, &args.exclude_constraint)?;
     let mut results = Vec::new();
     for operand in operands {
         let p = algebra.parse(operand)?;
@@ -46,18 +49,31 @@ fn main() -> Result<()> {
         let certificate = certify_nonzero(&algebra, &p, &domain, &CertificateOptions::default())?;
         let seconds = started.elapsed().as_secs_f64();
         if let Some(certificate) = &certificate {
-            verify_certificate(&algebra, &p, &constraints, &[], certificate)?;
+            verify_certificate(
+                &algebra,
+                &p,
+                &constraints,
+                &args.exclude_constraint,
+                certificate,
+            )?;
         }
         results.push(json!({
             "terms": p.nterms(),
+            "polynomial": algebra.format(&p),
             "seconds": seconds,
             "certified": certificate.is_some(),
             "method": certificate.as_ref().map(|c| &c.method),
             "sign": certificate.as_ref().map(|c| c.sign),
+            "certificate": certificate,
+            "replay_with_all_constraints": certificate.as_ref().map(|c|
+                verify_certificate(&algebra, &p, &constraints, &[], c)
+                    .map(|_| "accepted".to_string())
+                    .unwrap_or_else(|error| format!("rejected: {error}"))),
         }));
     }
     let report = json!({"capture":args.capture,"capture_sha256":format!("{:x}", Sha256::digest(&bytes)),
-        "constraints":args.constraint,"domain":domain,"results":results});
+        "constraints":args.constraint,"excluded_constraints":args.exclude_constraint,
+        "domain":domain,"results":results});
     let report = serde_json::to_string_pretty(&report)? + "\n";
     if let Some(path) = args.output {
         std::fs::write(path, &report)?;
