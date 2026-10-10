@@ -1,6 +1,6 @@
 # Audit of a proposed positive-common-root projection rule for A446
 
-This is a conditional theorem and implementation audit, not an implemented projection rule or a completion claim. It concerns the `u>4,C0<0` region in [the exact quadratic ladder](A446_KINEMATIC_QUADRATIC_LADDER.md), with `x=x2`, `y=x4`, and `F=A*x8+B`. The full original problem also contains the complementary kinematic regions. The existing solver must retain its ordinary projection obligations until the missing nonvanishing premise below has an exact proof.
+This is a conditional theorem and implementation audit, not an implemented projection rule or a completion claim. It concerns the `u>4,C0<0` region in [the exact quadratic ladder](A446_KINEMATIC_QUADRATIC_LADDER.md), with `x=x2`, `y=x4`, and `F=A*x8+B`. The full original problem also contains the complementary kinematic regions. The initially proposed monotonicity premise has an exact counterexample below. A different proof of Jacobian nonvanishing remains possible, but the existing solver must retain its ordinary projection obligations until that proof exists.
 
 ## What the current evidence proves
 
@@ -30,13 +30,22 @@ M=y*(x*V_x-V)*(E_y*T-E*T_y)
 
 is strictly negative, so that `g` also decreases. If this premise holds, `s=f*g>0` makes `f,g` have the same nonzero sign. Therefore the derivative of `s` along the arc cannot vanish: it is negative when both factors are positive and positive when both are negative. Assuming both factors positive would leave half of this argument unchecked. The helper verifies the denominator-cleared identity relating this derivative to the original Jacobian `A_x*B_y-A_y*B_x`.
 
-The proposed premise is **not established** by the current diagnostic. `M` has 430 terms, with 132 positive and 298 negative coefficients; the bounded strict-sign certificate attempt for `-M` returned no certificate. Checked factorization returned one mixed-sign canonical factor. This is inconclusive, rather than a counterexample or permission to omit a discriminant.
+The initial coefficient diagnostic was inconclusive: `M` has 430 terms, with 132 positive and 298 negative coefficients; the bounded strict-sign certificate attempt for `-M` returned no certificate, and checked factorization returned one mixed-sign canonical factor. A subsequent exact rational screen **disproves the proposed premise**, including on the required region. At
+
+```text
+(x1,x3,x5,x7,x2,x4)=(3,100,1/10,10,1,1/3),
+s=9211/1260>4, u=3978697/103950>4,
+M=917488163954131/81000>0.
+```
+
+The common-root parametrization gives `A=B=0` at this point. Strict monotonicity of `E/T` implies `B(0,0)<0`, hence the displayed endpoint identity also proves `C0<0`. Thus restricting to the intended complement does not repair the monotonicity argument. The cleared Jacobian is still negative here, `-3952165941293647/8100`, while `Q=10/3>0`. All 1,303 positive-`s` sampled points had `-Q*Jacobian>0`; this finite observation is not a universal certificate. It motivates investigating a direct conditional Jacobian identity rather than treating the false `M<0` premise as a proof.
 
 Evidence under `artifacts/research/a446-filtered-jacobian-01/`:
 
 - `report.json`: SHA-256 `1eb7abc071c3bbaebb7d75ea9d8dfa05d9b84ac3cf1add8a886bf892ba7234f3`.
 - `factor.json`: SHA-256 `8a08c54e07a9936df5862ba41a6b37db6d0e77bea049a0ce0269d95dce077dbf`.
 - Frozen helper: SHA-256 `28a47afd8cf65ed64922167778c43c97519cf66003b319949880c2d52d902e88`.
+- Follow-up exact screen `sample-v2.json`: SHA-256 `07f7ffd2f1286d08bfcce2e009129a08c19e550b921f843dec9ac81b6c6efeeb`. Its counterexample and sample inventory supersede only the inconclusive sign conclusion of the initial diagnostic.
 
 ## Arc existence is a separate condition
 
