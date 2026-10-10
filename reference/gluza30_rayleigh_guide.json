@@ -1,0 +1,21 @@
+{
+  "source_fixture": "artifacts/corpus/symbolic/0330_test_gluza_ex30_order_1.toml",
+  "source_sha256": "dd771d262c1eda5ab22e4f43026c5f3c3e29c0a2a8d96e83d96dfa6d814c3830",
+  "guide": "(1)*x6*x7+(1)*x5*x7+(1)*x5*x6+(1)*x5*x6*x7+(1)*x4*x6+(1)*x4*x5+(1)*x4*x5*x6+(1)*x2*x7+(1)*x2*x6*x7+(1)*x2*x5+(1)*x2*x5*x6+(1)*x2*x4+(1)*x2*x4*x6+(1)*x1*x6+(1)*x1*x6*x7+(1)*x1*x5+(1)*x1*x5*x7+(1)*x1*x4*x6+(1)*x1*x4*x5+(1)*x1*x2+(1)*x1*x2*x7+(1)*x1*x2*x6+(1)*x1*x2*x5+(1)*x1*x2*x4+(1)*x0*x7+(1)*x0*x5+(1)*x0*x5*x7+(1)*x0*x4+(1)*x0*x4*x5+(1)*x0*x2*x7+(1)*x0*x2*x5+(1)*x0*x2*x4+(1)*x0*x1+(1)*x0*x1*x7+(1)*x0*x1*x4+(1)*x0*x1*x2",
+  "peel_order": [
+    "x0",
+    "x4",
+    "x1",
+    "x5"
+  ],
+  "lifting_order": [
+    "x2",
+    "x6",
+    "x7",
+    "x5",
+    "x1",
+    "x4",
+    "x0"
+  ],
+  "terminal": "(-1)"
+}
