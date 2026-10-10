@@ -6,6 +6,218 @@ use symgcad::domain::{
 };
 
 const PHYSICAL_LINEAR: &str = "(x3-x6)^2+(4-pp4)*x3*x6+2*(x0+x1)*(x3+x5+x6)+2*x3*x5+(2-t)*x5*x6";
+const PHYSICAL_LINEAR_X6_ONE: &str = "(x3-1)^2+(4-pp4)*x3+2*(x0+x1)*(x3+x5+1)+2*x3*x5+(2-t)*x5";
+
+#[test]
+fn affine_square_certifies_homogeneous_physical_coefficient() {
+    let (a, constraints) = setup(
+        &["pp4", "t", "x0", "x1", "x3", "x5"],
+        &["pp4", "4-pp4", "-t", "x0", "x1", "x3", "x5"],
+    );
+    let p = a.parse(PHYSICAL_LINEAR_X6_ONE).unwrap();
+    let domain = derive_domain(&a, &constraints, &[]).unwrap();
+    let disabled = CertificateOptions {
+        square_residual_candidates: 0,
+        ..Default::default()
+    };
+    assert!(
+        certify_nonzero(&a, &p, &domain, &disabled)
+            .unwrap()
+            .is_none()
+    );
+    for (p, sign) in [
+        (p.clone(), 1),
+        (
+            a.parse(&format!("-({PHYSICAL_LINEAR_X6_ONE})")).unwrap(),
+            -1,
+        ),
+    ] {
+        let c = certify_nonzero(&a, &p, &domain, &CertificateOptions::default())
+            .unwrap()
+            .unwrap();
+        assert_eq!(c.sign, sign);
+        assert_eq!(c.domain, domain);
+        let CertificateMethod::AffineSquarePlusPositiveResidual {
+            upper_variables,
+            variable,
+            weight,
+            center,
+            residual,
+        } = &c.method
+        else {
+            panic!("expected affine square proof")
+        };
+        assert_eq!(upper_variables, &[0]);
+        assert_eq!(*variable, 4);
+        assert_eq!(weight, "1");
+        assert_eq!(center, "1");
+        assert_eq!(
+            a.parse(residual).unwrap(),
+            a.parse("pp4*x3+2*(x0+x1)*(x3+x5+1)+2*x3*x5+(2+t)*x5")
+                .unwrap()
+        );
+        verify_certificate(&a, &p, &constraints, &[], &c).unwrap();
+        let decoded = serde_json::from_str(&serde_json::to_string(&c).unwrap()).unwrap();
+        verify_certificate(&a, &p, &constraints, &[], &decoded).unwrap();
+    }
+}
+
+#[test]
+fn affine_square_replay_checks_center_axis_bounds_and_identity() {
+    let (a, constraints) = setup(
+        &["pp4", "t", "x0", "x1", "x3", "x5"],
+        &["pp4", "4-pp4", "-t", "x0", "x1", "x3", "x5"],
+    );
+    let p = a.parse(PHYSICAL_LINEAR_X6_ONE).unwrap();
+    let domain = derive_domain(&a, &constraints, &[]).unwrap();
+    let c = certify_nonzero(&a, &p, &domain, &CertificateOptions::default())
+        .unwrap()
+        .unwrap();
+    let alter = |change: &dyn Fn(&mut CertificateMethod)| {
+        let mut wrong = c.clone();
+        change(&mut wrong.method);
+        assert!(verify_certificate(&a, &p, &constraints, &[], &wrong).is_err());
+    };
+    for axes in [vec![], vec![0, 0], vec![999], vec![2]] {
+        alter(&|m| {
+            if let CertificateMethod::AffineSquarePlusPositiveResidual {
+                upper_variables, ..
+            } = m
+            {
+                *upper_variables = axes.clone();
+            }
+        });
+    }
+    for index in [999, 3] {
+        alter(&|m| {
+            if let CertificateMethod::AffineSquarePlusPositiveResidual { variable, .. } = m {
+                *variable = index;
+            }
+        });
+    }
+    for value in ["0", "-1", "2"] {
+        alter(&|m| {
+            if let CertificateMethod::AffineSquarePlusPositiveResidual { weight, .. } = m {
+                *weight = value.into();
+            }
+        });
+    }
+    for value in ["0", "-1", "3/2"] {
+        alter(&|m| {
+            if let CertificateMethod::AffineSquarePlusPositiveResidual { center, .. } = m {
+                *center = value.into();
+            }
+        });
+    }
+    alter(&|m| {
+        if let CertificateMethod::AffineSquarePlusPositiveResidual { residual, .. } = m {
+            *residual = "1".into();
+        }
+    });
+    let mut missing_upper = constraints.clone();
+    missing_upper.remove(1);
+    let mut wrong = c.clone();
+    wrong.domain = derive_domain(&a, &missing_upper, &[]).unwrap();
+    assert!(verify_certificate(&a, &p, &missing_upper, &[], &wrong).is_err());
+    let mut wrong = c;
+    wrong.limits.square_residual_candidates = 0;
+    assert!(verify_certificate(&a, &p, &constraints, &[], &wrong).is_err());
+}
+
+#[test]
+fn affine_square_requires_strict_residual_and_bounded_rational_data() {
+    let (a, constraints) = setup(&["x", "z"], &[]);
+    for (expression, residual) in [("(x-1)^2", "0"), ("(x-1)^2+z^2", "z^2"), ("0", "-(x-1)^2")] {
+        let p = a.parse(expression).unwrap();
+        let c = DomainCertificate {
+            version: 1,
+            polynomial: a.format(&p),
+            domain: derive_domain(&a, &constraints, &[]).unwrap(),
+            sign: 1,
+            method: CertificateMethod::AffineSquarePlusPositiveResidual {
+                upper_variables: vec![],
+                variable: 0,
+                weight: "1".into(),
+                center: "1".into(),
+                residual: residual.into(),
+            },
+            limits: CertificateOptions::default(),
+        };
+        assert!(verify_certificate(&a, &p, &constraints, &[], &c).is_err());
+        assert!(
+            certify_nonzero(&a, &p, &c.domain, &c.limits)
+                .unwrap()
+                .is_none()
+        );
+    }
+    let (a, constraints) = setup(&["x", "z"], &["z"]);
+    let p = a.parse("(x-1)^2+z*x^2+1").unwrap();
+    let domain = derive_domain(&a, &constraints, &[]).unwrap();
+    let c = certify_nonzero(&a, &p, &domain, &CertificateOptions::default())
+        .unwrap()
+        .unwrap();
+    let enormous = a.parse("2^300").unwrap().get_constant().to_string();
+    for field in ["weight", "center"] {
+        let mut wrong = c.clone();
+        let CertificateMethod::AffineSquarePlusPositiveResidual { weight, center, .. } =
+            &mut wrong.method
+        else {
+            panic!("expected affine square proof")
+        };
+        if field == "weight" {
+            *weight = enormous.clone();
+        } else {
+            *center = enormous.clone();
+        }
+        let error = verify_certificate(&a, &p, &constraints, &[], &wrong).unwrap_err();
+        assert!(error.to_string().contains("height budget"));
+    }
+    let too_tall = a.parse("(x-2^300)^2+z*x^2+1").unwrap();
+    assert!(
+        certify_nonzero(&a, &too_tall, &domain, &CertificateOptions::default())
+            .unwrap()
+            .is_none()
+    );
+}
+
+#[test]
+fn affine_square_uses_shifted_coordinates_and_exact_rational_centers() {
+    let c = certify(&["x", "z"], &["x-2", "z"], "((x-2)-3/2)^2+z*(x-2)^2+1").unwrap();
+    let CertificateMethod::AffineSquarePlusPositiveResidual {
+        variable,
+        center,
+        residual,
+        ..
+    } = c.method
+    else {
+        panic!("expected rational affine square proof")
+    };
+    assert_eq!(variable, 0);
+    assert_eq!(center, "3/2");
+    let a = Algebra::new(&["x".into(), "z".into()]).unwrap();
+    assert_eq!(a.parse(&residual).unwrap(), a.parse("z*x^2+1").unwrap());
+}
+
+#[test]
+fn affine_square_replay_is_independent_of_discovered_weight_and_center() {
+    let (a, constraints) = setup(&["x", "z"], &["z"]);
+    let p = a.parse("x^2-x+1+z*x^2").unwrap();
+    let c = DomainCertificate {
+        version: 1,
+        polynomial: a.format(&p),
+        domain: derive_domain(&a, &constraints, &[]).unwrap(),
+        sign: 1,
+        method: CertificateMethod::AffineSquarePlusPositiveResidual {
+            upper_variables: vec![],
+            variable: 0,
+            weight: "1/2".into(),
+            center: "1".into(),
+            residual: "x^2/2+1/2+z*x^2".into(),
+        },
+        limits: CertificateOptions::default(),
+    };
+    verify_certificate(&a, &p, &constraints, &[], &c).unwrap();
+}
 
 #[test]
 fn square_residual_certifies_physical_box_with_exact_upper_orientation() {

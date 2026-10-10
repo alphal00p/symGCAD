@@ -8,7 +8,7 @@ use sha2::{Digest, Sha256};
 use std::{
     collections::{BTreeSet, VecDeque},
     fs,
-    io::Write,
+    io::{BufReader, Write},
     path::{Path, PathBuf},
     process::Command,
     sync::{Arc, Mutex},
@@ -19,7 +19,7 @@ use symgcad::{
     Problem,
     benchmark::{ProcessOutcome, run_bounded},
     ordering::cheap_seed_orders,
-    output::{SolveResult, Status},
+    output::Status,
     problem::normalize,
 };
 
@@ -140,6 +140,28 @@ struct Record {
     verified: bool,
 }
 
+/// Campaign reporting must not decode proof variants or retain all cells.
+/// A complete status only triggers the separate bounded verification worker.
+#[derive(Deserialize)]
+struct ResultSummary {
+    status: Status,
+    #[serde(default)]
+    diagnostic: Option<String>,
+    #[serde(default)]
+    statistics: Option<Value>,
+}
+
+impl ResultSummary {
+    fn cells(&self) -> Option<usize> {
+        self.statistics
+            .as_ref()?
+            .get("raw_cells")?
+            .as_u64()?
+            .try_into()
+            .ok()
+    }
+}
+
 struct Campaign {
     problem: Problem,
     executable: PathBuf,
@@ -257,9 +279,9 @@ fn run_trial(campaign: &Campaign, trial: Trial) -> Result<Record> {
     fs::create_dir_all(&capture)?;
     command.env("SYMGCAD_CAPTURE_DIR", &capture);
     let process = run_bounded(&mut command, &problem.limits)?;
-    let result: Option<SolveResult> = fs::read(&output)
+    let result: Option<ResultSummary> = fs::File::open(&output)
         .ok()
-        .and_then(|bytes| serde_json::from_slice(&bytes).ok());
+        .and_then(|file| serde_json::from_reader(BufReader::new(file)).ok());
     let progress = fs::read(&progress_path)
         .ok()
         .and_then(|bytes| serde_json::from_slice(&bytes).ok());
@@ -291,11 +313,8 @@ fn run_trial(campaign: &Campaign, trial: Trial) -> Result<Record> {
         trial,
         result_status: result.as_ref().map(|r| r.status.clone()),
         diagnostic: result.as_ref().and_then(|r| r.diagnostic.clone()),
-        cells: result.as_ref().map(|r| r.cells.len()),
-        statistics: result
-            .as_ref()
-            .map(|r| serde_json::to_value(&r.statistics))
-            .transpose()?,
+        cells: result.as_ref().and_then(ResultSummary::cells),
+        statistics: result.as_ref().and_then(|r| r.statistics.clone()),
         process,
         progress,
         verification,
@@ -306,6 +325,41 @@ fn run_trial(campaign: &Campaign, trial: Trial) -> Result<Record> {
         serde_json::to_vec_pretty(&record)?,
     )?;
     Ok(record)
+}
+
+#[cfg(test)]
+mod summary_tests {
+    use super::*;
+
+    #[test]
+    fn future_proof_variants_do_not_prevent_independent_verification() {
+        let r: ResultSummary = serde_json::from_reader(BufReader::new(
+            br#"{
+            "status":"complete_generic","statistics":{"raw_cells":7},
+            "cells":[{"future_boundary":{"new_kind":true}}],
+            "local":{"certificate":{"kind":"future_exact_theorem"}}
+        }"#
+            .as_slice(),
+        ))
+        .unwrap();
+        assert_eq!(r.status, Status::CompleteGeneric);
+        assert_eq!(r.cells(), Some(7));
+    }
+
+    #[test]
+    fn incomplete_status_and_missing_counts_are_preserved() {
+        let r: ResultSummary = serde_json::from_str(
+            r#"{
+            "status":"incomplete","diagnostic":"node limit",
+            "statistics":{},"cells":[]
+        }"#,
+        )
+        .unwrap();
+        assert_ne!(r.status, Status::CompleteGeneric);
+        assert_eq!(r.diagnostic.as_deref(), Some("node limit"));
+        assert_eq!(r.cells(), None);
+        assert!(serde_json::from_str::<ResultSummary>(r#"{"status":"unknown"}"#).is_err());
+    }
 }
 
 fn completed_levels(record: &Record) -> usize {

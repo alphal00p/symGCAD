@@ -5,6 +5,8 @@ use std::{collections::HashSet, sync::Arc};
 use anyhow::{Result, anyhow, bail, ensure};
 use symbolica::{domains::InternalOrdering, poly::factor::Factorize, prelude::*};
 
+mod sum_factorization;
+
 pub type Poly = MultivariatePolynomial<Q, u32>;
 
 /// Symbolica's dense univariate conversion indexes exponents through i32.
@@ -336,7 +338,9 @@ pub(crate) fn primitive_linear_variable(polynomial: &Poly) -> Option<usize> {
 
 /// Common factorization path for baseline, cached projection and verification.
 /// The sufficient linear certificate avoids a generic multivariate factor call;
-/// all unsupported cases retain Symbolica's complete factorization algorithm.
+/// A bounded exact sum substitution can also remove redundant active variables
+/// before the same Symbolica factorization. Unsupported cases use the original
+/// polynomial and complete factorization algorithm.
 pub(crate) fn factor_polynomial(polynomial: &Poly, check: bool) -> Result<Vec<(Poly, usize)>> {
     ensure!(
         !polynomial.is_zero(),
@@ -344,6 +348,8 @@ pub(crate) fn factor_polynomial(polynomial: &Poly, check: bool) -> Result<Vec<(P
     );
     let factorization = if primitive_linear_variable(polynomial).is_some() {
         vec![(polynomial.clone(), 1)]
+    } else if let Some(factors) = sum_factorization::try_factor(polynomial) {
+        factors
     } else {
         polynomial.factor()
     };

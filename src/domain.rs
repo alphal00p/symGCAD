@@ -109,7 +109,7 @@ pub struct CertificateOptions {
     /// Zero disables this independent portfolio member for ablations.
     #[serde(default = "default_sturm_degree")]
     pub univariate_sturm_degree: usize,
-    /// Bounded binomial-square attempts; zero preserves the older portfolio.
+    /// Bounded binomial/affine-square attempts; zero preserves the older portfolio.
     #[serde(default)]
     pub square_residual_candidates: usize,
 }
@@ -191,6 +191,15 @@ pub enum CertificateMethod {
         upper_variables: Vec<usize>,
         variables: [usize; 2],
         weight: String,
+        residual: String,
+    },
+    /// A single shifted coordinate and an exact rational constant center.
+    /// This also covers binomial squares after fixing a homogeneous anchor.
+    AffineSquarePlusPositiveResidual {
+        upper_variables: Vec<usize>,
+        variable: usize,
+        weight: String,
+        center: String,
         residual: String,
     },
     Polya {
@@ -544,6 +553,60 @@ pub fn verify_certificate(
             );
             coefficient_sign(&residual, &positive) == Some(1)
         }
+        CertificateMethod::AffineSquarePlusPositiveResidual {
+            upper_variables,
+            variable,
+            weight,
+            center,
+            residual,
+        } => {
+            ensure!(
+                certificate.limits.square_residual_candidates > 0,
+                "affine square residual certificate is disabled"
+            );
+            ensure!(
+                *variable < algebra.names.len(),
+                "invalid affine square coordinate"
+            );
+            let weight = rational(weight)?;
+            let center = rational(center)?;
+            ensure!(weight > Rational::zero(), "square weight must be positive");
+            ensure!(
+                rational_height(&weight) <= AFFINE_SQUARE_MAX_HEIGHT
+                    && rational_height(&center) <= AFFINE_SQUARE_MAX_HEIGHT,
+                "affine square rational exceeds height budget"
+            );
+            let limit = certificate.limits.max_terms.min(SQUARE_MAX_TERMS);
+            ensure!(
+                polynomial.nterms() <= limit
+                    && support(polynomial).len() <= SQUARE_MAX_VARIABLES
+                    && affine_square_coefficients_bounded(polynomial),
+                "affine square residual certificate exceeds its polynomial budget"
+            );
+            let signed = polynomial
+                .clone()
+                .mul_coeff(Rational::from(certificate.sign as i64));
+            let (shifted, positive) =
+                shift_to_positive_oriented(algebra, &signed, &domain, upper_variables, limit)?
+                    .ok_or_else(|| {
+                        anyhow::anyhow!("affine square residual transform exceeds budget")
+                    })?;
+            ensure!(
+                affine_square_coefficients_bounded(&shifted),
+                "shifted affine square polynomial exceeds height budget"
+            );
+            let square = affine_square(algebra, *variable, &weight, &center)?;
+            let residual = algebra.parse(residual)?;
+            ensure!(
+                residual.nterms() <= limit && affine_square_coefficients_bounded(&residual),
+                "affine square residual exceeds term or height budget"
+            );
+            ensure!(
+                &square + &residual == shifted,
+                "affine square residual identity does not reconstruct the polynomial"
+            );
+            coefficient_sign(&residual, &positive) == Some(1)
+        }
         CertificateMethod::Polya { order } => {
             ensure!(
                 *order > 0 && *order <= certificate.limits.polya_order,
@@ -720,6 +783,19 @@ fn shift_to_positive_oriented(
 const SQUARE_MAX_VARIABLES: usize = 16;
 const SQUARE_MAX_TERMS: usize = 128;
 const SQUARE_MAX_ORIENTATIONS: usize = 16;
+const AFFINE_SQUARE_MAX_HEIGHT: u64 = 256;
+const AFFINE_SQUARE_MAX_COEFFICIENT_HEIGHT: u64 = 512;
+
+fn rational_height(value: &Rational) -> u64 {
+    value.numerator_ref().significant_bits() + value.denominator_ref().significant_bits()
+}
+
+fn affine_square_coefficients_bounded(polynomial: &Poly) -> bool {
+    polynomial
+        .coefficients
+        .iter()
+        .all(|c| rational_height(c) <= AFFINE_SQUARE_MAX_COEFFICIENT_HEIGHT)
+}
 
 fn binomial_square(algebra: &Algebra, variables: [usize; 2], weight: &Rational) -> Result<Poly> {
     let difference = &algebra.parse(&algebra.names[variables[0]])?
@@ -727,9 +803,23 @@ fn binomial_square(algebra: &Algebra, variables: [usize; 2], weight: &Rational) 
     Ok((&difference * &difference).mul_coeff(weight.clone()))
 }
 
+fn affine_square(
+    algebra: &Algebra,
+    variable: usize,
+    weight: &Rational,
+    center: &Rational,
+) -> Result<Poly> {
+    let difference = algebra
+        .parse(&algebra.names[variable])?
+        .add_constant(-center.clone());
+    Ok((&difference * &difference).mul_coeff(weight.clone()))
+}
+
 /// Conservative discovery, separate from proof replay. Candidate weights are
 /// rational minima of two positive constant diagonal coefficients; no square
 /// roots, fitted coefficients, or general SOS search enter the certificate.
+/// Affine candidates complete one constant-coefficient diagonal square; their
+/// rational center is -b/(2a). They share the binomial candidate/work budgets.
 fn square_residual(
     algebra: &Algebra,
     polynomial: &Poly,
@@ -741,7 +831,7 @@ fn square_residual(
         return Ok(None);
     }
     let active = support(polynomial);
-    if active.len() < 2 || active.len() > SQUARE_MAX_VARIABLES {
+    if active.is_empty() || active.len() > SQUARE_MAX_VARIABLES {
         return Ok(None);
     }
     let alternatives: Vec<_> = active
@@ -810,6 +900,47 @@ fn square_residual(
                             },
                         )));
                     }
+                }
+            }
+            if !affine_square_coefficients_bounded(polynomial)
+                || !affine_square_coefficients_bounded(&signed)
+            {
+                continue;
+            }
+            for (variable, a) in diagonal {
+                let mut powers = vec![0; algebra.names.len()];
+                powers[variable] = 1;
+                let Some(b) = signed.coefficient(&powers) else {
+                    continue;
+                };
+                let center = -b / (a.clone() * Rational::from(2));
+                if rational_height(&a) > AFFINE_SQUARE_MAX_HEIGHT
+                    || rational_height(&center) > AFFINE_SQUARE_MAX_HEIGHT
+                {
+                    continue;
+                }
+                if attempts >= options.square_residual_candidates
+                    || !budget.spend(signed.nterms().saturating_add(3))
+                {
+                    return Ok(None);
+                }
+                attempts += 1;
+                let square = affine_square(algebra, variable, &a, &center)?;
+                let residual = &signed - &square;
+                if residual.nterms() <= limit
+                    && affine_square_coefficients_bounded(&residual)
+                    && coefficient_sign(&residual, &positive) == Some(1)
+                {
+                    return Ok(Some((
+                        sign,
+                        CertificateMethod::AffineSquarePlusPositiveResidual {
+                            upper_variables,
+                            variable,
+                            weight: a.to_string(),
+                            center: center.to_string(),
+                            residual: algebra.format(&residual),
+                        },
+                    )));
                 }
             }
         }

@@ -553,3 +553,13 @@ member, and omitted historical option fields deserialize to zero. The
 physical elliptic x4 coefficient supplies a concrete exact example in
 [the positivity note](reference/PHYSICAL_ELLIPTIC_POSITIVITY.md). Its full
 original decomposition remains a separate obligation.
+
+The same bounded portfolio now includes an explicit affine-square proof
+`sign*p = weight*(u_i-center)^2 + residual`. It is useful when a homogeneous
+anchor turns a variable difference into a variable minus a constant. Discovery
+tries the exact rational completing-square center from constant diagonal and
+linear coefficients, sharing the existing candidate budget; the new method
+caps weight/center heights at 256 bits and coefficient heights at 512 bits.
+Replay validates the original bound orientations, valid variable index,
+positive weight, exact identity and strict residual independently of discovery.
+The earlier binomial certificate representation and replay remain unchanged.

@@ -74,3 +74,39 @@ The combined square-residual and sign-orientation implementation passed all
 tampering, negative target selection and historical proof replay. This checks
 the implementation; completion of the original endpoint problem is still a
 separate requirement.
+
+## Homogeneous-anchor effect and affine square extension
+
+Three bounded original-problem trials under the initial binomial rule did not
+complete. The x0-anchored local-base trial performed one certified x4 peel and
+timed out after 120 seconds. The x6-anchored local and global-base trials each
+timed out after 60 seconds **without any certified peel**. Fixing x6=1 changes
+the useful square to `(x3-1)^2`, which the two-variable binomial discovery did
+not cover. Those two runs therefore do not measure the endpoint reduction.
+The third run reused completed checkpoints from the second; none is a cold,
+repeated performance benchmark. Exact inputs, captures and the correction are
+retained in `artifacts/research/physical-square-monotone-01/portfolio-analysis.json`.
+
+The typed `AffineSquarePlusPositiveResidual` certificate covers this missing
+case. In the coordinates obtained from the recorded original-bound
+orientations, it proves the exact identity
+`sign*p = weight*(u_i-center)^2 + residual`, with positive rational weight,
+rational center and a strictly positive coefficient-sign residual. The
+coordinate is an explicit valid variable index; the constant is never encoded
+as a fictitious variable. The checker reconstructs this supplied identity
+without repeating candidate discovery.
+
+Discovery completes one constant-coefficient diagonal square: if the selected
+quadratic and linear coefficients are a>0 and b, it tries weight=a and
+center=-b/(2a). Affine and binomial candidates share the existing attempt and
+work budgets. The new affine method additionally bounds weight/center rational
+height by 256 bits and polynomial/residual coefficient height by 512 bits,
+where height is the sum of numerator and denominator bit counts. Existing
+binomial evidence retains its previous meaning.
+
+For x6=1 and upper-oriented pp4, this selects weight=1 and center=1. Its exact
+residual is `u_pp4*x3 + 2*(x0+x1)*(x3+x5+1) + 2*x3*x5 + (2+u_t)*x5`,
+strictly positive on the original domain. This enables the first reduction;
+the subsequent endpoint problem still requires a completed proof. The exact
+endpoint factor identities and the suggested x3,x1,x0,x5,x4 lifting order are
+documented in [the endpoint audit](PHYSICAL_ENDPOINT_FACTORS.md).
