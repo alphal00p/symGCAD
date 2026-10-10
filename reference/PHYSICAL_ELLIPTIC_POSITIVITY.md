@@ -38,14 +38,14 @@ the current verifier requires its recorded domain to equal the independently
 derived bounds. The certificate must not silently be relabeled as a proof on
 the original box.
 
-The proposed bounded production rule instead retains the original Domain
+The bounded production rule instead retains the original Domain
 and explicitly records which available upper bounds orient the affine
 substitution. Every original-domain point maps to a positive coordinate;
 the additional lower bound need not be used in the coefficient argument.
 After that substitution, a positive rational binomial square plus an exact
 strictly positive residual certifies the requested sign. Independent replay
 must check bound availability, distinct valid indices, positive weight, the
-polynomial identity and strict residual signs. Discovery can remain a small
+polynomial identity and strict residual signs. Discovery uses a small
 portfolio of rational weights drawn from positive diagonal coefficients.
 
 ## Retained research evidence
@@ -63,6 +63,14 @@ the exact coefficient-identity result SHA-256 is
 Earlier direct original-problem local trials with anchors x0 and x1 both
 exhausted 100,000 refinements without a completed decomposition. They remain
 in `artifacts/research/physical-elliptic-structural-01`. The monotone engine's
-current strict-positive leading-coefficient convention also matters: the
-original F<0 sign filter supplies -F. Using the F monotonicity argument there
-requires checked sign orientation, not an unrecorded negation of the target.
+strict-positive leading-coefficient convention also matters: the original
+F<0 constraint normalizes to the positive target -F. Sign-filter evidence now
+records the arrangement orientation and selected sign, so it can solve the
+increasing split F and exhaustively select its negative cells. Independent
+verification reconstructs that exact identity without repeating discovery.
+
+The combined square-residual and sign-orientation implementation passed all
+330 library/integration tests, including strictness, identity, index and bound
+tampering, negative target selection and historical proof replay. This checks
+the implementation; completion of the original endpoint problem is still a
+separate requirement.

@@ -526,3 +526,30 @@ interval count, rational height, transformed coefficient count and total guard
 size are independently bounded. A completed certificate remains valid without
 reconstructing this resource history; the stock restriction governs search
 termination rather than the mathematical meaning of an individual proof.
+
+## A bounded square plus strict residual certificate
+
+Some physically positive coefficients have negative cross terms that defeat
+direct coefficient signs, while their parameter dependence prevents rational
+LDL factorization. The new domain member tries one rational-weight binomial
+square between two positive constant diagonal coefficients. It records the
+chosen sign, bound orientations, coordinate indices, positive rational weight
+and residual; it performs no unrestricted sum-of-squares search.
+
+The verified original Domain is retained. A coordinate may use its original
+upper bound through `x=upper-u`, even when a lower bound also exists. Every
+original-domain point maps to u>0, so ignoring the additional lower bound in
+the coefficient argument only enlarges the proof domain. After these exact
+affine substitutions, replay checks
+`sign*p = weight*(u_i-u_j)^2 + residual` and proves the residual strictly
+positive with the existing exact coefficient rule. An identically zero or
+merely nonnegative residual does not suffice. The checker validates the
+supplied identity independently of the discovery weight or orientation order.
+
+Discovery is capped at 16 active variables, 128 polynomial terms, 16 bound
+orientations and at most 64 candidate attempts; the fresh default is 16
+attempts. `CertificateOptions.square_residual_candidates=0` disables this
+member, and omitted historical option fields deserialize to zero. The
+physical elliptic x4 coefficient supplies a concrete exact example in
+[the positivity note](reference/PHYSICAL_ELLIPTIC_POSITIVITY.md). Its full
+original decomposition remains a separate obligation.
