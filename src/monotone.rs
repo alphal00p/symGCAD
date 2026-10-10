@@ -580,13 +580,48 @@ struct Restoration {
     coordinate_id: usize,
 }
 
+/// Solving retains cells; verification compares each deterministic leaf as it
+/// is generated. The latter never owns a second complete output cell table.
+enum RestorationCells<'a> {
+    Collect(Vec<Cell>),
+    Check {
+        expected: &'a [Cell],
+        matched: usize,
+    },
+}
+
+impl RestorationCells<'_> {
+    fn len(&self) -> usize {
+        match self {
+            Self::Collect(cells) => cells.len(),
+            Self::Check { matched, .. } => *matched,
+        }
+    }
+
+    fn push(&mut self, cell: Cell) -> Result<()> {
+        match self {
+            Self::Collect(cells) => cells.push(cell),
+            Self::Check { expected, matched } => {
+                ensure!(
+                    expected.get(*matched) == Some(&cell),
+                    "monotone branches are missing or modified"
+                );
+                *matched = matched
+                    .checked_add(1)
+                    .ok_or_else(|| anyhow!("monotone cell count overflow"))?;
+            }
+        }
+        Ok(())
+    }
+}
+
 struct Restorer<'a> {
     algebra: &'a Algebra,
     stages: &'a [Restoration],
     started: Option<Instant>,
     limits: &'a crate::Limits,
     negative_only: bool,
-    cells: Vec<Cell>,
+    cells: RestorationCells<'a>,
     stopped: Option<String>,
     stacks: usize,
 }
@@ -675,7 +710,7 @@ impl Restorer<'_> {
         Ok(vec![lower, upper])
     }
 
-    fn visit(&mut self, depth: usize, cell: Cell) -> Result<()> {
+    fn visit(&mut self, depth: usize, mut cell: Cell) -> Result<()> {
         if self.stopped.is_some() {
             return Ok(());
         }
@@ -699,7 +734,12 @@ impl Restorer<'_> {
                 cell.axes.len() == self.algebra.names.len(),
                 "incomplete reconstructed cell dimension"
             );
-            self.cells.push(cell);
+            // Intermediate target fibers retain -1 for the next monotone
+            // step; only an emitted original-problem cell has no split sign.
+            if self.negative_only {
+                cell.signs.clear();
+            }
+            self.cells.push(cell)?;
             return Ok(());
         }
         self.stacks += 1;
@@ -713,32 +753,36 @@ impl Restorer<'_> {
     }
 }
 
-fn reconstruct(
+struct Reconstruction {
+    normalized: NormalizedProblem,
+    table: Vec<String>,
+    levels: Vec<Vec<usize>>,
+    stages: Vec<Restoration>,
+}
+
+/// Shared exact metadata and restoration stages. Borrowing the already
+/// verified base avoids copying its exhaustive trace and cell table.
+fn prepare_reconstruction(
     problem: &Problem,
-    order: Vec<String>,
-    steps: Vec<MonotoneStep>,
-    mut base: SolveResult,
-    started: Option<Instant>,
-    target: Option<MonotoneTarget>,
-) -> Result<SolveResult> {
-    let normalized = normalize(problem, &order)?;
+    order: &[String],
+    steps: &[MonotoneStep],
+    base: &SolveResult,
+    negative_only: bool,
+) -> Result<Reconstruction> {
+    let normalized = normalize(problem, order)?;
     let algebra = &normalized.algebra;
-    let base_dimension = order.len() - steps.len();
+    let base_dimension = order
+        .len()
+        .checked_sub(steps.len())
+        .ok_or_else(|| anyhow!("too many monotone restoration stages"))?;
     ensure!(
-        target.is_none() || (!steps.is_empty() && base.split_polynomials.is_empty()),
+        !negative_only || (!steps.is_empty() && base.split_polynomials.is_empty()),
         "negative-target reconstruction needs at least one peel and an unsplit endpoint domain"
     );
     ensure!(
         base.order == order[..base_dimension],
         "base certificate uses an incompatible order"
     );
-    if base.status != Status::CompleteGeneric && base.projection_levels.is_empty() {
-        ensure!(
-            base.cells.is_empty(),
-            "partial cells lack projection levels"
-        );
-        base.projection_levels.resize(base_dimension, vec![]);
-    }
     ensure!(
         base.projection_levels.len() == base_dimension,
         "base projection has incorrect dimension"
@@ -787,38 +831,68 @@ fn reconstruct(
             polynomial_id,
         });
     }
+    Ok(Reconstruction {
+        normalized,
+        table,
+        levels,
+        stages,
+    })
+}
+
+fn restoration_seed(cell: &Cell, base: &SolveResult, negative_only: bool) -> Result<Cell> {
+    let mut cell = cell.clone();
+    if negative_only {
+        ensure!(
+            cell.signs.is_empty(),
+            "endpoint inequality has unexpected split signs"
+        );
+        cell.signs = vec![-1];
+    } else if base.split_polynomials.is_empty() {
+        cell.signs = vec![0];
+    }
+    Ok(cell)
+}
+
+fn reconstruct(
+    problem: &Problem,
+    order: Vec<String>,
+    steps: Vec<MonotoneStep>,
+    mut base: SolveResult,
+    started: Option<Instant>,
+    target: Option<MonotoneTarget>,
+) -> Result<SolveResult> {
+    let base_dimension = order
+        .len()
+        .checked_sub(steps.len())
+        .ok_or_else(|| anyhow!("too many monotone restoration stages"))?;
+    if base.status != Status::CompleteGeneric && base.projection_levels.is_empty() {
+        ensure!(
+            base.cells.is_empty(),
+            "partial cells lack projection levels"
+        );
+        base.projection_levels.resize(base_dimension, vec![]);
+    }
+    let data = prepare_reconstruction(problem, &order, &steps, &base, target.is_some())?;
+    let algebra = &data.normalized.algebra;
     let mut restorer = Restorer {
         algebra,
-        stages: &stages,
+        stages: &data.stages,
         started,
         limits: &problem.limits,
         negative_only: target.is_some(),
-        cells: vec![],
+        cells: RestorationCells::Collect(vec![]),
         stopped: None,
         stacks: 0,
     };
     for cell in &base.cells {
-        let mut cell = cell.clone();
-        if target.is_some() {
-            ensure!(
-                cell.signs.is_empty(),
-                "endpoint inequality has unexpected split signs"
-            );
-            cell.signs = vec![-1];
-        } else if base.split_polynomials.is_empty() {
-            cell.signs = vec![0];
-        }
-        restorer.visit(0, cell)?;
+        restorer.visit(0, restoration_seed(cell, &base, target.is_some())?)?;
         if restorer.stopped.is_some() {
             break;
         }
     }
-    let mut cells = restorer.cells;
-    if target.is_some() {
-        for cell in &mut cells {
-            cell.signs.clear();
-        }
-    }
+    let RestorationCells::Collect(cells) = restorer.cells else {
+        unreachable!("the solving restorer collects its output")
+    };
     let merged_cells = (problem.solver.merge == "aggressive").then(|| merge(&cells));
     let mut statistics = base.statistics.clone();
     statistics.raw_cells = cells.len();
@@ -832,15 +906,21 @@ fn reconstruct(
         },
         problem: problem.clone(),
         order,
-        normalized_constraints: normalized
+        normalized_constraints: data
+            .normalized
             .positives
             .iter()
             .map(|p| algebra.format(p))
             .collect(),
-        split_polynomials: normalized.split.iter().map(|p| algebra.format(p)).collect(),
-        exceptional_polynomials: (0..table.len()).collect(),
-        polynomials: table,
-        projection_levels: levels,
+        split_polynomials: data
+            .normalized
+            .split
+            .iter()
+            .map(|p| algebra.format(p))
+            .collect(),
+        exceptional_polynomials: (0..data.table.len()).collect(),
+        polynomials: data.table,
+        projection_levels: data.levels,
         cells,
         trace: None,
         statistics,
@@ -971,38 +1051,76 @@ pub fn verify_monotone(result: &SolveResult) -> Result<Verification> {
         "unexpected nested base reduction"
     );
     let base_verification = crate::verify::verify(&evidence.base)?;
-    let expected = reconstruct(
+    let data = prepare_reconstruction(
         &result.problem,
-        result.order.clone(),
-        evidence.steps.clone(),
-        (*evidence.base).clone(),
-        None,
-        evidence.target.clone(),
+        &result.order,
+        &evidence.steps,
+        &evidence.base,
+        evidence.target.is_some(),
     )?;
+    let algebra = &data.normalized.algebra;
     ensure!(
-        expected.status == Status::CompleteGeneric,
-        "monotone reconstruction is incomplete"
-    );
-    ensure!(
-        result.normalized_constraints == expected.normalized_constraints
-            && result.split_polynomials == expected.split_polynomials,
+        result.normalized_constraints
+            == data
+                .normalized
+                .positives
+                .iter()
+                .map(|p| algebra.format(p))
+                .collect::<Vec<_>>()
+            && result.split_polynomials
+                == data
+                    .normalized
+                    .split
+                    .iter()
+                    .map(|p| algebra.format(p))
+                    .collect::<Vec<_>>(),
         "original monotone problem metadata was modified"
     );
     ensure!(
-        result.polynomials == expected.polynomials
-            && result.projection_levels == expected.projection_levels,
+        result.polynomials == data.table && result.projection_levels == data.levels,
         "monotone boundary table was modified"
     );
     ensure!(
-        result.exceptional_polynomials == expected.exceptional_polynomials,
+        result
+            .exceptional_polynomials
+            .iter()
+            .copied()
+            .eq(0..data.table.len()),
         "monotone endpoint or singular seams were modified"
     );
+    let mut restorer = Restorer {
+        algebra,
+        stages: &data.stages,
+        started: None,
+        limits: &result.problem.limits,
+        negative_only: evidence.target.is_some(),
+        cells: RestorationCells::Check {
+            expected: &result.cells,
+            matched: 0,
+        },
+        stopped: None,
+        stacks: 0,
+    };
+    for cell in &evidence.base.cells {
+        restorer.visit(
+            0,
+            restoration_seed(cell, &evidence.base, evidence.target.is_some())?,
+        )?;
+        if restorer.stopped.is_some() {
+            break;
+        }
+    }
     ensure!(
-        result.cells == expected.cells,
+        restorer.stopped.is_none(),
+        "monotone reconstruction is incomplete"
+    );
+    ensure!(
+        restorer.cells.len() == result.cells.len(),
         "monotone branches are missing or modified"
     );
     ensure!(
-        result.merged_cells == expected.merged_cells,
+        result.merged_cells
+            == (result.problem.solver.merge == "aggressive").then(|| merge(&result.cells)),
         "monotone compatibility merge differs"
     );
     ensure!(
