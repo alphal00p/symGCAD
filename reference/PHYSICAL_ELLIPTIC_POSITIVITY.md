@@ -140,3 +140,44 @@ discriminant; it needs no new multi-variable square search. A scan of the
 actual retained factors found six further valid applications, four involving
 only s and pp4. This establishes concrete pruning opportunities; the original
 physical decomposition remains unresolved.
+
+## Observed quadratic-certificate effect
+
+The cold original-problem trial at production commit `3acd6aa` retained the
+same x6 anchor and order as `physical-affine-square-x6-global-04`. Two exact
+`QuadraticNoRealRoots` removals were used: C above, and
+`s^2-2*s*pp4+4*pp4`, whose discriminant in s is `4*pp4*(pp4-4)`.
+Removing these factors also prevents later obligations from being generated.
+
+| Projection stage | Prior factors / terms | New factors / terms |
+| --- | --- | --- |
+| After x1 | 24 / 161 | 20 / 91 |
+| After x3 | 66 / 606 | 37 / 192 |
+| After pp4 | 1,814 / 12,756 | 286 / 1,290 |
+| Final retained inventory | 1,159 / 8,366 | 178 / 857 |
+
+This is an exact inventory comparison, not an isolated timing ablation: the
+new worker also contains intervening arithmetic and evaluation improvements.
+The new run completed base lifting in 98.69 seconds, with 1,044,713 stacks and
+1,021,643 accepted base cells. It then exhausted its 4 GiB allocation limit at
+116.10 seconds, before emitting the original reconstructed result. Separate
+lifting progress establishes that the failure occurred after base lifting;
+the exact subsequent materialization/reconstruction step is not instrumented.
+No new original completion follows from the smaller projection or finished
+base lifting.
+
+The full records are under
+`artifacts/research/physical-quadratic-x6-global-08`, including `analysis.json`,
+the typed removals in `initial-x6-0/progress.json`, and the separate
+`lifting-progress.json`. The immutable debug worker SHA-256 is
+`463806e5636de61a66ef203d8e67bb6767a0192b56d47b8a92f6ef4f8fb9bed9`;
+the projection and lifting reports have SHA-256 values
+`3578626ccce6b2beef35f24de076d6d5f8ba7e994a7893fb6f8c1fcadca7f4dc`
+and `cf2a16e9b6c3ef7a87929fbcc53def458ac1e84336c2be12c6397630e79d40ba`.
+
+The corresponding fresh-cache local-base trial in
+`physical-quadratic-x6-local-09` also remained incomplete: it timed out at
+180.02 seconds with 544,266 speculative nodes, 48,901 refinements and 75,864
+KiB peak RSS. Thus the new certificate has a measured global projection
+benefit but has not by itself resolved local refinement growth or completed
+the original problem.
