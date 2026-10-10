@@ -242,3 +242,30 @@ capture environment were independently checked. Initial preparation took
 The previous search and warm-attempt costs remain retained. This is a
 single warm policy comparison, not a cold timing ratio or completed original
 solve; all interior boundaries and independent-verification obligations remain.
+
+
+### Terminal warm02 evidence
+
+The unchanged-cache-budget warm02 run ended at **15:29:45 UTC** with a
+**3,600.007908-second timeout**, **801,892 KiB peak RSS**, no result and no
+verification. Its final cache contains **47,120 native records**: all 46,551
+inherited records are unchanged, and 569 new completed records comprise
+466 discriminants, 102 factorizations and one resultant. Their recorded
+operation times sum to 131.883845 seconds; this is not the total solve cost.
+
+The final captured request is a discriminant in `t`, with 2,857 input terms,
+degrees `(s,t)=(67,42)` and coefficient height 812 bits in full reduced map
+`[s,t,x1,x2,x3,x4,x5]`. Its input hash is
+`6f5dbbba58cbbb1c7ee9754fa5e85c2084b2502557097fd8372e9ca84ffbb9b1`;
+its key has no completed cache record. This identifies the last published
+request, without inferring its elapsed runtime from a stale progress snapshot.
+
+Under `artifacts/research/ax318-segmentation-warm-hour-02/`, the final audit is
+`a5cd7f4f6ec53834acebbc382a1c7800ff2c6fd64f6ea3f8cea21502bd82ddb4`,
+the final manifest is
+`6f38a45ed7c4f353fbf7efdefb1c7557a4b6ddc493541ea0a744784fbf7e3291`,
+and the captured request is
+`1effe669f30fe8ed8cdc871a81c836e527adbfc701317d5f1d27fec8c4a45f83`.
+Original input/order/domain bindings and all cache tuple checksums were
+rechecked. The independently scheduled warm03 cache-budget comparison
+continues separately; warm02 adds no original completion credit.

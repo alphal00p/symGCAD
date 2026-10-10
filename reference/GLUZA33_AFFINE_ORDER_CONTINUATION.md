@@ -201,8 +201,8 @@ Final evidence under `gluza33-x0-anchor-hour-01/`:
 - `final-cache-manifest.json`: `fe3dac6ee33672e0c1eb60180257a5274b52edaa0411491f920cd2ec0d68a37d`.
 - `final-capture.json`: `162d5b9b98efeed85cadf3f375ad914fa902682a58764d927505927e66100646`.
 
-The two completed cold attempts add no original coverage; the separate
-24 GiB `x3` continuation remains a live, unverified attempt.
+The two completed cold attempts add no original coverage. The separate
+24 GiB `x3` continuation also finished incomplete, as recorded below.
 
 ## Existing native CRT diagnostic
 
@@ -225,3 +225,35 @@ Evidence is under `artifacts/research/gluza33-x4-discriminant-crt-01/`:
 `d479c267e6711bff5c9442095aa61c019462b4f502eaa57a39178cda50b7f6cf`,
 and `final-audit.json`
 `f90a485fb37def6fe4ea7703a2b602d3cb2e4ba844e16382b1024fab07212d5e`.
+
+## Terminal 24 GiB continuation and two-hour preparation
+
+The 24 GiB continuation ended at **15:30:56 UTC**, with a
+**3,600.037918-second timeout**, **3,461,012 KiB peak RSS**, no result and no
+verification. Its 4,685 completed native records (18,699,827 bytes) are all
+unchanged from the initial cache; no new completed operation was saved.
+The final captured request remains the same 2,209-term `x4` discriminant,
+with no completed record for its key. The progress snapshot is stale at
+12.542224 seconds, so it supplies no duration for that operation.
+
+Under `artifacts/research/gluza33-x5-last-warm24g-hour-03/`, the final audit is
+`67787f8a318e2e9bcef0ff1a22374cb8d1b03ea414c79925b0816e4fef5d8dee`,
+the cache manifest is
+`0293182a1e5c2ce553cb064eae47caa6bb8d50180d9b664dd770e254ca1d5b73`,
+and the captured input is
+`aab900ab332f90a1d0c9d32ec73cdd65b88d64b22a45d20e23ef77e33aa70289`.
+All original mathematical fields, map, order, native checksums, inherited
+files and executable bindings were rechecked without native algebra.
+
+The requested 50 GiB, two-hour continuation first encountered a launcher
+limit: frozen release `9773999` rejects campaign and problem deadlines above
+3,600 seconds. Attempt `gluza33-x5-last-warm50g-two-hour-04` therefore exited
+before creating any worker, result or capture. Its immutable failure audit is
+`76feb778e290f720fdfdc9e12a5984cb4b0a93fe6aab5c6399ab8ab89f1a9cf4`.
+A fresh `...-05` preparation preserves the original mathematics, order,
+anchor and proof options, copies only the 4,685 authenticated native records,
+and awaits a tested generic deadline-limit release. Its input audit is
+`df708d4cc17e52c105d7e4a705b24dceb80509cb5fb0d3d77bb0b5eef7e0b348`;
+its initial manifest is
+`48b4f573960486300c37d22904002cf265e5a3b26f9ad93111c4734a326cd936`.
+This preparation is not a completed solve or a launched two-hour attempt.
