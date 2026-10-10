@@ -57,3 +57,44 @@ the input-audit digest is
 `e92508cb71332acd6bc073b809cdde95ce976a702bb2476a1f869cf7def0cf34`.
 The launch binds the initial cache manifest, frozen build and CLI smoke
 verification. All ordinary and repeated interior boundaries remain required.
+
+## Final continuation audit
+
+The continuation ended with a timeout after **3600.023400 seconds**, at
+**695,368 KiB peak RSS**, without a result or verification file. The final
+cache contains **46,551 completed records** (396,657,035 bytes). All 38,713
+inherited files are byte-identical; the **7,838 new records** comprise 7,331
+factorizations, 466 resultants and 41 discriminants. Their recorded operation
+times sum to 1462.268914 seconds, excluding other solver work. The largest
+new completed factorizations took 275.169, 241.462 and 209.298 seconds; a
+completed `t`-resultant took 183.280 seconds. These are retained-work
+measurements, not solved-case timings or paired speed ratios.
+
+The final incomplete capture identifies `Disc_x1(p)`, with **572 terms**,
+degrees **`(s,t,x1)=(9,10,10)`**, and 106-bit coefficients in the full map
+`[s,t,x1,x2,x3,x4,x5]`. Its operand hash is
+`55cf751856d1a05a1c734293b24d75d6188bb835c0c02c607117824cc9e60caa`.
+No completed record exists for that request. The capture identifies the last
+published operation; it does not measure how long that operation ran.
+
+This is a concrete next diagnostic target. It has **two surviving parameters**,
+so the current one-parameter discriminant segmentation gate declines it.
+First-axis support-basis mode cannot replace a discriminant at lifting axis
+`x1`. A bounded comparison of exact strategies on this captured operand would
+therefore be more informative than another unchanged one-hour solve. No such
+comparison or new solve was launched by this audit, and no interior boundary
+may be omitted on the strength of these timings.
+
+The final audit rechecked original mathematical fields, legal order and
+homogeneous anchor, prepared/trial options, frozen executable hashes, every
+complete native tuple key, output/multiplicity checksum and inherited file
+hash. This is provenance validation, not independent algebraic replay of the
+cache. Evidence under the same campaign directory is:
+
+- `final-audit.json`: `31a1810a214200eb2ab5f5aa2b60bbc5909d54d89b7b83e58584e64422e87c62`.
+- `final-cache-manifest.json`: `0508158c0ae0613e60267deeedd1f708d7609a6e791a87608b70676fb822f9b0`.
+- `final-capture.json`: `42c98491b8bce9e98028ace6e2947908e828696b8cb3f87627813437cdfa600e`.
+- `results/ledger.json`: `cd783c7b49e66d90654267628e0304a2ff1cd44033079913c58770fcb2507224`.
+
+No research output was inserted and no original completion credit was added.
+Verified coverage remains **303 / 331**.

@@ -389,3 +389,37 @@ The preparation retains a corrected metadata assertion that initially
 confused the capture file digest with its distinct operand-array digest;
 that failed check launched no worker. No production envelope or cache
 contents were changed by these research runs.
+
+### Fourth-continuation outcome
+
+The first original-problem run with typed first-axis support bases ended after
+**3600.029138 seconds**, at **792,584 KiB peak RSS**, with no result or
+verification file. Its final cache has **2,056 completed records**
+(194,141,514 bytes): all 2,048 inherited files remain byte-identical, and eight
+new discriminants were retained. Their recorded operation time totals
+356.207048 seconds, dominated by one `t`-discriminant at 356.142056 seconds
+(input hash `5b861c651da97a5c6ca859ceba31834ac30a1e8de2c491fd85e5ba1924650b83`).
+These operation timings exclude all other solver work.
+
+The last incomplete capture is byte-identical to warm03's degree-32
+`t`-discriminant: 2,502 terms, degrees `(s,t)=(84,32)`, 691-bit coefficients,
+operand hash
+`99f94af85a41a5dd07ae6f18f51b78b7b041d3c5ed47007e8179107f320b2de7`.
+No completed native cache record exists for that request. This run does not
+establish a completed-solve benefit or regression for the support-basis mode;
+the same upstream algebra obligation remains pending. The separately
+[grid-verified discriminant](A377_D32_GRID_VERIFICATION.md) remains research
+evidence and was not inserted into this cache.
+
+The metadata-only final audit rechecked the original mathematics, order,
+anchor, trial options, frozen executable, every native tuple key and output
+checksum, and all inherited hashes. It did not repeat native algebra.
+Evidence in `artifacts/research/a377-segmentation-warm-hour-04/` is:
+
+- `final-audit.json`: `1c48d084d4fa368b0322c487d8096600af0ce73005ae93991791c3d505a83953`.
+- `final-cache-manifest.json`: `7387502aab2db9298019ef9c452761b9e627bae4dde0251db1114df1fd492c59`.
+- `final-capture.json`: `bd8bb1416f3154a312f1849dad4a9ceba0f41761f1ac9bfcbd1c36af14ef0d75`.
+- `results/ledger.json`: `4a1b9700f88226146731ffbd9427a028c5ffd71eb3f56c22725c1ec352b3193b`.
+
+All completed work is preserved. No new solve was launched by this audit;
+original verified coverage remains **303 / 331**.
