@@ -72,3 +72,38 @@ completed original problem.
 Artifacts: `artifacts/hard-campaigns/a446-quadratic-integer-release-01/`.
 The `initial-x5-0/record.json` SHA256 is
 `d2d3b51a2c281ec40ddafce20bc30d8470aba96cc59cb9e410e829eaa8c154a8`.
+
+## Longer fixed A381 and remaining symbolic screening
+
+The same frozen `3acd6aa` release also failed to complete fixed A381 within a
+30-minute solve limit. It retained the `x5` anchor and order above, all three
+witness modes, adjacency, one pair cancellation, no sibling batching, and the
+existing exact operation checkpoint directory. It used CPU 4, an 8-GiB memory
+limit, 128/32-MiB subtree/learned-cut budgets, and no operand capture. The worker
+timed out at **1800.066 seconds**, with 1756.873 user and 7.965 system CPU
+seconds and peak RSS **541,164 KiB**. The last snapshot at 1799.560 seconds
+contains 17,330,200 speculative nodes, 2,352,212 refinements, and 5,129,504 cut
+additions, at level 2 and prefix `[1/7,2731/4096]`. These are traversal counts,
+not a completed cell inventory. The bounded campaign preserved its operation
+checkpoints but produced no proof. This failure motivates the separately
+certified [conditional quadratic reductions](CONDITIONAL_QUADRATIC_PEEL.md).
+
+The record is
+`artifacts/hard-campaigns/a381-quadratic-integer-long-01/initial-x5-0/record.json`,
+SHA256 `437792fa32a192cffb3e13919bdb00cf236912ea360a9f3a06655c5c75218fea`.
+
+A separate screen retried all **26 unresolved symbolic ZZ originals other
+than A446** with the same release, their unchanged mathematical inputs and
+group/order policies, all three witness modes, adjacency, one pair
+cancellation, and no sibling batching. Every case timed out at 60 seconds;
+the full campaign took **1560.780 seconds**, on CPU 3 with one worker and a
+4-GiB limit. No additional original was solved or verified. The initial cache
+was a private copy of 32,161 exact checkpoint files from the previous symbolic
+screen; its manifest SHA256 is
+`8ec6100a97b2d9fe197041e7355637a1042009c1ceafbae812b0cee2153c278e`.
+This is a completion retry, not a matched timing comparison.
+
+The inputs, preparation metadata, seed manifest, individual outcomes and
+progress records remain under `artifacts/symbolic-quadratic-integer-release-01/`.
+Its `results/ledger.json` SHA256 is
+`d099bf109c8568ff7c36c1afa0a013d2ba845079f3de774ef4cb64df8bc81f5a`.
