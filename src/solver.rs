@@ -19,6 +19,9 @@ use std::{
 };
 use symbolica::prelude::*;
 
+mod merging;
+pub use merging::merge;
+
 pub fn selected_order(problem: &Problem) -> Result<Vec<String>> {
     if problem.solver.engine == "linear_negative" {
         return crate::linear_negative::selected_order(problem);
@@ -748,62 +751,4 @@ mod algebra_stop_tests {
         let ordinary = anyhow::anyhow!("resultant interpolation stopped: image cap");
         assert!(classify_solve_result(&problem, Err(ordinary)).is_err());
     }
-}
-
-fn same_boundary(a: &Option<RootBound>, b: &Option<RootBound>) -> bool {
-    match (a, b) {
-        (None, None) => true,
-        (Some(a), Some(b)) => {
-            a.polynomial == b.polynomial && a.index == b.index && a.index_domain == b.index_domain
-        }
-        _ => false,
-    }
-}
-/// Compatibility only: seams remain recoverable from raw cells and the trace.
-pub fn merge(raw: &[Cell]) -> Vec<Cell> {
-    let mut cells = raw.to_vec();
-    loop {
-        let mut found = None;
-        'pairs: for i in 0..cells.len() {
-            for j in i + 1..cells.len() {
-                if cells[i].signs != cells[j].signs {
-                    continue;
-                }
-                for k in 0..cells[i].axes.len() {
-                    if (0..cells[i].axes.len()).any(|axis| {
-                        axis != k
-                            && (!same_boundary(
-                                &cells[i].axes[axis].lower,
-                                &cells[j].axes[axis].lower,
-                            ) || !same_boundary(
-                                &cells[i].axes[axis].upper,
-                                &cells[j].axes[axis].upper,
-                            ))
-                    }) {
-                        continue;
-                    }
-                    let a = &cells[i].axes[k];
-                    let b = &cells[j].axes[k];
-                    if a.upper.is_some() && same_boundary(&a.upper, &b.lower) {
-                        found = Some((i, j, k, true));
-                        break 'pairs;
-                    }
-                    if b.upper.is_some() && same_boundary(&b.upper, &a.lower) {
-                        found = Some((i, j, k, false));
-                        break 'pairs;
-                    }
-                }
-            }
-        }
-        let Some((i, j, k, forward)) = found else {
-            break;
-        };
-        if forward {
-            cells[i].axes[k].upper = cells[j].axes[k].upper.clone();
-        } else {
-            cells[i].axes[k].lower = cells[j].axes[k].lower.clone();
-        }
-        cells.remove(j);
-    }
-    cells
 }
