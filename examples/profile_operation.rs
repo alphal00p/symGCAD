@@ -1,5 +1,5 @@
 //! Replay captured algebra with existing Symbolica algorithms. Run each trial
-//! under an external timeout and memory limit; this tool changes no backend.
+//! with --seconds for a killable, memory-limited worker; this changes no backend.
 use anyhow::{Result, ensure};
 use clap::{Parser, ValueEnum};
 use serde_json::json;
@@ -8,6 +8,7 @@ use std::{
     fs::File,
     io::{BufWriter, Write},
     path::PathBuf,
+    process::Command,
     time::Instant,
 };
 use symbolica::{poly::factor::Factorize, prelude::*};
@@ -89,6 +90,9 @@ struct Args {
     /// Existing Symbolica integer-factorization start policy, in this process only.
     #[arg(long, value_enum, default_value = "auto")]
     factor_start: FactorStart,
+    /// Profile x^degree p(1/x), whose discriminant equals p's exactly.
+    #[arg(long)]
+    reverse_variable: bool,
     /// Exact algebra-only reduction when p depends on two variables through their sum.
     #[arg(long, value_delimiter = ',')]
     collapse_sum: Vec<String>,
@@ -108,6 +112,59 @@ struct Args {
     /// Certify positive-root counts and inspect (1+x)^k, k=0..16, at the prefix.
     #[arg(long, requires = "inspect_only")]
     positive_root_diagnostics: bool,
+    /// Bound the whole operation in a killable worker, writing a process sidecar.
+    #[arg(long, requires = "output")]
+    seconds: Option<f64>,
+    #[arg(long, default_value_t = 8192)]
+    memory_mib: u64,
+    #[arg(long, hide = true)]
+    worker: bool,
+}
+
+fn supervise(args: &Args, seconds: f64) -> Result<()> {
+    ensure!(
+        seconds.is_finite() && seconds > 0.0 && seconds <= 3600.0,
+        "operation deadline must be in (0, 3600] seconds"
+    );
+    ensure!(
+        args.memory_mib > 0 && args.memory_mib <= 65536,
+        "operation memory cap must be in [1, 65536] MiB"
+    );
+    let output = args.output.as_ref().expect("clap requires output");
+    let sidecar = output.with_extension("process.json");
+    ensure!(
+        !output.exists() && !sidecar.exists(),
+        "refusing to replace previous evidence"
+    );
+    if let Some(parent) = output.parent().filter(|p| !p.as_os_str().is_empty()) {
+        std::fs::create_dir_all(parent)?;
+    }
+    let executable = std::env::current_exe()?;
+    let mut command = Command::new(&executable);
+    command
+        .args(std::env::args_os().skip(1))
+        .arg("--worker")
+        .env("RAYON_NUM_THREADS", "1")
+        .env("OMP_NUM_THREADS", "1");
+    let limits = symgcad::Limits {
+        wall_time_secs: seconds,
+        memory_mib: args.memory_mib,
+        workers: 1,
+        max_cells: None,
+    };
+    let mut process = symgcad::benchmark::run_bounded(&mut command, &limits)?;
+    let result = serde_json::from_str::<serde_json::Value>(&process.stdout).ok();
+    if result.is_some() {
+        process.stdout.clear();
+    }
+    let report = json!({"schema_version":1,"capture":args.capture,
+        "capture_sha256":format!("{:x}",Sha256::digest(std::fs::read(&args.capture)?)),
+        "binary_sha256":format!("{:x}",Sha256::digest(std::fs::read(&executable)?)),
+        "limits":limits,"process":process,"result":result,
+        "verification_note":"Backend strategy profiling only. Matching canonical hashes are comparison evidence; alternative resultant outputs require independent exact validation before production reuse."});
+    std::fs::write(sidecar, serde_json::to_vec_pretty(&report)?)?;
+    println!("{}", serde_json::to_string(&report)?);
+    Ok(())
 }
 
 fn positive_root_diagnostics(
@@ -240,9 +297,57 @@ fn resultant(left: &Poly, right: &Poly, variable: usize, strategy: Strategy) -> 
     }
 }
 
+fn reverse_variable(p: &Poly, variable: usize) -> Result<Poly> {
+    ensure!(variable < p.nvars(), "reversal variable out of range");
+    let degree = p.degree(variable);
+    let mut powers = vec![0; p.nvars()];
+    powers[variable] = 1;
+    let mut axis = p.zero();
+    axis.append_monomial(Rational::one(), &powers);
+    let reverse = |polynomial: &Poly| {
+        polynomial
+            .to_univariate_polynomial_list(variable)
+            .iter()
+            .fold(polynomial.zero(), |sum, (coefficient, power)| {
+                &sum + &(coefficient * &axis.pow((degree - power) as usize))
+            })
+    };
+    let result = reverse(p);
+    ensure!(
+        result.degree(variable) == degree,
+        "reciprocal reversal requires a nonzero constant coefficient"
+    );
+    ensure!(
+        reverse(&result) == *p,
+        "reciprocal reversal reconstruction failed"
+    );
+    Ok(result)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn reciprocal_reversal_preserves_exact_discriminants_and_rejects_degree_loss() {
+        let a = Algebra::new(&["s".into(), "x".into()]).unwrap();
+        for expression in [
+            "s*x+2",
+            "s*x^2+3*x-7",
+            "2*x^3+s*x+5",
+            "x^4+s*x^2+2*x+3",
+            "x^5+2*x^3+s*x+7",
+        ] {
+            let p = a.parse(expression).unwrap();
+            let reversed = reverse_variable(&p, 1).unwrap();
+            assert_eq!(
+                symgcad::projection::discriminant(&p, 1).unwrap(),
+                symgcad::projection::discriminant(&reversed, 1).unwrap()
+            );
+            assert_eq!(reverse_variable(&reversed, 1).unwrap(), p);
+        }
+        assert!(reverse_variable(&a.parse("x*(x-1)*(x-2)").unwrap(), 1).is_err());
+    }
 
     #[test]
     fn factor_profile_checks_scalar_and_repeated_factor_reconstruction() {
@@ -327,6 +432,9 @@ mod tests {
 
 fn main() -> Result<()> {
     let args = Args::parse();
+    if let Some(seconds) = args.seconds.filter(|_| !args.worker) {
+        return supervise(&args, seconds);
+    }
     let bytes = std::fs::read(&args.capture)?;
     let capture: OperationCapture = serde_json::from_slice(&bytes)?;
     let operands = capture
@@ -342,6 +450,10 @@ fn main() -> Result<()> {
         .iter()
         .map(|p| algebra.parse(p))
         .collect::<Result<Vec<_>>>()?;
+    ensure!(
+        !args.reverse_variable || capture.operation == AlgebraOperation::Discriminant,
+        "reciprocal reversal is implemented only for discriminant captures"
+    );
     if args.inspect_only {
         let mut coefficient_signs = Vec::new();
         if !args.prefix.is_empty() || args.positive_root_diagnostics {
@@ -381,6 +493,7 @@ fn main() -> Result<()> {
             "input_hash":capture.input_hash,"input_terms":polynomials.iter().map(Poly::nterms).collect::<Vec<_>>(),
             "input_degrees":polynomials.iter().map(|p|(0..p.nvars()).map(|v|p.degree(v)).collect::<Vec<_>>()).collect::<Vec<_>>(),
             "coefficient_bits":polynomials.iter().map(|p|p.coefficients.iter().map(|c|c.numerator_ref().significant_bits().max(c.denominator_ref().significant_bits())).max().unwrap_or(0)).collect::<Vec<_>>(),
+            "coefficient_profiles":capture.variable.filter(|&v|v<algebra.names.len()).map(|v|polynomials.iter().map(|p|p.to_univariate_polynomial_list(v).iter().map(|(c,k)|json!({"power":k,"terms":c.nterms(),"degrees":(0..c.nvars()).map(|i|c.degree(i)).collect::<Vec<_>>()})).collect::<Vec<_>>()).collect::<Vec<_>>()),
             "prefix":args.prefix,"coefficient_signs":coefficient_signs,
         });
         let report = serde_json::to_string_pretty(&report)? + "\n";
@@ -467,7 +580,12 @@ fn main() -> Result<()> {
                 variable < algebra.names.len(),
                 "elimination variable out of range"
             );
-            let p = &polynomials[0];
+            let reversed = if args.reverse_variable {
+                Some(reverse_variable(&polynomials[0], variable)?)
+            } else {
+                None
+            };
+            let p = reversed.as_ref().unwrap_or(&polynomials[0]);
             let degree = p.degree(variable);
             if matches!(args.strategy, Strategy::Formula) {
                 vec![symgcad::projection::discriminant(p, variable)?]
@@ -497,6 +615,8 @@ fn main() -> Result<()> {
         "factor_start":format!("{:?}",args.factor_start),
         "factorization_enabled":args.factor_start != FactorStart::Disabled,
         "collapse_sum":args.collapse_sum,
+        "reverse_variable":args.reverse_variable,
+        "reversal_identity":args.reverse_variable.then_some("Disc_x(x^d p(1/x))=Disc_x(p); degree preserved and involution reconstructed exactly"),
         "capture_backend":capture.backend_version,"backend":LicenseManager::get_version(),
         "variable":capture.variable,"variables":algebra.names,"input_hash":capture.input_hash,
         "input_terms":polynomials.iter().map(Poly::nterms).collect::<Vec<_>>(),
