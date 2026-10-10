@@ -257,3 +257,32 @@ and awaits a tested generic deadline-limit release. Its input audit is
 its initial manifest is
 `48b4f573960486300c37d22904002cf265e5a3b26f9ad93111c4734a326cd936`.
 This preparation is not a completed solve or a launched two-hour attempt.
+
+
+The revised 50 GiB campaign **launched at 15:51:02 UTC on CPU 13**, with a
+shared **7,200-second solve and independent-verification budget**. Frozen
+release `3fa5816` includes generic cap change `94f96ef`; the default remains
+3,600 seconds, and memory/CPU limits and the shorter adaptive native-reference
+policy are unchanged. Four CLI tests, five campaign tests and seven
+benchmark/supervisor tests passed, including a 7,200-second-configured
+completion with independent verification. The fresh release smoke verified
+two same-sign cells while retaining the pure-square interior seam `x=1`.
+The logs are `artifacts/two-hour-cap-{cli,campaign,benchmark}-tests-01.log`.
+
+| Launch evidence | SHA-256 |
+| --- | --- |
+| Frozen executable | `9f74385b5b78dbe17e67d3d5a25e3810a9cd93fa818f545d621c71bc631f8453` |
+| `artifacts/two-hour-cap-release-build-01.json` | `b84de6a51d4b141a5114713466c0dd5df8f783c5755073faff35f537c47fdf5e` |
+| `artifacts/two-hour-cap-release-smoke-01/audit.json` | `343b0e4a48a59dadd084e3c8da766442261925e9cbe65bf3def28f2c0fada965` |
+| `...-05/launch.json` | `d3695fdd328c45960f3bca3caa5cb7654c54554ba827ff7c5faf7fe423013340` |
+| `...-05/actual-worker-audit.json` | `ac0dce53d1dc6d10dde67fa7a9bf73f51394fe290e28cbaaca0ca93b9219dabb` |
+
+The live audit of worker 2494149 independently checked original mathematical
+fields, every explicit solver option, order, anchor, shared checkpoint path,
+CPU affinity, 50 GiB address-space limit, 7,200-second worker deadline and
+capture propagation. All 4,685 inherited native files were rehashed before
+launch. The first published request is again the byte-identical `x4`
+discriminant capture; this is not a completed-operation timing. Gluza's
+binary-resultant and base-univariate-basis flags remain disabled, as in the
+previous run. The concurrent 12 GiB A377 continuation brings the declared
+native allocation to 62 GiB. This launch adds no completion credit.
