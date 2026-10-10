@@ -15,6 +15,11 @@ earlier reversed kinematic order, one with interval stock eight and one with
 deferred projection plus stable samples at stock two. Each has a 300-second
 solve limit, a separate 600-second verification allowance, one CPU and 8 GiB.
 They are exploratory development-build trials, not native timing comparisons.
+Both timed out without an exported result; the separately retained
+[pilot audit](LOCAL_PROJECTION_PILOT_OUTCOMES.md) records their actual progress
+and limits. The later release A414 pilot also timed out; its
+[audit](A414_DEFERRED_PILOT.md) records continued refinement with no
+completed compaction. These outcomes provide no additional original completion.
 
 ## Finding and scope
 

@@ -63,7 +63,10 @@ report is `artifacts/bench/api-fast-capped-01/report.json`, SHA-256
 The first two one-hour API attempts cover symbolic massless and symbolic
 physical elliptic ordering on CPUs 0 and 1, at 8 GiB each. They are stored in
 `artifacts/bench/api-hour-01/{massless,physical}/`; their results remain pending
-at this checkpoint. The four remaining slow API cases are still pending.
+at this checkpoint. A third one-hour attempt, `test_gluza_ex33_trivial/order/1`,
+started on CPU2 with the same frozen helper, solver, limits and reference-cap
+policy. Its records are under `artifacts/bench/api-hour-01/gluza33-trivial/`.
+The three other slow API cases are still pending.
 These workers are independent of the ongoing original-decomposition queue.
 
 | Evidence | SHA-256 |
