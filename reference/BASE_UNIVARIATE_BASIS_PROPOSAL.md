@@ -195,7 +195,14 @@ homogeneity, monotone and supervisor behavior. The log is
 `57893e9e1dcc02869edc2f43aa5fd79793fbca3750903d68e6f56b1f751e4b73`.
 Earlier compile/expectation failures are retained as separate logs.
 
-The next gates are the normal full suite and frozen worker, a captured
+The normal fast suite also passed: **553 committed tests**, plus one existing
+test from the separate A381 workstream, across 40 targets with no failures.
+Test execution took 54.58 seconds after a 3m23s development build. The log
+`artifacts/base-univariate-fast-tests-01.log` has SHA-256
+`9f9ec5ff2264d8fcf6a5176c1a70cd4bca9302a5e1d527d2f91cef0c456df28f`.
+The unrelated A381 files are not part of this change or original coverage.
+
+The next gates are a frozen worker, a captured
 production guard-basis replay with its full independent root inventory,
 and a bounded original A377 solve including preprocessing and verification.
 Only those measurements can establish whole-solver benefit. The option
