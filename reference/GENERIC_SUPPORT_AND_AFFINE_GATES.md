@@ -8,6 +8,12 @@ Automatic affine preconditioning is another generic operation-level route,
 but its sole authentic static improvement has not yet produced a faster
 complete discriminant.
 
+The subsequently authorized [SQF diagnostic](MULTIVARIATE_SQF_DIAGNOSTIC.md)
+completed: 0.006578250 seconds of native SQF and 0.000682642 seconds of exact
+signed reconstruction, producing a linear block and a 158-term degree-five
+main-variable block. This is an algebra-stage result, not a projection or
+original-case speedup. The implementation assessment below remains a proposal.
+
 ## New motivation, and what was actually observed
 
 The Gluza33 positive, `x0`-anchor campaign ended after 3600.025 seconds with
@@ -190,3 +196,88 @@ approach has simpler integration obligations than multivariate basis
 replacement, but weaker current performance evidence. The immediate cheap
 priority is the captured multivariate SQF/reconstruction gate; any production
 priority should follow complete measured costs rather than this ranking.
+
+## Concrete integration boundary after the measured SQF gate
+
+The current local architecture has several distinct contracts. A new typed
+multivariate basis must address each; changing the registry's irreducibility
+check alone is insufficient.
+
+| Existing mechanism | Required conservative extension |
+|---|---|
+| `Builder::intern` | Preserve canonical polynomial identity forever. Adding new block IDs is permitted; replacing the polynomial behind an old ID is not. |
+| Producer and checker `guard_basis` | They currently select one raw-source-to-ID set from a global support registry. A changing stack basis requires an explicit immutable version and exact signed source-to-block transport; a later GCD split cannot silently replace the expected set. |
+| `local_projection_raw` | It checks LC and discriminant before classifying roots, and computes pairs for root-bearing cuts. Either compute all block pairs initially or separately justify/replay the existing rootless classification from individual delineability. The claim "all pairs" must not describe an unchanged selectively projected path. |
+| Positive-ray and adjacent-pair paths | Initially use the ordinary all-real route with full pairs. Whole-polynomial root-count witnesses may be extendable later, but their original factor labels/ordinals cannot be copied. |
+| Guard removals and ancestor propagation | Reconstruct every generated raw guard, including contents and scalar units. Each nonzero guard required by the cell theorem must be carried by the returned obligations or an independently replayed strict nonvanishing certificate. No sampled sign is a substitute. |
+| Completed-subtree and learned-cut reuse | Current keys/requirements refer to literal cut IDs. Reuse after basis refinement requires exact obligation transport and compatible root labels; absent that proof, it is a miss. |
+| Independent registry replay | Typed blocks need separate evidence/namespace. Protected original input factors retain ordinary validation. Do not reinterpret durable irreducible-factor cache records as composite proposals. |
+
+Individual native SQF calls cannot ensure pairwise coprimality across different
+sources. For example, two valid source decompositions can both contain a proper
+factor `z-x` while grouping it with different other factors. Their resultant
+is then identically zero. A finite structural response is exact cross-GCD
+splitting, content extraction and signed product replay for the entire active
+stack snapshot. Every split must preserve the union and multiplicities; any
+cached proof that used the former snapshot retains its old meanings.
+
+A deliberately simpler first policy can abandon an overlapping proposed
+snapshot and rebuild that affected stack with ordinary factors, with a permanent
+bounded fallback decision. This is a successful mathematical applicability
+decline, not permission to retry after an algebra error, cancellation or resource
+stop. Arbitrary repeated regrouping, source-ID mutation and unbounded alternate
+basis attempts are excluded. Whether a bounded fallback policy is useful is
+unknown: frequent shared factors could make it decline most interesting stacks.
+
+Full LC/discriminant/nonzero-pair obligations are a conservative correctness
+gate over each connected lower cell. They prevent degree loss, nullification,
+multiple fiber roots and coincident sections there, without an irreducibility
+claim. Their nonzero-polynomial status over the rational function field is
+different from nonvanishing throughout a cell. Every lower guard still needs
+ordinary decomposition or exact strict certification on that cell. Structural
+zero discriminants/resultants require rebasing or decline; they cannot become
+exceptional "zero polynomials". Same-sign interior sheets remain represented.
+
+## Next research projection gate, not yet run
+
+The measured source satisfies `p=(1+x2+x7)*q`, with `deg_x7(q)=5`, lower
+degrees `[8,9]`, 158 terms and 16-bit coefficients. A generic next helper would
+consume any authenticated bounded block proposal, reconstruct the whole signed
+source, then compute **all** block LCs, nonconstant-degree discriminants and
+distinct-pair resultants. It would save every signed result and checkpoint
+each completed operation, never write a solver cache, and propagate its common
+deadline rather than start another backend after a timeout.
+
+For this two-block input there are only three potentially nonconstant outputs:
+`LC(q)`, `Disc(q)` and `Res(1+x2+x7,q)`. This observation is a consequence of
+the authenticated block degrees, not a case-name dispatch rule. The conservative
+discriminant bidegree bound is `[64,72]`; the linear/quintic resultant bound is
+`[13,9]`. All source contents and linear factors remain explicit. If all native
+results are nonzero polynomials, the report may state that these formal guards
+meet the restricted theorem's algebraic gate **on cells where they are all
+nonzero**. It must not claim that such a lower CAD or the original CAD was built.
+
+A further exact product-discriminant check is available when all block
+multiplicities are one: `Disc(f*g)=Disc(f)*Disc(g)*Res(f,g)^2`, including an
+explicit scalar factor to power `2*degree(p)-2` if present. Repeated-block
+sources instead have identically zero raw discriminant, so that check cannot
+replace their support-basis obligations. Any direct raw-discriminant comparison
+must be separately timed and bounded; it is not free verification.
+
+The first pilot should bound main-variable degree, active lower variables,
+coefficient height, dense resultant/discriminant support, output storage and
+total exact replay work before expensive operations. Such limits should be
+generic numerical budgets, not a whitelist of these degrees or this operand.
+Keep subsequent lower guards on their ordinary factoring path initially. If
+a lower guard of degree 72 in the next main variable `x1` and degree 64 in
+the surviving parameter `x2` were projected unfactored, its next univariate
+discriminant bound would be `2*(72-1)*64 = 9088`. Avoiding one
+factor call can therefore move much greater work downstream.
+
+The capture still lacks the complete contemporaneous stack of companion cuts.
+The pilot can establish an exact projection for this proposed subset only.
+Before a solver experiment, recover that stack or use an explicitly complete
+test problem, compare all required guards and sampled full-real root unions,
+and include the lower projection/factoring costs. The cheap SQF result now
+justifies this bounded next measurement; it does not yet justify production
+multivariate support bases.
