@@ -28,11 +28,70 @@ enum Strategy {
     Formula,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, ValueEnum)]
+enum FactorStart {
+    Auto,
+    Univariate,
+    Bivariate,
+    Disabled,
+}
+
+fn checked_native_factors(polynomial: &Poly) -> Result<Vec<Poly>> {
+    let factors = polynomial.factor();
+    let reconstructed = factors
+        .iter()
+        .fold(polynomial.one(), |p, (f, multiplicity)| {
+            &p * &f.pow(*multiplicity)
+        });
+    ensure!(reconstructed == *polynomial, "factor reconstruction failed");
+    Ok(factors
+        .into_iter()
+        .map(|(p, _)| p)
+        .filter(|p| !p.is_constant())
+        .collect())
+}
+
+fn collapse_sum(algebra: &Algebra, p: &Poly, names: &[String]) -> Result<(Poly, usize, Poly)> {
+    ensure!(
+        names.len() == 2 && names[0] != names[1],
+        "sum collapse needs two distinct variables"
+    );
+    let i = algebra
+        .names
+        .iter()
+        .position(|v| v == &names[0])
+        .ok_or_else(|| anyhow::anyhow!("unknown first sum variable"))?;
+    let j = algebra
+        .names
+        .iter()
+        .position(|v| v == &names[1])
+        .ok_or_else(|| anyhow::anyhow!("unknown second sum variable"))?;
+    ensure!(
+        p.degree(i) > 0 && p.derivative(i) == p.derivative(j),
+        "polynomial is not invariant under the proposed sum substitution"
+    );
+    let first = algebra.parse(&names[0])?;
+    let second = algebra.parse(&names[1])?;
+    let q = p.replace(i, &Rational::zero());
+    let inverse = &second + &first;
+    ensure!(
+        q.degree(i) == 0 && q.replace_with_poly(j, &inverse) == *p,
+        "sum collapse identity failed"
+    );
+    Ok((q, j, inverse))
+}
+
 #[derive(Parser)]
 struct Args {
     capture: PathBuf,
     #[arg(long, value_enum, default_value = "auto")]
     strategy: Strategy,
+    /// Existing Symbolica integer-factorization start policy, in this process only.
+    #[arg(long, value_enum, default_value = "auto")]
+    factor_start: FactorStart,
+    /// Exact algebra-only reduction when p depends on two variables through their sum.
+    #[arg(long, value_delimiter = ',')]
+    collapse_sum: Vec<String>,
     #[arg(long)]
     output: Option<PathBuf>,
     /// Parse and report exact operand sizes without executing the operation.
@@ -185,6 +244,37 @@ fn resultant(left: &Poly, right: &Poly, variable: usize, strategy: Strategy) -> 
 mod tests {
     use super::*;
 
+    #[test]
+    fn factor_profile_checks_scalar_and_repeated_factor_reconstruction() {
+        let algebra = Algebra::new(&["x".into(), "y".into()]).unwrap();
+        let p = algebra.parse("-3/7*(x+y)^2*(x-2)").unwrap();
+        let factors = checked_native_factors(&p).unwrap();
+        let mut actual = factors.iter().map(canonical).collect::<Vec<_>>();
+        let mut expected = vec![
+            canonical(&algebra.parse("x+y").unwrap()),
+            canonical(&algebra.parse("x-2").unwrap()),
+        ];
+        actual.sort_by_key(|p| algebra.format(p));
+        expected.sort_by_key(|p| algebra.format(p));
+        assert_eq!(actual, expected);
+    }
+
+    #[test]
+    fn sum_collapse_preserves_factorization_and_rejects_false_invariance() {
+        let a = Algebra::new(&["s".into(), "t".into(), "x".into()]).unwrap();
+        let p = a.parse("-3/7*(s+t+x)^2*(s+t-x^2)").unwrap();
+        let (q, j, inverse) = collapse_sum(&a, &p, &["s".into(), "t".into()]).unwrap();
+        assert_eq!(q, a.parse("-3/7*(t+x)^2*(t-x^2)").unwrap());
+        let mapped = checked_native_factors(&q)
+            .unwrap()
+            .into_iter()
+            .map(|f| canonical(&f.replace_with_poly(j, &inverse)))
+            .collect::<Vec<_>>();
+        assert!(mapped.contains(&canonical(&a.parse("s+t+x").unwrap())));
+        assert!(mapped.contains(&canonical(&a.parse("s+t-x^2").unwrap())));
+        assert!(collapse_sum(&a, &a.parse("s+2*t+x").unwrap(), &["s".into(), "t".into()]).is_err());
+    }
+
     fn inspect(expression: &str, prefix: &[Rational]) -> serde_json::Value {
         let names = if prefix.is_empty() {
             vec!["x".into()]
@@ -306,6 +396,14 @@ fn main() -> Result<()> {
         "formula strategy requires a discriminant capture"
     );
     let start = Instant::now();
+    ensure!(
+        args.factor_start == FactorStart::Auto || capture.operation == AlgebraOperation::Factor,
+        "factor-start policy requires a factor capture"
+    );
+    ensure!(
+        args.collapse_sum.is_empty() || capture.operation == AlgebraOperation::Factor,
+        "sum collapse requires a factor capture"
+    );
     let output = match capture.operation {
         AlgebraOperation::Factor => {
             ensure!(
@@ -314,14 +412,29 @@ fn main() -> Result<()> {
             );
             ensure!(
                 matches!(args.strategy, Strategy::Auto),
-                "factor profiling supports the existing auto strategy only"
+                "use --factor-start to select a factorization policy"
             );
-            polynomials[0]
-                .factor()
-                .into_iter()
-                .map(|(p, _)| p)
-                .filter(|p| !p.is_constant())
-                .collect::<Vec<_>>()
+            let (univariate, bivariate) = match args.factor_start {
+                FactorStart::Auto => (true, true),
+                FactorStart::Univariate => (true, false),
+                FactorStart::Bivariate => (false, true),
+                FactorStart::Disabled => (false, false),
+            };
+            symbolica::GLOBAL_SETTINGS
+                .use_univariate_factorization
+                .store(univariate, std::sync::atomic::Ordering::Relaxed);
+            symbolica::GLOBAL_SETTINGS
+                .use_bivariate_factorization
+                .store(bivariate, std::sync::atomic::Ordering::Relaxed);
+            if args.collapse_sum.is_empty() {
+                checked_native_factors(&polynomials[0])?
+            } else {
+                let (q, j, inverse) = collapse_sum(&algebra, &polynomials[0], &args.collapse_sum)?;
+                checked_native_factors(&q)?
+                    .into_iter()
+                    .map(|f| f.replace_with_poly(j, &inverse))
+                    .collect()
+            }
         }
         AlgebraOperation::Resultant => {
             ensure!(
@@ -381,6 +494,9 @@ fn main() -> Result<()> {
     let report = json!({
         "schema_version":1,"capture":args.capture,"capture_sha256":format!("{:x}",Sha256::digest(&bytes)),
         "operation":capture.operation,"strategy":format!("{:?}",args.strategy),
+        "factor_start":format!("{:?}",args.factor_start),
+        "factorization_enabled":args.factor_start != FactorStart::Disabled,
+        "collapse_sum":args.collapse_sum,
         "capture_backend":capture.backend_version,"backend":LicenseManager::get_version(),
         "variable":capture.variable,"variables":algebra.names,"input_hash":capture.input_hash,
         "input_terms":polynomials.iter().map(Poly::nterms).collect::<Vec<_>>(),
