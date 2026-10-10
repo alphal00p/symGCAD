@@ -296,3 +296,37 @@ strategy on that same degree-32 operand also timed out (60.034019 seconds,
 not establish that the strategy cannot finish; it provides no measured reason
 to change the production dispatch. Evidence is retained in
 `artifacts/research/a377-degree32-native-strategies-01/primitive.process.json`.
+
+### Fourth continuation: exact support basis
+
+The fourth continuation started at **13:01:56 UTC** on 10 October 2026,
+on CPU8 with 4 GiB and a one-hour campaign budget. It uses the frozen
+`9b7dd56` release worker documented in
+[the support-basis replay](BASE_UNIVARIATE_BASIS_PROPOSAL.md). The only
+semantic option change is enabling `local_base_univariate_basis`; the
+original mathematics, full order, groups and resource limits remain bound
+to the preceding attempt. The option preserves every real root and its
+interior boundary. It does not authorize replacing a polynomial by its
+sign at a sample.
+
+All 2,048 completed native cache records, totaling 179,997,346 bytes, were
+copied with matching keys and output checksums. No research discriminant
+or factorization was inserted. In particular, the larger degree-32
+discriminant can still block this attempt before the new basis is useful.
+This warm continuation is not a cold benchmark or a completion claim.
+
+The directory is `artifacts/research/a377-segmentation-warm-hour-04/`.
+Its launch record has SHA-256
+`2b0a62ea34ba926ea13dc2297f981552181f4a49701fa9488fd7183c576b7c4f`;
+the input audit and initial cache manifest respectively have digests
+`a92b61e1e6306a4aacb723e81a8cbb446e6668ed1052c0766c8fc936389413a9` and
+`d45aeb92dda6d68cd87708bdbb16adf492975d5149a3b40f59440589cb6c8798`.
+The launch also binds the authenticated 84-root production replay and
+separate CLI smoke verification.
+
+The remaining native strategy probes also timed out without candidates:
+Brown took 60.020651 seconds at 67,124 KiB peak RSS; CRT took 60.020616
+seconds at 18,432 KiB. These short censored observations do not establish
+relative completed-operation performance. The combined strategy summary
+has SHA-256
+`9c95059f3f8c34285564ae130caab5d8551ed6a5e19d1484395a96514906471e`.

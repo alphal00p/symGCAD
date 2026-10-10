@@ -292,8 +292,8 @@ timeout --signal=KILL 300s taskset -c 10 "$TEST_BINARY" --ignored --exact \
 The recorded run also wraps that command in GNU `time -v`; its exact script,
 status, stdout, stderr and RSS record are retained alongside the reports.
 
-The remaining gates are a frozen release worker and a bounded original
-A377 solve including preprocessing and verification.
+The remaining gate is a bounded original A377 solve with the frozen release
+worker, including preprocessing and verification.
 Only those measurements can establish whole-solver benefit. The option
 remains default-off; this document does not authorize boundary removal or
 promotion to the default policy.
