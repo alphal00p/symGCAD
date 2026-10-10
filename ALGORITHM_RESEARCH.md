@@ -5,6 +5,26 @@ with complete coverage away from explicitly recorded exceptional algebraic
 sets. Finding valid sample points is not sufficient. Search heuristics may
 discard candidate *orders*, never mathematical solution regions.
 
+## Literature follow-up, 10 October 2026
+
+Three independent primary-source reviews connect the unresolved cases to
+general CAD research and the structure of their Feynman graphs:
+
+| Review | Most useful experiments |
+| --- | --- |
+| [Generic CAD](reference/LITERATURE_GENERIC_GCAD.md) | Certified interval-specific projection obligations; bounded measurements of repeated failed prefixes; narrowly applicable projective rootless certificates. |
+| [Borinsky and tropical sampling](reference/LITERATURE_TROPICAL_SAMPLING.md) | Exact U/F support valuations and graph-subset features as legal order seeds; graph minors as proposals for independently checked identities. |
+| [SOFIA and region analysis](reference/LITERATURE_REGIONS_SOFIA.md) | Graph-block orders, invertible triangular block sums, signed kinematic partitions and checked symmetry reuse. |
+
+The immediate work is diagnostic: a bounded support-seed extractor and an
+optional observer of repeated local-projection failures. Neither changes
+coverage or projection rules. An exact block-sum preparation reduced A377's
+normalized F from 42 to 23 terms, but projection benefit and original-cell
+transport remain to be established. Each review specifies hypotheses,
+counterexamples, required graph metadata and bounded ablations. Tropical
+approximations and singularity alphabets do not replace the original real
+F=0 boundary inventory.
+
 ## Workloads and reference method
 
 The supplied local paper is [Jones, Olsson and Stone, 2024](https://arxiv.org/abs/2407.06973).

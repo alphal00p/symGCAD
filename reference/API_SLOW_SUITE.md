@@ -103,16 +103,29 @@ The immutable evidence is under
 | Physical | `0007-input.json` | `306f5296db86feba3cc1717b91f837a55201d5187fbd7ed03e24336c2a1981ff` |
 | Physical | `0007-rust.json` | `fc7ff282bd1b479a6c00278234e36a0dae01ab50cec459fbaa004fb2325b7520` |
 
-At this audit checkpoint, a third one-hour attempt,
-`test_gluza_ex33_trivial/order/1`, is running on CPU2, and a fourth,
-`test_gluza_ex33/order/1`, started on CPU1 at approximately 09:16 UTC on
-2026-10-10. They use the same frozen helper, solver, limits and reference-cap
-policy, under `artifacts/bench/api-hour-01/{gluza33-trivial,gluza33}/`.
+The third one-hour attempt, `test_gluza_ex33_trivial/order/1`, also timed out
+without an order: 3600.046124255 seconds, 414,016 KiB peak RSS. Its original
+`t1` heuristic, mathematical input and frozen executable were checked against
+the imported source and provenance. The native call remains pending because
+the campaign was exhausted. Its final report SHA-256 is
+`013f137db31c34b60649dc4fed16bfc4135cecfcb24dc124634c07509e4b4ca4`;
+the process record is
+`3440fe542d802a4f5c385c962d0dc12e6b6ae51f7f895d11c456299045ef0581`.
+
+At this checkpoint, the fourth attempt, `test_gluza_ex33/order/1`, is running
+on CPU1 after starting at approximately 09:16 UTC on 2026-10-10. It uses the
+same frozen helper, solver, limits and reference-cap policy. The third and
+fourth evidence directories are
+`artifacts/bench/api-hour-01/{gluza33-trivial,gluza33}/`.
 The fifth attempt, `test_pentabox_exb_symb/order/1`, started on CPU0 at
 approximately 09:49 UTC with the same frozen helper, solver and limits under
 `artifacts/bench/api-hour-01/pentabox-b/`. Its input SHA-256 is
 `120e230d5d07bdd6e54a086d4a541b3c3644e6ce1b628d86be85fede672a8fa5`.
-The symbolic pentabox-d ordering API is still pending.
+The sixth and final API, `test_pentabox_exd_symb/order/1`, started on CPU3 at
+approximately 10:02 UTC under `artifacts/bench/api-hour-01/pentabox-d/`, again
+with the same frozen solver and limits. All six slow APIs have now started
+their first one-hour attempt; unfinished workers provide no compatibility
+credit.
 These workers are independent of the original-decomposition queue.
 
 | Evidence | SHA-256 |
