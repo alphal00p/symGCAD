@@ -108,5 +108,68 @@ guard permits bounded supervisory bookkeeping after termination. Output is
 under `artifacts/research/a377-d32-block-roots-01/`; the adjacent launch
 script has SHA-256
 `5e55f41ada089369bfbb26361c4a04e7f3d51cc7def179cd09841a9912d77e63`.
-This launch record claims no D32 root-isolation outcome before the worker
-finishes and its output is audited.
+
+## Completed per-block measurement
+
+The bounded worker completed in **1187.682187414 seconds**, with peak RSS
+820,916 KiB, exit zero and untruncated output. All authenticated inputs were
+unchanged. Exact canonical and signed raw source-product replay took
+42.333512985 seconds; preparation including parsing took 46.085158211 seconds.
+It did not rerun the source's native square-free decomposition.
+
+| Block degree | Source multiplicity | Distinct roots in this block | Below 4 | At 4 | Above 4 | Native isolation seconds |
+|---:|---:|---:|---:|---:|---:|---:|
+| 1 | 798 | 1 | 1 | 0 | 0 | 0.003905902 |
+| 3 | 12 | 1 | 1 | 0 | 0 | 0.001596405 |
+| 268 | 1 | 56 | 41 | 0 | 15 | 1.447824966 |
+| 1478 | 2 | 294 | 198 | 0 | 96 | 1138.558141164 |
+
+The largest block's threshold classification took another 0.012461567 seconds
+and required no bisections. Its 96 roots above four are retained despite the
+block appearing squared in the original discriminant. A sign-change-only
+inventory would not account for these repeated-root boundary possibilities.
+This does not establish that any particular discriminant zero is a positive
+root collision of the original higher polynomial.
+
+All intervals and full-real ordinals are saved. Cross-block coincidences remain
+unresolved; the table deliberately has no summed distinct-source root count.
+This is one immutable debug-helper measurement, not a comparison with a
+different algorithm or build. It shows that the dominant isolated cost in
+this run was the degree-1478 native call, rather than product replay or the
+other three blocks.
+
+| Completed evidence | SHA-256 |
+|---|---|
+| Process outcome | `0ae239ac86bad1660eef9bd83887abb0a564dbaf54b97cb1bc74c8be6240a1f9` |
+| Final report | `4529e6e86da89c8cd73320300e7bcd5850f234fa8e735c20182da5b98a32be62` |
+| Final checkpoint manifest | `99efcd50bc0bfb49c70543973889f1d4d4cae9e075712f01d4fa2f87b5dc5bd0` |
+| Degree-1478 block record | `ddc4bc009730e017b5d04cea3fa46ef5ad8f24c4e201b6c149fb61280c7f679a` |
+
+The independent audit of the first three checkpoints checked their hashes,
+source/map/product binding, consecutive ordinals, rational interval ordering
+and exact threshold classifications. Its digest is
+`263f0a09080eca8f3d4bc53373756c088a943e6ebfd62b7b9dd908e80139b558`.
+The completed four-record audit also passes. It rechecked current input hashes,
+the final manifest and each block digest, source/product/full-map bindings,
+contiguous per-block full-real ordinals, strictly ordered rational intervals
+and all threshold counts. Its path is `completed-independent-audit.json` in
+the run directory, SHA-256
+`fd6fb57fefe850370aa45ba7f314f641308d6009a003d54fd814d1026dc71e3f`.
+Neither metadata audit reran native algebra or proves a cross-block union.
+
+A separate exact endpoint comparison finds 50 closed-interval overlap pairs
+between the degree-268 and degree-1478 blocks. The cubic's broad interval also
+overlaps many other block intervals. These overlaps do not prove shared roots;
+they show why concatenating the current intervals is not yet a separated union.
+The metadata-only comparison is saved as
+`cross-block-interval-overlap-metadata.json`, SHA-256
+`b2ca973003fca67785c4b0ef5c3a4df89b6c5028d23f07e11359c09b86c7f13a`.
+
+Source inspection identifies a concrete profiling target without assigning
+measured blame: Symbolica `univariate.rs:1327` performs its own SQF before
+VAS-CF on the positive and negative rays (`:1429`). Its `shift_var` (`:1046`)
+uses `d(d+1)/2` coefficient add-multiplies for each Taylor shift. At degree
+1478 that is 1,092,981 coefficient add-multiplies per shift. VAS repeatedly calls
+this routine, but the current single native timing does not separate internal
+SQF, Taylor shifts and other isolation work. A future bounded profile should
+measure that split before changing the isolator.
