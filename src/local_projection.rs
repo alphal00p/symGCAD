@@ -512,14 +512,7 @@ fn highest(p: &Poly) -> Option<usize> {
 /// Evaluate only a polynomial whose complete support is in the prefix. A
 /// specialization that happens to become constant is not sufficient evidence.
 fn prefix_value(p: &Poly, prefix: &[Rational]) -> Result<Rational> {
-    ensure!(
-        highest(p).is_none_or(|i| i < prefix.len()),
-        "guard depends on a later coordinate"
-    );
-    // The complete-support check above is essential: replace_all evaluates
-    // the supplied coordinates directly and does not require unused trailing
-    // coordinates. Avoid rebuilding a polynomial after each substitution.
-    Ok(p.replace_all(prefix))
+    crate::algebra::prefix_value::evaluate(p, prefix)
 }
 
 struct GuardDomain {

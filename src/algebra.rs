@@ -5,6 +5,7 @@ use std::{collections::HashSet, sync::Arc};
 use anyhow::{Result, anyhow, bail, ensure};
 use symbolica::{domains::InternalOrdering, poly::factor::Factorize, prelude::*};
 
+pub(crate) mod prefix_value;
 mod sum_factorization;
 
 pub type Poly = MultivariatePolynomial<Q, u32>;
