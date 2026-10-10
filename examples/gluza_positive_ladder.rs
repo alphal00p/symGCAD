@@ -5,6 +5,7 @@ use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use std::{fs, path::PathBuf, process::Command, time::Instant};
 use symbolica::prelude::*;
+use symgcad::domain::{CertificateOptions, certify_nonzero, derive_domain, verify_certificate};
 use symgcad::{Limits, Problem, algebra::Poly, problem::normalize};
 
 #[derive(Parser)]
@@ -138,6 +139,22 @@ fn check(problem: &Problem, guide: &Value, rayleigh: &Value) -> Result<Ladder> {
         a == &k - &(&t * &alg.parse("x1")?),
         "low coefficient ladder mismatch"
     );
+    for (actual, expression) in [
+        (&a, "1-(1+x5)*(x6+x7)-(x5+x6+x7-1)*(x1+x2)"),
+        (
+            &b,
+            "(1-x6)*((1+x2)*(x5+x7)+x5*x7)+x1*(1-(1+x7)*(x5+x6)-x2*(x5+x6+x7-1))",
+        ),
+        (
+            &c,
+            "(1-x7)*(x6+x5*(1+x6))+x2*(1-(1+x6)*(x5+x7))+x1*((1-x7)*(x5+x6)-x2*(x5+x6+x7-1))",
+        ),
+    ] {
+        ensure!(
+            *actual == alg.parse(expression)?,
+            "threshold coefficient identity failed"
+        );
+    }
     let report = json!({"F":alg.format(f),"a":alg.format(&a),"b":alg.format(&b),"c":alg.format(&c),"d":alg.format(&d),"d_strict_coefficient_positive":true,"U":alg.format(&u),"C0":alg.format(&c0),"D0":alg.format(&d0),"W0_B0C0_minus_A0D0":alg.format(&w0),"C4":alg.format(&c4),"D4":alg.format(&d4),"W4_bC4_minus_aD4":alg.format(&w4),"both_guide_comparisons_strict_coefficient_positive":true,"H04":alg.format(&h),"bc_minus_ad_equals_H04_squared":true,"a_x1":alg.format(&lower),"r":alg.format(&r),"T":alg.format(&t),"K":alg.format(&k),"identities_verified":true,"case_table":[
         {"signs":[1,1,1],"x4":"(0,infinity)","x0":"(0,infinity)"},
         {"signs":[-1,-1,1],"x4":"(0,infinity)","x0":"(0,-(c*x4+d)/(a*x4+b))"},
@@ -147,6 +164,68 @@ fn check(problem: &Problem, guide: &Value, rayleigh: &Value) -> Result<Ladder> {
         {"signs":[-1,1,-1],"x4":"(0,-b/a)","x0":"(0,infinity)"},
         {"signs":[-1,1,-1],"x4":"(-b/a,-d/c)","x0":"(0,-(c*x4+d)/(a*x4+b))"}],"generic_exceptions":["a","b","c","a*x4+b","c*x4+d","F"],"impossible_base_signs":"a>0 with b<0 or c<0","nonempty_width_proof":"a<0,b>0,c<0 implies rA<=rB from H04^2; equality at positive x4 contradicts W0>0, hence rA<rB"});
     Ok(Ladder { a, b, c, d, report })
+}
+
+/// These are separately certified base subproblems, not a transported original CAD.
+/// A union of their eventual CADs still needs common ancestor refinement.
+fn threshold_chambers(base: &Problem) -> Result<Vec<(String, Problem, Value)>> {
+    ensure!(base.split.len() == 3);
+    let mut rows = Vec::new();
+    for (above6, above7) in [(true, true), (true, false), (false, true), (false, false)] {
+        let label = format!(
+            "x6-{}-x7-{}",
+            if above6 { "above" } else { "below" },
+            if above7 { "above" } else { "below" }
+        );
+        let mut chamber = base.clone();
+        chamber.name = Some(format!("research Gluza30 base threshold {label}"));
+        chamber.solver.engine = "local".into();
+        chamber.solver.order = ["x6", "x7", "x5", "x2", "x1"]
+            .into_iter()
+            .map(str::to_owned)
+            .collect();
+        chamber.variable_groups = vec![chamber.solver.order.clone()];
+        for (axis, above) in [("x6", above6), ("x7", above7)] {
+            chamber.constraints.push(if above {
+                format!("{axis}-1>0")
+            } else {
+                format!("1-{axis}>0")
+            });
+        }
+        let normalized = normalize(&chamber, &chamber.variables)?;
+        let domain = derive_domain(&normalized.algebra, &normalized.positives, &[])?;
+        let known_negative = [above6 || above7, above6, above7];
+        let mut certificates = Vec::new();
+        let mut remaining = Vec::new();
+        for (index, expression) in base.split.iter().enumerate() {
+            if known_negative[index] {
+                let p = normalized.algebra.parse(expression)?;
+                let certificate = certify_nonzero(
+                    &normalized.algebra,
+                    &p,
+                    &domain,
+                    &CertificateOptions::default(),
+                )?
+                .context("expected strict threshold coefficient proof")?;
+                ensure!(certificate.sign == -1, "threshold sign is not negative");
+                verify_certificate(
+                    &normalized.algebra,
+                    &p,
+                    &normalized.positives,
+                    &[],
+                    &certificate,
+                )?;
+                certificates.push(json!({"coefficient_index":index,"certificate":certificate}));
+            } else {
+                remaining.push(expression.clone());
+            }
+        }
+        chamber.split = remaining;
+        chamber.validate()?;
+        let report = json!({"label":label,"known_negative_coefficients":known_negative,"remaining_splits":chamber.split,"certificates":certificates,"certificates_independently_replayed":true,"strict_chamber_constraints":chamber.constraints,"exceptional_thresholds":["x6-1","x7-1"],"original_completion":false,"coverage_note":"The four open chambers partition the five-coordinate positive orthant away from the two threshold hyperplanes. Completed independent chamber CADs require common ancestor refinement before their union is globally cylindrical."});
+        rows.push((label, chamber, report));
+    }
+    Ok(rows)
 }
 
 fn generate(args: &Args) -> Result<()> {
@@ -195,7 +274,15 @@ fn generate(args: &Args) -> Result<()> {
             toml::to_string_pretty(&base)?,
         )?;
     }
-    let report = json!({"source":args.input,"source_sha256":format!("{:x}",Sha256::digest(&source)),"guide_sha256":format!("{:x}",Sha256::digest(fs::read(&args.guide)?)),"rayleigh_proposal_sha256":format!("{:x}",Sha256::digest(fs::read(&args.rayleigh_report)?)),"identities":ladder.report,"base_variables":base.variables,"base_splits":base.split,"constant_endpoint_terms":ladder.d.nterms(),"elapsed_seconds":started.elapsed().as_secs_f64(),"original_completion":false,"scope":"Exact original identities and a proposed exhaustive two-fiber positive reconstruction. Original completion requires independently verified base and a production transport/replay certificate."});
+    let mut chambers = Vec::new();
+    for (label, chamber, report) in threshold_chambers(&base)? {
+        fs::write(
+            args.output.join(format!("chamber-{label}.toml")),
+            toml::to_string_pretty(&chamber)?,
+        )?;
+        chambers.push(report);
+    }
+    let report = json!({"source":args.input,"source_sha256":format!("{:x}",Sha256::digest(&source)),"guide_sha256":format!("{:x}",Sha256::digest(fs::read(&args.guide)?)),"rayleigh_proposal_sha256":format!("{:x}",Sha256::digest(fs::read(&args.rayleigh_report)?)),"identities":ladder.report,"base_variables":base.variables,"base_splits":base.split,"constant_endpoint_terms":ladder.d.nterms(),"threshold_chambers":chambers,"elapsed_seconds":started.elapsed().as_secs_f64(),"original_completion":false,"scope":"Exact original identities and a proposed exhaustive two-fiber positive reconstruction. Original completion requires independently verified base and a production transport/replay certificate."});
     fs::write(
         args.output.join("report.json"),
         serde_json::to_vec_pretty(&report)?,
@@ -258,6 +345,41 @@ mod tests {
         let rayleigh = json!({"pairs":[{"axes":["x0","x4"],"square":"x6*x7+x5+x5*x6*x7+x2*x6*x7+x2*x5*x6+x1*x6*x7+x1*x5*x7-x1*x2+x1*x2*x7+x1*x2*x6+x1*x2*x5"}]});
         let ladder = check(&problem, &guide, &rayleigh)?;
         assert_eq!(ladder.d.nterms(), 8);
+        let algebra = normalize(&problem, &problem.variables)?.algebra;
+        let mut base = Problem::default();
+        base.variables = ["x2", "x6", "x7", "x5", "x1"]
+            .into_iter()
+            .map(str::to_owned)
+            .collect();
+        base.variable_groups = vec![base.variables.clone()];
+        base.constraints = base.variables.iter().map(|x| format!("{x}>0")).collect();
+        base.split = [&ladder.a, &ladder.b, &ladder.c]
+            .into_iter()
+            .map(|p| algebra.format(p))
+            .collect();
+        let chambers = threshold_chambers(&base)?;
+        assert_eq!(
+            chambers.iter().map(|r| r.1.split.len()).collect::<Vec<_>>(),
+            [0, 1, 1, 3]
+        );
+        for (_, chamber, report) in &chambers {
+            let n = normalize(chamber, &chamber.variables)?;
+            for row in report["certificates"].as_array().unwrap() {
+                let index = row["coefficient_index"].as_u64().unwrap() as usize;
+                let p = n.algebra.parse(&base.split[index])?;
+                let mut certificate: symgcad::domain::DomainCertificate =
+                    serde_json::from_value(row["certificate"].clone())?;
+                verify_certificate(&n.algebra, &p, &n.positives, &[], &certificate)?;
+                assert!(
+                    verify_certificate(&n.algebra, &p, &n.positives[..5], &[], &certificate)
+                        .is_err()
+                );
+                certificate.sign = 1;
+                assert!(
+                    verify_certificate(&n.algebra, &p, &n.positives, &[], &certificate).is_err()
+                );
+            }
+        }
         let mut wrong = rayleigh.clone();
         for row in wrong["pairs"].as_array_mut().unwrap() {
             if row["axes"] == json!(["x0", "x4"]) {
