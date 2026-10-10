@@ -83,11 +83,35 @@ limit per worker, and a 16 GiB cap. Its observations are retained unchanged:
 
 The ex44 source itself comments that it obtains 19. All three old assertions
 therefore disagree with the current unchanged native oracle. Successful native
-ex43/ex44 results and different Rust counts are compatible with scheduling,
-enumeration or object-identity differences; this audit has not transported
-identical canonical raw inventories through both policies, so it does not
-attribute those specific differences to one cause. In particular, the stale
-deletion defect was demonstrated by a crash, not by these successful counts.
+ex43/ex44 results initially left scheduling, enumeration and object identity as
+possible causes. A subsequent controlled replay resolves this distinction:
+`reference/merge_rust_cells.py` loads the saved Rust raw cells in their exact
+order, constructs one shared native polynomial object per dictionary ID, and
+calls the unchanged native merger. It returns 23 cells for ex43 and 19 for ex44,
+versus the saved Rust policy's 20 and 20. Thus the merge-policy difference alone
+reproduces both discrepancies on identical raw inventories; different raw
+enumeration or polynomial allocation is unnecessary. Neither call raises an
+exception. The stale deletion defect was demonstrated separately by a crash.
+
+```sh
+OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 \
+  nix develop .#reference --command timeout 20s taskset -c 11 python \
+  reference/merge_rust_cells.py \
+  --proof artifacts/bench/disabled-aggressive-256527b/results/0001-rust-0-result.json \
+  --output artifacts/upstream-merge-audit-01/ex43-identical-raw.json
+# Repeat with 0002-rust-0-result.json and ex44-identical-raw.json.
+```
+
+Both bounded invocations used a 2 GiB virtual-memory cap and completed in under
+one second. An initial attempt without a one-thread OpenBLAS setting failed at
+library initialization before invoking the merger. Report SHA-256 values are
+`d47b78444f3c34ec912a8f5da4f188d5d64d381d7f33c8e741dbb4ffa73407b9`
+(ex43) and
+`23f3fc8ebf88249fb268c762f96e13c63c9f2a4ddd6215c9f3053940d4944571`
+(ex44). The transport adapter SHA-256 is
+`e9190b5cb82118755685d7bfa67d1d15f6a3628df3deebfc60b0792adcd5d0a1`.
+It checks ordinary all-real root selectors and an unsplit input; it transfers
+data and invokes the original merger, without implementing a merging algorithm.
 
 The benchmark skipped proof verification after detecting merged-count
 differences. A separate bounded replay now verifies the first saved proof for
