@@ -113,3 +113,50 @@ Reproducible evidence hashes:
 
 The builder/test supervisors stayed below 2 GiB aggregate RSS (880,768/860,648 KiB).
 All original-input hard campaigns continued under their separate frozen binaries.
+
+## Exact shift/reversal control
+
+The research helper's optional `--shift-transform` retains the same full-real
+cover theorem and resource limits. It removes a common positive projective
+scale and evaluates each finite-interval substitution using two exact
+Symbolica integer Taylor shifts, a diagonal coefficient scaling and reversal.
+For `P(X)=d^n p(X/d)`, shifting by b, scaling degree i by `(a-b)^i`, reversing
+all n+1 coefficients and shifting by one gives exactly
+`(1+y)^n P((a+b*y)/(1+y))`. Padding before reversal preserves endpoint zeros.
+Tails require only `P(a+b*y)`. No approximate root or polynomial operation
+enters the proof. The alternative has a conservative three-stage height
+preflight and checks actual intermediate coefficient heights; the original
+Horner kernel remains available as a control.
+
+Eight tests passed, including full coefficient equality against independent
+Symbolica polynomial expansion, degree drops at either endpoint, repeated
+rational endpoint roots, both tails and replay of shift-generated evidence
+using the original Horner checker. Test/build runs took 7/7 seconds with
+sampled aggregate peaks 766,704/784,900 KiB. Production code is unchanged.
+
+On the identical authenticated degree-268 input and untrusted hints, the
+bounded single development-build trial completed in **4.454089098 seconds**
+with **9,036 KiB** peak RSS. Discovery took 2.986022183 seconds and fresh
+independent replay 1.421489719 seconds. The complete exported cover is the
+same 135 cuts, 136 intervals and 56 real roots; discovery still performs
+295 transforms and 23 subdivisions, with 136 replay transforms. Maximum
+intermediate height fell to 20,259 bits. Source hashes remained unchanged.
+Replay recomputes every claim from the original coefficients and serialized
+partition; it uses the same exact backend, not a second independent isolator.
+
+This improves the previous research helper's 51.736-second end-to-end trial.
+Fresh replay alone is comparable to the previously measured native isolation
+(1.4478 seconds), so it does **not** yet establish a production speedup or a
+reason to raise the degree envelope. Profiling the degree-1478 native call's
+SQF-versus-isolation costs remains a separate proposed measurement. Neither
+root-cover experiment verifies factor products, cross-block coincidences or
+an original decomposition.
+
+Evidence under `artifacts/research/full-real-root-cover-shifts-02/`:
+
+| Record | SHA-256 |
+| --- | --- |
+| Frozen helper | `73d43b5edeebbb630a436b18ded53ad6c71e6093284dc8bae45a42e2e42b9869` |
+| `result.json` | `68c3d5e8bf3c8c267cf7f1c67d2aaa4836d33548ae7268aa5730af6779f6854e` |
+| `result.process.json` | `e6881bca7930c47a1d357de94f194ff8954a6ece11632a12beb8fcc911a67d58` |
+| `artifacts/root-cover-shift-tests-01.log` | `857b38637c00279c0c9538e433ad516de751db5014570129764c20aab796903e` |

@@ -29,6 +29,9 @@ struct Args {
     cpu: usize,
     #[arg(long, default_value_t = 60.0)]
     seconds: f64,
+    /// Research alternative: exact integer shifts and reversal instead of Horner.
+    #[arg(long)]
+    shift_transform: bool,
     #[arg(long, hide = true)]
     worker: bool,
 }
@@ -60,6 +63,7 @@ struct Cover {
 }
 #[derive(Default, Serialize)]
 struct Work {
+    shift_transform: bool,
     transforms: usize,
     /// Conservative transform-operation accounting; endpoint Horner evaluations
     /// are separately bounded by the degree, cut-count and endpoint-height caps.
@@ -180,7 +184,7 @@ fn variation(
         a.is_some() || b.is_some(),
         "split the full line at a rational point"
     );
-    let (linear0, linear1, denominator, finite) = match (a, b) {
+    let (mut linear0, mut linear1, mut denominator, finite) = match (a, b) {
         (Some(a), Some(b)) => {
             ensure!(a < b, "strict ordered endpoints");
             (
@@ -204,6 +208,13 @@ fn variation(
         ),
         _ => unreachable!(),
     };
+    if work.shift_transform {
+        // A common positive projective scale contributes only its nth power.
+        let common = linear0.gcd(&linear1).gcd(&denominator).abs();
+        linear0 /= &common;
+        linear1 /= &common;
+        denominator /= &common;
+    }
     let degree = p.len() - 1;
     let input_height = p
         .iter()
@@ -218,7 +229,8 @@ fn variation(
         + 2;
     // Conservative preflight of every intermediate coefficient, including sums.
     ensure!(
-        input_height + degree as u64 * step_height + 2 <= MAX_TRANSFORM_BITS,
+        input_height + degree as u64 * step_height * if work.shift_transform { 3 } else { 1 } + 2
+            <= MAX_TRANSFORM_BITS,
         "transform height preflight"
     );
     let cost = 4 * (degree + 1) * (degree + 1);
@@ -230,36 +242,41 @@ fn variation(
     );
     work.transform_work_units += cost;
     work.transforms += 1;
-    let mut h = vec![p[degree].clone()];
-    let mut power = vec![Integer::one()];
-    for c in p[..degree].iter().rev() {
-        let mut next_power = vec![Integer::zero(); power.len() + 1];
-        for (i, v) in power.iter().enumerate() {
-            let term = v * &denominator;
-            next_power[i] += &term;
-            if finite {
-                next_power[i + 1] += &term;
+    let h = if work.shift_transform {
+        shifted_transform(p, &linear0, &linear1, &denominator, finite, work)?
+    } else {
+        let mut h = vec![p[degree].clone()];
+        let mut power = vec![Integer::one()];
+        for c in p[..degree].iter().rev() {
+            let mut next_power = vec![Integer::zero(); power.len() + 1];
+            for (i, v) in power.iter().enumerate() {
+                let term = v * &denominator;
+                next_power[i] += &term;
+                if finite {
+                    next_power[i + 1] += &term;
+                }
             }
+            let mut next = vec![Integer::zero(); h.len() + 1];
+            for (i, v) in h.iter().enumerate() {
+                next[i] += v * &linear0;
+                next[i + 1] += v * &linear1;
+            }
+            for (v, w) in next.iter_mut().zip(&next_power) {
+                *v += c * w;
+            }
+            let height = next
+                .iter()
+                .chain(&next_power)
+                .map(|c| c.significant_bits() as u64)
+                .max()
+                .unwrap_or(0);
+            ensure!(height <= MAX_TRANSFORM_BITS, "actual transform height cap");
+            work.max_transformed_bits = work.max_transformed_bits.max(height);
+            h = next;
+            power = next_power;
         }
-        let mut next = vec![Integer::zero(); h.len() + 1];
-        for (i, v) in h.iter().enumerate() {
-            next[i] += v * &linear0;
-            next[i + 1] += v * &linear1;
-        }
-        for (v, w) in next.iter_mut().zip(&next_power) {
-            *v += c * w;
-        }
-        let height = next
-            .iter()
-            .chain(&next_power)
-            .map(|c| c.significant_bits() as u64)
-            .max()
-            .unwrap_or(0);
-        ensure!(height <= MAX_TRANSFORM_BITS, "actual transform height cap");
-        work.max_transformed_bits = work.max_transformed_bits.max(height);
-        h = next;
-        power = next_power;
-    }
+        h
+    };
     let mut last = 0;
     let mut count = 0;
     for c in &h {
@@ -277,6 +294,61 @@ fn variation(
         work.progress()?;
     }
     Ok(count)
+}
+
+// For finite endpoints form P(X)=d^n p(X/d), shift by b, multiply its ith
+// coefficient by (a-b)^i, reverse all n+1 coefficients, then shift by one.
+// This is exactly (1+y)^n P((a+b*y)/(1+y)). Both shifts are Symbolica
+// polynomial operations. Tails need only P(a+b*y). Zero endpoint factors
+// remain represented by exact zero coefficients, including degree drops.
+fn shifted_transform(
+    p: &[Integer],
+    a: &Integer,
+    b: &Integer,
+    d: &Integer,
+    finite: bool,
+    work: &mut Work,
+) -> Result<Vec<Integer>> {
+    let n = p.len() - 1;
+    let variable = std::sync::Arc::new(PolyVariable::Temporary(0));
+    let checked = |coefficients: &[Integer], work: &mut Work| -> Result<()> {
+        let height = coefficients
+            .iter()
+            .map(|c| c.significant_bits() as u64)
+            .max()
+            .unwrap_or(0);
+        ensure!(height <= MAX_TRANSFORM_BITS, "shift transform height cap");
+        work.max_transformed_bits = work.max_transformed_bits.max(height);
+        Ok(())
+    };
+    let mut coefficients = p.to_vec();
+    let mut power = Integer::one();
+    for coefficient in coefficients.iter_mut().rev() {
+        *coefficient *= &power;
+        power *= d;
+    }
+    checked(&coefficients, work)?;
+    let shifted = UnivariatePolynomial::from_coefficients(&Z, coefficients, variable.clone())
+        .shift_var(if finite { b } else { a });
+    checked(shifted.coefficients(), work)?;
+    let mut coefficients = shifted.coefficients().to_vec();
+    coefficients.resize(n + 1, Integer::zero());
+    let scale = if finite { a - b } else { b.clone() };
+    power = Integer::one();
+    for coefficient in &mut coefficients {
+        *coefficient *= &power;
+        power *= &scale;
+    }
+    checked(&coefficients, work)?;
+    if finite {
+        coefficients.reverse();
+        coefficients = UnivariatePolynomial::from_coefficients(&Z, coefficients, variable)
+            .shift_var(&Integer::one())
+            .coefficients()
+            .to_vec();
+        checked(&coefficients, work)?;
+    }
+    Ok(coefficients)
 }
 fn endpoint_is_root(p: &[Integer], x: &Rational) -> bool {
     let mut value = Rational::zero();
@@ -377,6 +449,7 @@ fn worker(args: &Args) -> Result<()> {
     let (p, cuts) = load(serde_json::from_slice(&bytes)?)?;
     let start = Instant::now();
     let mut discovery_work = Work {
+        shift_transform: args.shift_transform,
         progress_path: Some(args.output.with_extension("progress.json")),
         started: Some(start),
         phase: "discovery".into(),
@@ -390,6 +463,7 @@ fn worker(args: &Args) -> Result<()> {
     let decoded = serde_json::from_slice(&encoded)?;
     let start = Instant::now();
     let mut verification_work = Work {
+        shift_transform: args.shift_transform,
         progress_path: Some(args.output.with_extension("progress.json")),
         started: Some(start),
         phase: "independent_replay".into(),
@@ -568,7 +642,102 @@ mod tests {
                     variation(&p, lower, upper, &mut Work::default()).unwrap(),
                     expected
                 );
+                assert_eq!(
+                    variation(
+                        &p,
+                        lower,
+                        upper,
+                        &mut Work {
+                            shift_transform: true,
+                            ..Default::default()
+                        }
+                    )
+                    .unwrap(),
+                    expected
+                );
             }
         }
+    }
+
+    #[test]
+    fn two_shifts_equal_full_direct_expansion_including_endpoint_zeros() {
+        let algebra = symgcad::algebra::Algebra::new(&["x".into()]).unwrap();
+        let x = algebra.parse("x").unwrap();
+        let one = algebra.parse("1").unwrap();
+        for expression in ["x^5-3*x^3+x-7", "(x-1)^2*(x+2)", "x^4+1", "x^3*(x-2)^2"] {
+            let p = polynomial(expression);
+            for (a, b, d, finite) in [
+                (-35, 3, 21, true),
+                (-2, 1, 1, true),
+                (0, 2, 1, true),
+                (3, -7, 5, true),
+                (-5, 3, 3, false),
+                (1, -2, 2, false),
+            ] {
+                let linear = &one.clone().mul_coeff(Rational::from(a))
+                    + &x.clone().mul_coeff(Rational::from(b));
+                let denominator =
+                    if finite { &one + &x } else { one.clone() }.mul_coeff(Rational::from(d));
+                let mut expected = x.zero();
+                for (i, coefficient) in p.iter().enumerate() {
+                    expected = &expected
+                        + &(linear.pow(i) * &denominator.pow(p.len() - 1 - i))
+                            .mul_coeff(Rational::from(coefficient.clone()));
+                }
+                let mut actual = shifted_transform(
+                    &p,
+                    &Integer::from(a),
+                    &Integer::from(b),
+                    &Integer::from(d),
+                    finite,
+                    &mut Work::default(),
+                )
+                .unwrap();
+                let mut expected = expected
+                    .to_univariate_from_univariate(0)
+                    .coefficients()
+                    .iter()
+                    .map(|c| c.numerator_ref().clone())
+                    .collect::<Vec<_>>();
+                actual.resize(p.len(), Integer::zero());
+                expected.resize(p.len(), Integer::zero());
+                assert_eq!(
+                    actual, expected,
+                    "{expression}: a={a}, b={b}, d={d}, finite={finite}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn shift_discovery_replays_with_horner_and_preserves_repeated_endpoint_roots() {
+        for (expression, roots) in [
+            ("(x^2-2)*(x^2+1)*(x-3)", 3),
+            ("(x+2)^2*x^3*(x-1)*(x-3)^2", 4),
+        ] {
+            let p = polynomial(expression);
+            let cover = prove(
+                &p,
+                [-2, 0, 1, 3].into_iter().map(Rational::from).collect(),
+                &mut Work {
+                    shift_transform: true,
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+            assert_eq!(verify(&p, &cover, &mut Work::default()).unwrap(), roots);
+        }
+        let p = polynomial("(x^2-2)^2");
+        assert!(
+            prove(
+                &p,
+                vec![Rational::zero()],
+                &mut Work {
+                    shift_transform: true,
+                    ..Default::default()
+                }
+            )
+            .is_err()
+        );
     }
 }
