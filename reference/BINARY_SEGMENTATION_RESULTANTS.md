@@ -171,6 +171,40 @@ and is not justified solely by the current operation timings.
 
 ## Why reconstruction is exact
 
+### Three-parameter Gluza33 preflight
+
+A static inspection of the original positive Gluza33 pending `x4`
+discriminant used the existing research helper on its unchanged 2,209-term
+operand. No resultant was executed. For the integer pair `p,p'`, the mixed
+radix box in `[x2,x1,x7]` has bounds `[166,152,90]`: 2,325,141 digits,
+660 bits per digit, and a 1,534,593,060-bit encoded-output bound (about
+183 MiB). The coefficient bound is 659 bits. Unlike the separate primitive
+one-prime experiment, this layout retains the derivative's integer content;
+the bounds therefore need not match that experiment's 649-bit bound.
+
+This is outside production's two-parameter, 65,536-digit and 256-million-bit
+envelope. The prototype's `within_static_cap=true` refers only to its own
+two-billion-bit output ceiling, not production admission or a bound on native
+intermediate memory. Extending the generic kernel to three parameters is
+mathematically possible, but this preflight supplies no execution time,
+result, speedup or additional corpus coverage. The potentially large integer
+intermediates need a separate supervised experiment before changing policy.
+
+The inspection completed in 0.062826 seconds at 6,944 KiB RSS, CPU 2,
+with a 60-second / 2-GiB worker limit. Evidence is under
+`artifacts/research/gluza33-three-parameter-segmentation-plan-01/`.
+The exact input hash is
+`73189be967be55624321db0c39697b0d0d5cfeb8e8a49aa17869e21e477fb4b0`;
+the complete capture SHA-256 is
+`aab900ab332f90a1d0c9d32ec73cdd65b88d64b22a45d20e23ef77e33aa70289`.
+The frozen helper SHA-256 is
+`44428e764331e44d295eb4b8dae17201d39fe7b1a8573a240a499b1fea95ec09`,
+and `plan.json` has SHA-256
+`a0354f603d986803c6fa663c65832aedb11610c84fc78dfa23d4656b91db91cf`.
+Both executable and capture were rehashed unchanged after the run.
+
+### Integer encoding identity
+
 Clear rational denominators to obtain integer polynomials P and Q of degrees
 m and n in the eliminated variable x. Every Sylvester determinant term uses
 n coefficients of P and m of Q, with total x-index weight mn. For each
