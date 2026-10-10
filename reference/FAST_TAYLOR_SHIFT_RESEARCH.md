@@ -168,3 +168,79 @@ No production patch is justified by this result. A later experiment would
 need representative transformed operands and a measured benefit. Native root
 isolation, its complete root inventory, all interior seams and independent
 verification remain unchanged.
+
+## Isolated native VAS observation
+
+A separate research-only Symbolica worktree at
+`75f8350094b90254ee71dc2a391fde0d14b0204a` now provides a bounded observer at
+its four integer VAS shift sites. The active dependency checkout and production
+code are unchanged. Every site calls the original `shift_var` exactly once;
+observer failures disable diagnostics and do not change the returned polynomial.
+The global observer lock is released across arithmetic. Native shift timing
+excludes operand serialization.
+
+The replayable patch is retained under
+`artifacts/research/vas-shift-observer-01/symbolica-vas-observer.patch`, SHA256
+`9bcdeb7ff3b7fe0de7b313024799498360205a1a65900526155ad1c484942e54`.
+The isolated symGCAD source is `0adcf97a03ebcdabb4788927227db5a8d3f959b7`.
+The preparation, source manifests, build scripts and uniquely named frozen
+executables are in the same directory. Shared Cargo dependency-cache reuse
+avoids overwriting ordinary helper executables; rebuilding the isolated
+numerica/graphica artifacts nevertheless made ordinary debug Symbolica stale,
+so subsequent debug work requires a normal bounded dependency rebuild.
+Release-profile artifacts were untouched.
+
+The observer admits at most 256 calls and one million coefficient positions
+for metadata, with at most 1 MiB of event records. It saves at most one raw
+operand after a completed shift taking at least 100 ms, degree 512–4096,
+coefficient height 20001–65536 bits, total coefficient storage at most 128M
+bits, and a 256-bit shift. A conservative decimal-size check precedes bounded
+streaming to a fresh file capped at 32 MiB. The single capture adds bounded
+coefficient passes beyond metadata accounting. Native variable formatting is
+also bounded. No source polynomial, root inventory, or proof is authorized by
+an observer record.
+
+Five isolated tests passed, including signed/zero/repeated inputs, capture
+I/O failure, call exhaustion, oversized coefficients, and fresh-directory
+validation. A separate four-fixture native root comparison produced
+byte-identical off/on inventories, observing 17 shifts and exactly one
+capture. The development build took 737 s with a sampled aggregate peak of
+4990224 KiB; the tiny comparison took 1 s and 164928 KiB. All source manifests
+and active-dependency hashes remained unchanged. The combined summary SHA256
+is `f733362d70b0eaf3c66d60f1eced42312bb217af9c2428d1bcc2331ac0dfef8c`.
+
+The authentic CPU2 diagnostic used the original D32 capture, signed candidate
+and checked factor proposal. It replayed the complete canonical and signed
+raw products afresh in 45.456557 s, then entered the degree-1478 block at
+47.339708 s. No previous root inventory was supplied. A 4 GiB descendant-tree
+RSS supervisor bounded the whole run to 150 s, with an inner 145 s worker
+limit to retain its terminal report. The worker timed out after
+145.035902 s, reporting 394084 KiB peak RSS. The separately sampled outer
+aggregate recorded 160776 KiB and 148 s; these are different sampling/rusage
+statistics and must not be treated as interchangeable exact peaks.
+
+Exactly 256 native shifts completed before the observer disabled itself at
+its call limit. Their heights ranged from 21607 to 34160 bits; shift values
+were 1, 2, 4 and 8. The observed native times totalled 83.725200 s, with median
+0.339381 s and maximum 0.490629 s. These are a bounded prefix of the isolation
+run, not a timing breakdown of the earlier complete 1138-second inventory.
+
+The one captured operand is the initial VAS shift input: degree 1478, height
+21607 bits, 26786293 coefficient bits, shift 1. Its completed native shift
+took **0.229108 s** and capture I/O took **0.084663 s**. The exact literal is
+8115501 bytes, SHA256
+`40bcadeae426d5d15f0ed72ad2ee8c63f061aa046690374ca46c07efcfbd48de`.
+The frozen observer helper SHA256 is
+`18431539e64c34d95c5a40cd2eaee4c03e3f42e0a7aaa72c87547c9c4aaa777c`.
+The terminal summary, input/output hashes and reproduction script are under
+`artifacts/research/vas-shift-observer-01/authentic-01/`; summary SHA256
+`e95160788ea442f4a32538f7904e84d1880f4410f227a82e7df7eb37a5d857ca`.
+Independent review rehashed the complete binding set and recounted the literal
+operand's degree, support and exact coefficient bits; its audit SHA256 is
+`ddef6f085a456efec0294dcc35f91f9ccfa75d6b349b1a6c33c1e73596f6d5b1`.
+
+The degree-1478 root inventory is incomplete. No root or CAD completion, cache
+injection, or production performance improvement follows. The captured height
+exceeds the Taylor helper's unchanged 20000-bit default. Comparing it requires
+a separately explicit research-policy extension with all existing encoding,
+storage, exact-division and coefficient-equality checks retained.
