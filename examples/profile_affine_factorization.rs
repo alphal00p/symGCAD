@@ -5,6 +5,8 @@ mod affine_factorization;
 #[allow(dead_code)]
 #[path = "profile_operation.rs"]
 mod capture_parser;
+#[path = "../src/algebra/shear_factorization.rs"]
+mod shear_factorization;
 
 use anyhow::{Context, Result, ensure};
 use clap::{Parser, ValueEnum};
@@ -31,6 +33,7 @@ use symgcad::{
 enum Mode {
     Native,
     Policy,
+    /// Inspect only the integer-translation admission gate; does not inspect shears.
     Admission,
 }
 #[derive(Clone, Copy, Debug, ValueEnum)]
@@ -43,6 +46,7 @@ enum Synthetic {
     Ordinary,
     AxisCap,
     CoefficientCap,
+    Shear,
 }
 #[derive(Parser)]
 struct Args {
@@ -104,6 +108,7 @@ fn source(args: &Args) -> Result<(Algebra, Poly, Value)> {
             Synthetic::Ordinary => "(x^2+y^2+z^2+1)*(x+y+z+2)",
             Synthetic::AxisCap => "(y-1)*x^33+z+1",
             Synthetic::CoefficientCap => "(y-1)*x^2+z+1",
+            Synthetic::Shear => "-3/7*((x+y)^2-4*x^2*y^2)^2",
         };
         let mut p = a.parse(expression)?;
         if matches!(kind, Synthetic::CoefficientCap) {
@@ -142,6 +147,30 @@ fn source(args: &Args) -> Result<(Algebra, Poly, Value)> {
         json!({"capture_sha256":hash(&bytes),"input_hash":c.input_hash}),
     ))
 }
+
+/// Match the production order of these optional preconditioners. Each declined
+/// gate continues; an error after an admitted native factor call propagates.
+/// Primitive-linear and equal-derivative sum shortcuts are outside this
+/// operand-level experiment and are not claimed to have been profiled here.
+fn factor_with_policy(
+    p: &Poly,
+    mode: Mode,
+    mut phase: impl FnMut(&str) -> Result<()>,
+) -> Result<(Vec<(Poly, usize)>, &'static str)> {
+    if matches!(mode, Mode::Policy) {
+        phase("translation_attempt")?;
+        if let Some(factors) = affine_factorization::try_factor(p)? {
+            return Ok((factors, "integer_translation"));
+        }
+        phase("shear_attempt")?;
+        if let Some(factors) = shear_factorization::try_factor(p)? {
+            return Ok((factors, "pairwise_shear"));
+        }
+    }
+    phase("native")?;
+    Ok((p.factor(), "native"))
+}
+
 fn worker(args: &Args) -> Result<()> {
     let (a, p, origin) = source(args)?;
     ensure!(!p.is_zero(), "zero has no finite factorization");
@@ -153,6 +182,12 @@ fn worker(args: &Args) -> Result<()> {
         "source_sha256":hash(a.format(&p).as_bytes()),"variables":a.names,"source_terms":p.nterms(),
         "source_degrees":(0..p.nvars()).map(|i|p.degree(i)).collect::<Vec<_>>(),
         "module_sha256":hash(include_bytes!("../src/algebra/affine_factorization.rs")),
+        "translation_module_sha256":hash(include_bytes!("../src/algebra/affine_factorization.rs")),
+        "shear_module_sha256":hash(include_bytes!("../src/algebra/shear_factorization.rs")),
+        "admission_scope":"integer_translation_only; shear admission is not evaluated by Admission mode",
+        "policy_order":["integer_translation","pairwise_shear","native"],
+        "policy_scope":"optional-preconditioner operand probe; excludes earlier primitive-linear and equal-derivative-sum shortcuts",
+        "preconditioner_kind":null,"policy_stage":"not_started",
         "backend":LicenseManager::get_version(),"admitted":plan.is_some(),"admission_seconds":admission_seconds,
         "admission":plan.as_ref().map(|v|json!({"shifts":v.shifts,"original_degree_drops":v.original_degree_drops,"translated_degree_drops":v.translated_degree_drops})),
         "phase":"factor","original_coverage_claimed":false,"cache_insertion":false});
@@ -162,21 +197,26 @@ fn worker(args: &Args) -> Result<()> {
         return write(&output, &report);
     }
     let start = Instant::now();
-    let (fs, applied) = if matches!(args.mode, Mode::Policy) {
-        match affine_factorization::try_factor(&p)? {
-            Some(fs) => (fs, true),
-            None => (p.factor(), false),
+    let (fs, kind) = factor_with_policy(&p, args.mode, |stage| {
+        report["policy_stage"] = json!(stage);
+        // A pending preconditioner attempt is not evidence it was admitted.
+        // Only the explicit native fallback can be named before completion.
+        if stage == "native" {
+            report["preconditioner_kind"] = json!("native");
         }
-    } else {
-        (p.factor(), false)
-    };
+        write(&output, &report)
+    })?;
     report["factor_seconds"] = json!(start.elapsed().as_secs_f64());
-    report["preconditioner_applied"] = json!(applied);
+    report["preconditioner_kind"] = json!(kind);
+    report["preconditioner_applied"] = json!(kind != "native");
+    report["policy_stage"] = json!("signed_replay");
+    write(&output, &report)?;
+    let replay_started = Instant::now();
     let mut product = p.one();
     let mut products = 0usize;
     for (f, m) in &fs {
         ensure!(
-            f.variables() == p.variables() && *m > 0 && *m <= 64,
+            f.variables() == p.variables() && !f.is_zero() && *m > 0 && *m <= 64,
             "factor map/multiplicity"
         );
         for _ in 0..*m {
@@ -193,6 +233,7 @@ fn worker(args: &Args) -> Result<()> {
         }
     }
     ensure!(product == p, "independent signed product mismatch");
+    report["independent_signed_replay_seconds"] = json!(replay_started.elapsed().as_secs_f64());
     report["signed_product_verified"] = json!(true);
     report["factors"] = json!(
         fs.iter()
@@ -261,4 +302,62 @@ fn main() -> Result<()> {
         "incomplete factor trial; evidence retained"
     );
     Ok(())
+}
+
+#[cfg(test)]
+mod policy_tests {
+    use super::*;
+
+    #[test]
+    fn automatic_policy_selects_translation_then_shear_then_native() {
+        let a = Algebra::new(&["x".into(), "unused".into(), "y".into(), "z".into()]).unwrap();
+        for (expression, expected, stages) in [
+            (
+                "(y-1)*x^2+z+2",
+                "integer_translation",
+                vec!["translation_attempt"],
+            ),
+            (
+                "-3/7*((x+y)^2-4*x^2*y^2)^2",
+                "pairwise_shear",
+                vec!["translation_attempt", "shear_attempt"],
+            ),
+            (
+                "x^2+y^2+1",
+                "native",
+                vec!["translation_attempt", "shear_attempt", "native"],
+            ),
+        ] {
+            let p = a.parse(expression).unwrap();
+            let mut observed = Vec::new();
+            let (factors, kind) = factor_with_policy(&p, Mode::Policy, |stage| {
+                observed.push(stage.to_string());
+                Ok(())
+            })
+            .unwrap();
+            assert_eq!(kind, expected);
+            assert_eq!(observed, stages);
+            let mut product = p.one();
+            for (factor, multiplicity) in factors {
+                assert_eq!(factor.variables(), p.variables());
+                assert_eq!(factor.degree(1), 0);
+                product = &product * &factor.pow(multiplicity);
+            }
+            assert_eq!(product, p);
+        }
+    }
+
+    #[test]
+    fn native_control_never_enters_either_preconditioner() {
+        let a = Algebra::new(&["x".into(), "y".into()]).unwrap();
+        let p = a.parse("(x+y)^2-4*x^2*y^2").unwrap();
+        let mut observed = Vec::new();
+        let (_, kind) = factor_with_policy(&p, Mode::Native, |stage| {
+            observed.push(stage.to_string());
+            Ok(())
+        })
+        .unwrap();
+        assert_eq!(kind, "native");
+        assert_eq!(observed, ["native"]);
+    }
 }

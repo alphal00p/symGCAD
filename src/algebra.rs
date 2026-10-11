@@ -7,6 +7,7 @@ use symbolica::{domains::InternalOrdering, poly::factor::Factorize, prelude::*};
 
 mod affine_factorization;
 pub(crate) mod prefix_value;
+mod shear_factorization;
 mod sum_factorization;
 
 pub type Poly = MultivariatePolynomial<Q, u32>;
@@ -50,8 +51,9 @@ impl Algebra {
         })
     }
 
-    /// Opt-in algebra-only preconditioning for projection and its independent
-    /// replay. This immutable setting never changes coordinates or domains.
+    /// Opt-in integer-translation and pairwise-shear preconditioning for
+    /// projection and its independent replay. Factors return in the original
+    /// coordinates; this immutable setting never changes the problem's domain.
     pub fn with_affine_factorization(mut self, enabled: bool) -> Self {
         self.affine_factorization = enabled;
         self
@@ -399,6 +401,8 @@ fn factor_polynomial_with_policy(
         factors
     } else if affine && let Some(factors) = affine_factorization::try_factor(polynomial)? {
         factors
+    } else if affine && let Some(factors) = shear_factorization::try_factor(polynomial)? {
+        factors
     } else {
         polynomial.factor()
     };
@@ -442,6 +446,19 @@ mod tests {
 
     fn algebra() -> Algebra {
         Algebra::new(&["x".into(), "y".into()]).unwrap()
+    }
+
+    #[test]
+    fn algebra_policy_reaches_the_shear_only_when_opted_in() {
+        let a = Algebra::new(&["x".into(), "unused".into(), "y".into(), "z".into()]).unwrap();
+        let p = a.parse("-3/7*((x+y)^2-4*x^2*y^2)^2").unwrap();
+        assert!(affine_factorization::admission(&p).is_none());
+        shear_factorization::NATIVE_CALLS.with(|calls| calls.set(0));
+        let ordinary = a.factors_checked(&[p.clone()]).unwrap();
+        shear_factorization::NATIVE_CALLS.with(|calls| assert_eq!(calls.get(), 0));
+        let enabled = a.with_affine_factorization(true);
+        assert_eq!(enabled.factors_checked(&[p]).unwrap(), ordinary);
+        shear_factorization::NATIVE_CALLS.with(|calls| assert_eq!(calls.get(), 1));
     }
 
     #[test]
