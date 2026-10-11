@@ -1,5 +1,11 @@
 # Symbolica patches for escalation
 
+The separate [bounded Wang experiment](../reference/GLUZA33_WANG_PREFLIGHT.md)
+provides two optional patches under `experimental/`: a factorization policy and
+an unrelated test-feature fix. They are **not** applied by bootstrap or enabled
+in production. The linked note gives isolated setup, feature/environment flags,
+exact regression evidence and matched measurements.
+
 Fetch the pinned dependencies and apply both fixes with
 `scripts/bootstrap-deps.sh --apply-patches`. Repeating that command is safe;
 `scripts/bootstrap-deps.sh --check --apply-patches` verifies them without

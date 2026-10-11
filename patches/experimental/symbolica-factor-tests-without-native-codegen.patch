@@ -1,0 +1,13 @@
+diff --git a/src/evaluate.rs b/src/evaluate.rs
+index 565f85db..d1ddd477 100644
+--- a/src/evaluate.rs
++++ b/src/evaluate.rs
+@@ -158,7 +158,7 @@ impl std::fmt::Display for OperationCount {
+     }
+ }
+ 
+-#[cfg(test)]
++#[cfg(all(test, feature = "native_code_generation"))]
+ mod test {
+     use ahash::HashMap;
+     use numerica::domains::{dual::HyperDual, float::Real};

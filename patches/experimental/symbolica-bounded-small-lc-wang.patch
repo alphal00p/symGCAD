@@ -1,0 +1,461 @@
+diff --git a/Cargo.toml b/Cargo.toml
+index 59d78d97..4d0c615e 100644
+--- a/Cargo.toml
++++ b/Cargo.toml
+@@ -41,6 +41,8 @@ inherits = "dev"
+ opt-level = 3
+ 
+ [features]
++# Isolated research experiment; no default or production caller enables this.
++research_small_lcoeff_wang = []
+ default = [
+     "tracing_max_level_info",
+     "faster_alloc",
+diff --git a/src/poly/factor.rs b/src/poly/factor.rs
+index 1b6770a6..7e2d9dce 100644
+--- a/src/poly/factor.rs
++++ b/src/poly/factor.rs
+@@ -69,6 +69,23 @@ const INTEGER_FACTOR_BIVARIATE_WANG_MAX_VARIABLES: usize = 5;
+ // Maximum sum of degrees in coordinates evaluated by a deterministic
+ // bivariate Wang sample.
+ const INTEGER_FACTOR_BIVARIATE_WANG_MAX_EVALUATED_TOTAL_DEGREE: u32 = 96;
++
++// Research-only candidate schedule. Pairwise-coprime LC-image checks still
++// decide admission; the coordinates themselves are never a certificate.
++fn research_small_lcoeff_prime_pairs(content: &Integer) -> Vec<Vec<Integer>> {
++    let primes = PrimeIteratorU64::new(1)
++        .take(64)
++        .map(Integer::from)
++        .filter(|p| !(content % p).is_zero())
++        .take(12)
++        .collect::<Vec<_>>();
++    let mut points = Vec::new();
++    for pair in primes.chunks_exact(2) {
++        points.push(vec![pair[0].clone(), pair[1].clone()]);
++        points.push(vec![pair[1].clone(), pair[0].clone()]);
++    }
++    points
++}
+ // Largest degree factored in a one-shot univariate image used only to certify
+ // that a post-separable multivariate component is irreducible.
+ const INTEGER_FACTOR_IRREDUCIBILITY_SCOUT_MAX_DEGREE: usize = 64;
+@@ -11222,10 +11239,23 @@ impl<E: PositiveExponent> MultivariatePolynomial<IntegerRing, E, LexOrder> {
+         let mut best: Option<(Integer, Vec<Self>, Vec<(usize, Integer)>, i64, Self)> = None;
+ 
+         let uni_lcoeff = self.univariate_lcoeff(order[0]);
++        let research_trace = cfg!(feature = "research_small_lcoeff_wang")
++            && std::env::var_os("SYMBOLICA_RESEARCH_WANG_TRACE").is_some();
++        let research_enabled = cfg!(feature = "research_small_lcoeff_wang")
++            && std::env::var_os("SYMBOLICA_RESEARCH_SMALL_LC_WANG").is_some();
++        let trace = |stage: &str, points: &[(usize, Integer)]| {
++            if research_trace {
++                eprintln!(
++                    "wang-research stage={stage} source_terms={} lc_terms={} points={points:?}",
++                    self.nterms(),
++                    uni_lcoeff.nterms()
++                );
++            }
++        };
++        trace("enter", &[]);
+         let can_accept_first_primitive_image =
+             max_factors_num.is_none() && uni_lcoeff.is_constant();
+-        let can_reconstruct_monomial_lcoeff = integer_factor_start_mode()
+-            == IntegerFactorStart::Auto
++        let wang_common_admission = integer_factor_start_mode() == IntegerFactorStart::Auto
+             && max_factors_num.is_none()
+             && order.len() <= INTEGER_FACTOR_BIVARIATE_WANG_MAX_VARIABLES
+             && order[1..].iter().fold(0u32, |total, variable| {
+@@ -11235,11 +11265,69 @@ impl<E: PositiveExponent> MultivariatePolynomial<IntegerRing, E, LexOrder> {
+                 self.nterms(),
+                 self.degree(order[0]).to_u32() as usize,
+                 self.degree(order[1]).to_u32() as usize,
+-            )
+-            && uni_lcoeff.nterms() == 1
+-            && !uni_lcoeff.is_constant();
++            );
++        let can_reconstruct_monomial_lcoeff =
++            wang_common_admission && uni_lcoeff.nterms() == 1 && !uni_lcoeff.is_constant();
++        let mut can_reconstruct_small_lcoeff = research_enabled
++            && wang_common_admission
++            && order.len() == 3
++            && self.nterms() <= 8192
++            && order.iter().all(|v| self.degree(*v).to_u32() <= 32)
++            && uni_lcoeff.nterms() > 1
++            && uni_lcoeff.nterms() <= 128
++            && (0..uni_lcoeff.nvars()).all(|v| uni_lcoeff.degree(v).to_u32() <= 32)
++            && (0..uni_lcoeff.nvars())
++                .filter(|v| uni_lcoeff.degree(*v) > E::zero())
++                .count()
++                <= 2
++            && uni_lcoeff
++                .coefficients
++                .iter()
++                .all(|c| c.significant_bits() <= 8192);
+         let lcoeff_content = uni_lcoeff.content().abs();
+-        let lcoeff_factorization = can_reconstruct_monomial_lcoeff.then(|| uni_lcoeff.factor());
++        let lcoeff_factorization =
++            (can_reconstruct_monomial_lcoeff || can_reconstruct_small_lcoeff).then(|| {
++                trace("factor-leading-start", &[]);
++                let factors = uni_lcoeff.factor();
++                trace("factor-leading-end", &[]);
++                factors
++            });
++        if can_reconstruct_small_lcoeff {
++            // Resource gates are separate from the downstream mathematical checks.
++            // Exact signed replay binds every scalar and repeated LC factor.
++            let factors = lcoeff_factorization.as_ref().unwrap();
++            let mut product = self.one();
++            let mut work = 0usize;
++            can_reconstruct_small_lcoeff = factors.len() <= 32;
++            'replay: for (factor, multiplicity) in factors {
++                if !can_reconstruct_small_lcoeff
++                    || *multiplicity == 0
++                    || *multiplicity > 32
++                    || factor.nterms() > 128
++                    || factor.variables() != self.variables()
++                {
++                    can_reconstruct_small_lcoeff = false;
++                    break;
++                }
++                for _ in 0..*multiplicity {
++                    let step = product.nterms().checked_mul(factor.nterms());
++                    let total = step.and_then(|step| work.checked_add(step));
++                    let Some(total) = total.filter(|total| *total <= 1_048_576) else {
++                        can_reconstruct_small_lcoeff = false;
++                        break 'replay;
++                    };
++                    work = total;
++                    product = &product * factor;
++                    if product.nterms() > 8192 {
++                        can_reconstruct_small_lcoeff = false;
++                        break 'replay;
++                    }
++                }
++            }
++            can_reconstruct_small_lcoeff &= product == uni_lcoeff;
++        }
++        let can_reconstruct_lcoeff =
++            can_reconstruct_monomial_lcoeff || can_reconstruct_small_lcoeff;
+         let mut wang_sample_attempts = 0;
+         let wang_sample_primes = if can_reconstruct_monomial_lcoeff {
+             let mut primes = PrimeIteratorU64::new(1);
+@@ -11256,8 +11344,30 @@ impl<E: PositiveExponent> MultivariatePolynomial<IntegerRing, E, LexOrder> {
+         } else {
+             vec![]
+         };
+-        let wang_sample_attempt_limit =
+-            BIVARIATE_WANG_PRIME_SAMPLE_ROTATIONS.min(wang_sample_primes.len());
++        let mut wang_sample_points = if can_reconstruct_monomial_lcoeff {
++            (0..BIVARIATE_WANG_PRIME_SAMPLE_ROTATIONS.min(wang_sample_primes.len()))
++                .map(|rotation| {
++                    (0..cur_sample_points.len())
++                        .map(|i| {
++                            wang_sample_primes[(i + rotation) % wang_sample_primes.len()].clone()
++                        })
++                        .collect::<Vec<_>>()
++                })
++                .collect::<Vec<_>>()
++        } else {
++            vec![]
++        };
++        if can_reconstruct_small_lcoeff {
++            // Six consecutive, disjoint prime pairs, each in both orders.
++            // Never key coordinates or source admission on an input identifier.
++            wang_sample_points.extend(research_small_lcoeff_prime_pairs(&lcoeff_content));
++        }
++        let wang_sample_attempt_limit = wang_sample_points.len();
++        if research_trace {
++            eprintln!(
++                "wang-research admission monomial={can_reconstruct_monomial_lcoeff} small={can_reconstruct_small_lcoeff} candidates={wang_sample_attempt_limit} order={order:?}"
++            );
++        }
+         let initial_coefficient_upper_bound = coefficient_upper_bound;
+         let mut initialized_random_fallback = false;
+         let mut lcoeff_square_free = self.one();
+@@ -11268,10 +11378,10 @@ impl<E: PositiveExponent> MultivariatePolynomial<IntegerRing, E, LexOrder> {
+         let mut content_try_count = 0;
+         let mut lcoeff_try_count = 0;
+         'new_sample: loop {
+-            let use_wang_sample = can_reconstruct_monomial_lcoeff
++            let use_wang_sample = can_reconstruct_lcoeff
+                 && max_factors_num.is_none()
+                 && wang_sample_attempts < wang_sample_attempt_limit;
+-            if can_reconstruct_monomial_lcoeff
++            if can_reconstruct_lcoeff
+                 && !use_wang_sample
+                 && max_factors_num.is_none()
+                 && wang_sample_attempts > 0
+@@ -11281,22 +11391,24 @@ impl<E: PositiveExponent> MultivariatePolynomial<IntegerRing, E, LexOrder> {
+                 content_try_count = 0;
+                 lcoeff_try_count = 0;
+                 initialized_random_fallback = true;
++                trace("random-fallback", &[]);
+             }
+             if use_wang_sample {
+                 #[cfg(test)]
+                 BIVARIATE_WANG_SAMPLE_TRIES.with(|count| count.set(count.get() + 1));
+-                let rotation = wang_sample_attempts;
++                let candidate = &wang_sample_points[wang_sample_attempts];
+                 wang_sample_attempts += 1;
+                 for (index, sample) in cur_sample_points.iter_mut().enumerate() {
+-                    sample.1 =
+-                        wang_sample_primes[(index + rotation) % wang_sample_primes.len()].clone();
++                    sample.1 = candidate[index].clone();
+                 }
++                trace("candidate", &cur_sample_points);
+ 
+                 if !Self::lcoeff_sample_supports_wang_reconstruction(
+                     lcoeff_factorization.as_ref().unwrap(),
+                     &lcoeff_content,
+                     &cur_sample_points,
+                 ) {
++                    trace("reject-images", &cur_sample_points);
+                     continue;
+                 }
+             } else {
+@@ -11313,6 +11425,7 @@ impl<E: PositiveExponent> MultivariatePolynomial<IntegerRing, E, LexOrder> {
+             for ((v, s), rem_var) in cur_sample_points[1..].iter().zip(&order[1..]).rev() {
+                 cur_biv_f = cur_biv_f.replace(*v, s);
+                 if cur_biv_f.degree(*rem_var) != self.degree(*rem_var) {
++                    trace("reject-bivariate-degree", &cur_sample_points);
+                     coefficient_upper_bound += 10;
+                     continue 'new_sample;
+                 }
+@@ -11321,6 +11434,7 @@ impl<E: PositiveExponent> MultivariatePolynomial<IntegerRing, E, LexOrder> {
+             // requirement for leading coefficient precomputation
+             if cur_biv_f.univariate_lcoeff(order[0]).degree(order[1]) != uni_lcoeff.degree(order[1])
+             {
++                trace("reject-leading-degree", &cur_sample_points);
+                 debug!(
+                     "Degree of x{} in leading coefficient of bivariate image is wrong",
+                     order[1]
+@@ -11335,6 +11449,7 @@ impl<E: PositiveExponent> MultivariatePolynomial<IntegerRing, E, LexOrder> {
+                 &lcoeff_square_free,
+                 &cur_sample_points,
+             ) {
++                trace("reject-leading-squarefree", &cur_sample_points);
+                 debug!(
+                     "Bad sample for reconstructing lcoeff: square-free lcoeff image is not square-free"
+                 );
+@@ -11348,6 +11463,7 @@ impl<E: PositiveExponent> MultivariatePolynomial<IntegerRing, E, LexOrder> {
+             lcoeff_try_count = 0;
+ 
+             if use_wang_sample && !cur_biv_f.content().abs().is_one() {
++                trace("reject-bivariate-integer-content", &cur_sample_points);
+                 continue;
+             }
+ 
+@@ -11365,6 +11481,7 @@ impl<E: PositiveExponent> MultivariatePolynomial<IntegerRing, E, LexOrder> {
+ 
+                 if !c.is_constant() {
+                     if use_wang_sample {
++                        trace("reject-univariate-nonconstant-content", &cur_sample_points);
+                         continue;
+                     }
+ 
+@@ -11392,6 +11509,7 @@ impl<E: PositiveExponent> MultivariatePolynomial<IntegerRing, E, LexOrder> {
+                 }
+ 
+                 if use_wang_sample && !c.get_constant().abs().is_one() {
++                    trace("reject-univariate-integer-content", &cur_sample_points);
+                     continue;
+                 }
+ 
+@@ -11400,6 +11518,7 @@ impl<E: PositiveExponent> MultivariatePolynomial<IntegerRing, E, LexOrder> {
+                 let retained_variables_start_at_zero = [order[0], order[1]]
+                     .into_iter()
+                     .all(|variable| cur_biv_f.degree_bounds(variable).0 == E::zero());
++                trace("bivariate-factor-start", &cur_sample_points);
+                 bivariate_factors =
+                     if c.get_constant().abs().is_one() && retained_variables_start_at_zero {
+                         cur_biv_f.bivariate_factor_reconstruct(order[0], order[1])
+@@ -11412,6 +11531,7 @@ impl<E: PositiveExponent> MultivariatePolynomial<IntegerRing, E, LexOrder> {
+                         factors.retain(|factor| !factor.is_constant());
+                         factors
+                     };
++                trace("bivariate-factor-end", &cur_sample_points);
+ 
+                 // A one-factor admissible image certifies irreducibility. An
+                 // initial primitive image with constant leading coefficient or
+@@ -11424,11 +11544,22 @@ impl<E: PositiveExponent> MultivariatePolynomial<IntegerRing, E, LexOrder> {
+                     && use_wang_sample
+                     && c.get_constant().abs().is_one())
+                 .then(|| {
++                    trace("assignment-start", &cur_sample_points);
+                     self.wang_lcoeff_precomputation(&bivariate_factors, &cur_sample_points, order)
+                         .ok()
+                 })
+                 .flatten();
+                 let accepts_first_wang_reconstruction = wang_lcoeffs.is_some();
++                if use_wang_sample {
++                    trace(
++                        if accepts_first_wang_reconstruction {
++                            "assignment-accepted"
++                        } else {
++                            "assignment-not-accepted"
++                        },
++                        &cur_sample_points,
++                    );
++                }
+                 if use_wang_sample
+                     && bivariate_factors.len() > 1
+                     && !accepts_first_wang_reconstruction
+@@ -11500,6 +11631,8 @@ impl<E: PositiveExponent> MultivariatePolynomial<IntegerRing, E, LexOrder> {
+                         max_factors_num.unwrap_or(bivariate_factors.len())
+                     );
+                 }
++            } else {
++                trace("reject-image-degree-or-squarefree", &cur_sample_points);
+             }
+ 
+             coefficient_upper_bound += 10;
+@@ -13755,6 +13888,149 @@ mod test {
+         BIVARIATE_WANG_SAMPLE_TRIES.with(|count| assert_eq!(count.get(), 0));
+     }
+ 
++    #[test]
++    fn research_wang_prime_pairs_are_bounded_and_skip_content_divisors() {
++        let content = Integer::from(30);
++        let pairs = super::research_small_lcoeff_prime_pairs(&content);
++        assert_eq!(pairs.len(), 12);
++        assert_eq!(pairs[0], vec![Integer::from(7), Integer::from(11)]);
++        for pair in &pairs {
++            assert_eq!(pair.len(), 2);
++            assert!(pair[0] != pair[1]);
++            assert!(
++                pair.iter()
++                    .all(|p| p > &Integer::one() && p.gcd(&content).is_one())
++            );
++        }
++        assert_eq!(pairs[1], vec![pairs[0][1].clone(), pairs[0][0].clone()]);
++        assert!(super::research_small_lcoeff_prime_pairs(&Integer::zero()).is_empty());
++        let all_small_primes = super::PrimeIteratorU64::new(1)
++            .take(64)
++            .fold(Integer::one(), |p, prime| p * Integer::from(prime));
++        assert!(super::research_small_lcoeff_prime_pairs(&all_small_primes).is_empty());
++    }
++
++    #[cfg(feature = "research_small_lcoeff_wang")]
++    #[test]
++    fn research_wang_nonmonomial_lcoeff_preserves_signed_reconstruction() {
++        // Run with SYMBOLICA_RESEARCH_SMALL_LC_WANG=1; otherwise this would
++        // exercise the historical random path instead of the admission change.
++        assert!(std::env::var_os("SYMBOLICA_RESEARCH_SMALL_LC_WANG").is_some());
++        let _lock = GLOBAL_FACTOR_SETTINGS_LOCK.lock().unwrap();
++        let _guard = FactorSettingsGuard::new();
++        GLOBAL_SETTINGS
++            .use_univariate_factorization
++            .store(true, Ordering::Relaxed);
++        GLOBAL_SETTINGS
++            .use_bivariate_factorization
++            .store(true, Ordering::Relaxed);
++        let polynomial = dense_bivariate_wang_test_polynomial().shift_var(1, &Integer::one());
++        assert!(polynomial.univariate_lcoeff(0).nterms() > 1);
++        for source in [polynomial.clone(), -polynomial.clone()] {
++            BIVARIATE_SAMPLE_FACTORIZATIONS.with(|count| count.set(0));
++            BIVARIATE_WANG_SAMPLE_TRIES.with(|count| count.set(0));
++            let mut order = vec![0, 1, 2];
++            let (factors, _, _, _, leading) = source.find_sample(&mut order, 10, None);
++            assert_eq!(factors.len(), 2);
++            assert!(leading.is_some());
++            BIVARIATE_SAMPLE_FACTORIZATIONS.with(|count| assert_eq!(count.get(), 1));
++            let (unit, lcs) = leading.unwrap();
++            let replay = lcs.iter().fold(source.constant(unit), |p, f| &p * f);
++            assert_eq!(replay, source.univariate_lcoeff(0));
++            let mut order = vec![0, 1, 2];
++            let exact = source.multivariate_factorization(&mut order, 10, None, None, false);
++            let replay = exact.iter().fold(source.one(), |p, f| &p * f);
++            assert_eq!(replay, source);
++        }
++        // An existing factor-count bound must still suppress the new shortcut.
++        let mut order = vec![0, 1, 2];
++        let (_, _, _, _, leading) = polynomial.find_sample(&mut order, 10, Some(2));
++        assert!(leading.is_none());
++    }
++
++    #[cfg(feature = "research_small_lcoeff_wang")]
++    #[test]
++    fn research_wang_public_factor_keeps_parameter_only_content() {
++        let variables = Some(Arc::new(vec![
++            symbol!("x").into(),
++            symbol!("y").into(),
++            symbol!("z").into(),
++        ]));
++        let source = parse!("(z-1)*((y+1)*x^3+y+z)")
++            .expand()
++            .to_polynomial::<_, u8>(&Z, variables);
++        let content = parse!("z-1").to_polynomial::<_, u8>(&Z, source.variables().clone());
++        let factors = source.factor();
++        assert!(
++            factors
++                .iter()
++                .any(|(f, m)| *m == 1 && (*f == content || *f == -content.clone()))
++        );
++        let replay = factors
++            .iter()
++            .fold(source.one(), |p, (f, m)| &p * &f.pow(*m));
++        assert_eq!(replay, source);
++    }
++
++    #[cfg(feature = "research_small_lcoeff_wang")]
++    #[test]
++    fn research_wang_nonunit_content_exhausts_bounded_menu_then_falls_back() {
++        assert!(std::env::var_os("SYMBOLICA_RESEARCH_SMALL_LC_WANG").is_some());
++        let _lock = GLOBAL_FACTOR_SETTINGS_LOCK.lock().unwrap();
++        let _guard = FactorSettingsGuard::new();
++        GLOBAL_SETTINGS
++            .use_univariate_factorization
++            .store(true, Ordering::Relaxed);
++        GLOBAL_SETTINGS
++            .use_bivariate_factorization
++            .store(true, Ordering::Relaxed);
++        let source = dense_bivariate_wang_test_polynomial()
++            .shift_var(1, &Integer::one())
++            .mul_coeff(Integer::from(2));
++        BIVARIATE_WANG_SAMPLE_TRIES.with(|count| count.set(0));
++        let mut order = vec![0, 1, 2];
++        let (factors, _, _, _, leading) = source.find_sample(&mut order, 10, None);
++        assert_eq!(factors.len(), 2);
++        assert!(leading.is_none());
++        BIVARIATE_WANG_SAMPLE_TRIES.with(|count| assert_eq!(count.get(), 12));
++    }
++
++    #[cfg(feature = "research_small_lcoeff_wang")]
++    #[test]
++    fn research_wang_rejects_colliding_first_prime_image() {
++        assert!(std::env::var_os("SYMBOLICA_RESEARCH_SMALL_LC_WANG").is_some());
++        let _lock = GLOBAL_FACTOR_SETTINGS_LOCK.lock().unwrap();
++        let _guard = FactorSettingsGuard::new();
++        GLOBAL_SETTINGS
++            .use_univariate_factorization
++            .store(true, Ordering::Relaxed);
++        GLOBAL_SETTINGS
++            .use_bivariate_factorization
++            .store(true, Ordering::Relaxed);
++        let variables = Some(Arc::new(vec![
++            symbol!("x").into(),
++            symbol!("y").into(),
++            symbol!("z").into(),
++        ]));
++        let left = parse!("(y+1)*x^3+x*(1+2*y+z)+(1+y)*(1+z+z^2+z^3+z^4+z^5+z^6+z^7)")
++            .expand()
++            .to_polynomial::<_, u8>(&Z, variables.clone());
++        let delta = parse!("z-3").to_polynomial::<_, u8>(&Z, variables);
++        let source = &left * &(&left + &delta);
++        let (_, density) = source.integer_factor_start_auto_decision(&[0, 1, 2]);
++        assert!(density > INTEGER_FACTOR_BIVARIATE_WANG_MIN_BOX_DENSITY);
++        let first = source
++            .replace(1, &Integer::from(2))
++            .replace(2, &Integer::from(3));
++        assert!(!first.gcd(&first.derivative(0)).is_constant());
++        BIVARIATE_WANG_SAMPLE_TRIES.with(|count| count.set(0));
++        let mut order = vec![0, 1, 2];
++        let (factors, points, _, _, _) = source.find_sample(&mut order, 10, None);
++        assert_eq!(factors.len(), 2);
++        assert_ne!(points, vec![(1, Integer::from(2)), (2, Integer::from(3))]);
++        BIVARIATE_WANG_SAMPLE_TRIES.with(|count| assert!(count.get() >= 2));
++    }
++
+     #[test]
+     fn bivariate_wang_sampling_keeps_the_bounded_path_for_nonunit_content() {
+         let _lock = GLOBAL_FACTOR_SETTINGS_LOCK.lock().unwrap();

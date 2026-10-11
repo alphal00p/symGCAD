@@ -60,10 +60,17 @@ Matched automatic, univariate and bivariate Symbolica starts each timed out
 at 60 seconds on that operand; no simple strategy switch was successful.
 
 The [factor profile and leading-coefficient preflight](GLUZA33_FACTOR_PROFILE.md)
-identify modular reconstruction as the current cost. A bounded exact probe
-finds a suitable candidate for the necessary Wang image gates; full assignment
-and source reconstruction remain unproved. A separate truncated search of
-4,096 cached factor proposals found no divisor. Neither experiment solves Gluza33.
+identify modular reconstruction as the current cost. The subsequent
+[isolated Wang experiment](GLUZA33_WANG_PREFLIGHT.md) completes the 2,410-term
+factorization in 1.039 seconds; a matched disabled control times out at 60.034
+seconds. Exported 106- and 821-term factors reconstruct the full signed source
+exactly, each with multiplicity one. This optional backend patch is separate
+from the unchanged production dependency. A truncated search of 4,096 cached
+factor proposals found no divisor. With the optional patch, a further warm
+original continuation saved 202 operations before timing out at 600.096 seconds
+with 762.5 MiB peak RSS. It reached the earlier 19,942-term discriminant at a
+different recorded prefix; no result or verification completed. The original
+Gluza33 problem remains unresolved.
 
 The new [exact shear preconditioner](SHEAR_FACTORIZATION.md) extends the existing
 default-off affine option without changing any original zero set. Its automatic

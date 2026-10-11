@@ -158,3 +158,26 @@ Evidence under `artifacts/research/interval-source-budget-production-01/validati
 | `source-hashes.txt` | `2c2e1835209b925f94a790891babefe757c1b162ef7e8d0b2758bc442d49bf89` |
 | `test-targets.txt` | `668b3507cccc2f5f9c80076f615332fcac5a848797b9ce0986c9517442596127` |
 | `source-check.log` | `0419b0862c0b4aae1c31e80964b02865aa1b62d9a5d1282dab1217d2cbe76cf5` |
+
+## Exact shear factor preconditioning
+
+The production shear option passed **642 tracked tests across 48 targets,
+zero failed, two ignored**, using the unchanged pinned Symbolica backend.
+All source hashes matched after the run; test bodies summed to **51.48 seconds**.
+The separate workstream's untracked alternate-mass fixture remained excluded.
+The release build also passed a fresh solve and independent verification of
+four cells separated by same-sign interior zero seams. See
+[the policy and exact reconstruction checks](SHEAR_FACTORIZATION.md).
+
+The optional Wang backend experiment has its own 19 selected tests; those
+are separate from this production count and from original corpus completion.
+
+Evidence under `artifacts/research/shear-factor-policy-01/validation/`:
+
+| Record | SHA-256 |
+| --- | --- |
+| `fast.log` | `eece188a8b4bd5a0294c4aec01a51abbece355ba9571d529e1cfdcaad2885179` |
+| `summary.json` | `d918247ab51ff6f1993f41465ba0722683f8cb5bbc503e23b2b3a54c0ee632fe` |
+| `source-hashes.txt` | `b6bb96ea1457b24ea0dbe5f00b4ee861ad7e2e737bbeb2efc06f910f44ccb163` |
+| `test-targets.txt` | `3bf641694675e5a0cb5d6f00aff5ba64f8fa575cde589c51c4e1674b5a4698ad` |
+| `source-check.log` | `32aa676d98c657cbd3e981690da38d82998c3449c49bba5adc162dbfa9955e79` |

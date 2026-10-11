@@ -112,6 +112,30 @@ multiplicities `(1,1,1,33)`. Thus the shear removed one blocker, while expensive
 kinematic algebra and extensive refinements remain. Neither trial contributes
 a newly solved corpus problem or a finite benchmark solve time.
 
+A third trial changed only `local_base_univariate_basis=true` and the copied
+cache path, inheriting the second run's 58,511 completed operations. It timed
+out at **600.035 s**, with **189,892 KiB** peak RSS. The registry reached its
+4,096-source cap (4,265 support blocks; 19,652 source-count decline attempts),
+then used ordinary exact fallback. Algebra replay reported no post-entry
+failures, but no cell export or independent decomposition verification
+completed. There is **no demonstrated overall speedup**. Measured factoring
+fell to 32.010 s, while system CPU rose from 12.721 s to 167.335 s; registry
+decomposition and reconstruction totalled only 1.210 s. A profile is needed
+before attributing the remaining cost. All inherited operation files remained
+byte-identical; 238 ordinary operations and 4,096 support proposals were added.
+Different cache inheritance and support representations prevent a controlled
+timing comparison; node/refinement counts do not measure certified coverage.
+
+Read-only review identifies a possible future cache-aware policy: look up an
+already completed factorization before registering a new support source. The
+current support path can bypass such ordinary factor-cache entries. This needs
+a **lookup-only** operation: a miss must not invoke the expensive native factor
+call that the support option is intended to avoid. Protected inputs, exact
+cache validation, typed support boundaries and verifier replay must retain
+their contracts. This policy has not been implemented or measured; it is not
+an established explanation for the system-CPU increase. This campaign stops
+with C470 unresolved.
+
 ## Evidence and reproduction
 
 Large operands, frozen binaries, full source archive, exact input audit,
@@ -124,7 +148,9 @@ operation manifests, and process reports remain untracked under:
 - `artifacts/research/c470-shear-continuation-01/` — original 300-second run,
   `run.sh`, `input-audit.json`, source archive and before/after cache inventories;
 - `artifacts/research/c470-shear-continuation-02/` — separate 600-second run,
-  exact input/cache inheritance audits and captured degree-300 source.
+  exact input/cache inheritance audits and captured degree-300 source;
+- `artifacts/research/c470-shear-continuation-03/` — existing univariate-support
+  option trial, phase comparison, registry counters and audited proposal cache.
 
 SHA256 bindings:
 

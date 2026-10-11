@@ -1,5 +1,10 @@
 # Gluza33: factorization profile and leading-coefficient preflight
 
+**Follow-up:** the [isolated Wang-preflight experiment](GLUZA33_WANG_PREFLIGHT.md)
+now reconstructs this source in 1.039 seconds. The measurements below describe
+the unmodified-backend diagnosis that motivated that optional patch; the original
+Gluza33 decomposition remains unresolved.
+
 The remaining 2,410-term factor call spends most observed execution in
 bivariate reconstruction and Hensel lifting. Its leading coefficient factors
 cheaply, and one bounded specialization passes the necessary Wang image gates.

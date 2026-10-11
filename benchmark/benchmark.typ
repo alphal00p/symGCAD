@@ -107,8 +107,10 @@ with three fresh repetitions and identical orders. *±* means two separate sign-
   An exact interval cover constructed and factored 49 guards in *9.271 s / 32 MiB*.
   The integrated interval option passed that discriminant and saved 6422 further operations
   in a *600.055 s / 364 MiB* warm debug trial, ending on a new factorization.
-  Profiling now locates the factor cost in modular reconstruction; a cheap leading-coefficient
-  factorization supplies a candidate evaluation point, but no full source factorization yet.
+  An isolated Wang-preflight patch factors this source in *1.039 s*, versus a matched
+  disabled-control timeout at *60.034 s*. Both exported factors reconstruct it exactly.
+  A warm patched solve saved 202 further operations before a *600.096 s / 763 MiB*
+  timeout on a discriminant. The production dependency is unchanged; Gluza33 remains incomplete.
   These incomplete probes add no original coverage or solved-time ratio.
 
   Measurements prefer verified three-repeat controls, otherwise the fastest accepted original-problem
@@ -218,8 +220,9 @@ with three fresh repetitions and identical orders. *±* means two separate sign-
   each timed out at 60 s: better prefix scores have not yielded new completions.
   Automatic shear preconditioning factors the captured C470 obstruction in 0.088 s, with
   exact signed reconstruction. Warm original continuations timed out at 300.028 s (136 MiB)
-  and 600.061 s (222 MiB), retaining 56,671 then 1,205 new operations. Neither supplies
-  a completed-solve speedup ratio.
+  and 600.061 s (222 MiB), retaining 56,671 then 1,205 new operations. A further
+  600.035 s / 185 MiB support-basis trial also timed out, with no demonstrated overall gain.
+  None supplies a completed-solve speedup ratio.
   Conditional AM–GM certificates are a further proposal for proved bounded domains; global
   support screening found no new small-source candidate. All interior threshold sheets remain required.
   The latest tracked fast suite passed 642 tests, with zero failures and two expensive tests ignored.

@@ -10,7 +10,7 @@ The subsequent [positive Gluza33 continuation](reference/GLUZA33_AFFINE_ORDER_CO
 
 Later affine preconditioning and configurable root certificates passed two discriminant bottlenecks. The latest [interval-certificate continuation](reference/INTERVAL_SOURCE_BUDGET_PRODUCTION.md) saved 6,422 further exact operations before its ten-minute timeout on a new factorization; Gluza33 remains incomplete. The tracked fast suite passes 642 tests, with two expensive tests ignored.
 
-The [Gluza33 factor profile](reference/GLUZA33_FACTOR_PROFILE.md) identifies modular reconstruction as the current cost and a concrete evaluation-point experiment. The [SubTropica review](reference/TROPICAL_SUBTROPICA_RESEARCH.md) led to joint scale/order probes and proposed conditional positivity certificates; neither has yet added a verified original case.
+An [isolated Symbolica experiment](reference/GLUZA33_WANG_PREFLIGHT.md) reconstructs a captured Gluza33 factorization bottleneck in 1.04 seconds; its matched disabled control times out at 60 seconds. The optional patch passes that obstruction in the full solver, which remains incomplete after a further ten-minute trial. The production dependency is unchanged. The [SubTropica review](reference/TROPICAL_SUBTROPICA_RESEARCH.md) led to joint scale/order probes and proposed conditional positivity certificates; neither has yet added a verified original case.
 
 The [final checkpoint](reference/FINAL_CHECKPOINT.md) separates verified original results, tested improvements and remaining research. No timeout or conditional chamber is counted as an original completion.
 
