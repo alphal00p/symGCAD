@@ -214,3 +214,41 @@ remained unchanged. The frozen release SHA-256 is
 `571f37a5c868aaa2055fb1c2a667332d0f7ff1df0a7e26d87a9edab493ee2c30`;
 build, solve, verification and source-check logs are retained in the sibling
 `release/` directory. This smoke check adds no corpus completion.
+
+## Support-preserving scaling and exact interval coalescence
+
+The subsequent combined gate passed **653 tracked tests across 49 targets,
+zero failed, two ignored**, using the unchanged pinned Symbolica backend.
+All production/test source hashes matched after the run; test bodies summed
+to **58.57 seconds**. The separate workstream's untracked alternate-mass test
+remained excluded. The build used the same locked Nix environment, CPUs 6
+and 7, two Cargo jobs, one test thread per target and package-specific debug
+settings as the preceding gate.
+
+New checks cover diagonal scaling, exact inverse maps, signed rational and
+repeated factors, shared transformation/replay budgets, and adjacent interval
+coalescence with exact root counts and endpoint obligations. Existing generic
+aggregate-budget and finite lifetime-stock regressions remain unchanged and
+pass. The optional affine policy still defaults to false. Research operand
+and helper measurements are separate from this production count and do not
+add original-corpus completions.
+
+Evidence under `artifacts/research/support-preserving-production-01/validation/`:
+
+| Record | SHA-256 |
+| --- | --- |
+| `fast.log` | `f04ab2188ec3be019bad93c5dbe5406fa5d378bc7c95f1785a80f2abc498294e` |
+| `summary.json` | `50d408399c3018d58a89fdf563605da558d959448ca3d1f5a748261f08af4b1e` |
+| `source-hashes.txt` | `beddfbdf52cd029c06c17f5cdb3866377e79cda9e9ccf7fde41562c81e3cbfa8` |
+| `test-targets.txt` | `49d9f28ecdf60fd4674681cf9b22f95e880511efed84a302eae5f8484bf194bf` |
+| `source-check.log` | `da104b58c0aa983c519243d0e29935fab83e7eff8069b6355921618db72ee6f8` |
+
+All examples passed `cargo check --locked --examples`, and the four changed
+Rust files passed formatting checks. The ordinary-backend release build then
+solved and independently verified a repeated-factor interior-seam smoke problem:
+four cells, four stacks and nine exactly rejected branches. All source hashes
+remained unchanged. The frozen release SHA-256 is
+`40f8740952452433f9a68d67db54a3b8632f2827f660f1ad83e2240eb6e324f3`;
+build, solve, verification and source-check records are in the sibling
+`release/` directory. The separate optional-Wang hard-case worker has its own
+backend and binary provenance and is not this production release.

@@ -219,6 +219,67 @@ fn weights(d: usize, a: &Rational, b: Option<&Rational>) -> Vec<Vec<Rational>> {
     weights
 }
 
+type NumericInterval = (Rational, Option<Rational>, usize);
+
+/// Remove unnecessary discovery seams using only adjacent, already certified
+/// intervals. Each original interval is visited once, so there are at most
+/// N-1 union candidates. The symbolic checker still rebuilds every coefficient
+/// of the resulting cover; this is only a bounded discovery heuristic.
+fn coalesce_adjacent(
+    f: &UnivariatePolynomial<Q>,
+    intervals: Vec<NumericInterval>,
+) -> (Vec<NumericInterval>, usize) {
+    if f.is_zero() {
+        return (intervals, 0);
+    }
+    let mut out: Vec<NumericInterval> = Vec::with_capacity(intervals.len());
+    let mut attempts = 0;
+    for next in intervals {
+        let Some(previous) = out.last_mut() else {
+            out.push(next);
+            continue;
+        };
+        attempts += 1;
+        let count = previous.2.saturating_add(next.2);
+        // Even a seam that has no root must not join two one-root pieces:
+        // the replayed interval theorem certifies only zero or one root.
+        let adjacent = previous.1.as_ref() == Some(&next.0);
+        let ordered = previous.0 >= Rational::zero()
+            && next.0 > previous.0
+            && next.1.as_ref().is_none_or(|b| *b > next.0);
+        if count > 1
+            || !adjacent
+            || !ordered
+            || f.evaluate(&previous.0).is_zero()
+            || f.evaluate(&next.0).is_zero()
+            || next.1.as_ref().is_some_and(|b| f.evaluate(b).is_zero())
+        {
+            out.push(next);
+            continue;
+        }
+        let values = weights(f.degree(), &previous.0, next.1.as_ref())
+            .iter()
+            .map(|row| {
+                row.iter()
+                    .zip(f.coefficients())
+                    .fold(Rational::zero(), |sum, (w, c)| sum + w * c)
+            })
+            .collect::<Vec<_>>();
+        // A zero at this sample could be a nonzero symbolic coefficient that
+        // nullifies. Conservatively keep the old pieces rather than proposing
+        // a cover that the independent coefficient checker must decline.
+        if values.iter().any(|c| c.is_zero())
+            || variations(&values.iter().map(sign).collect::<Vec<_>>()) != count
+        {
+            out.push(next);
+            continue;
+        }
+        previous.1 = next.1;
+        previous.2 = count;
+    }
+    (out, attempts)
+}
+
 /// Zero and infinity have unique typed representations. Finite rationals must
 /// be strictly positive; equality between neighbors is exact, not string-based.
 fn cover(
@@ -483,7 +544,7 @@ fn discover(
         let v = variations(&signs);
         if v <= 1 {
             count += v;
-            accepted.push((a, b));
+            accepted.push((a, b, v));
             continue;
         }
         if accepted.len() + pending.len() + 2 > MAX_INTERVALS || depth >= MAX_DEPTH {
@@ -517,10 +578,14 @@ fn discover(
         return Ok(None);
     }
     accepted.sort_by(|a, b| a.0.cmp(&b.0));
+    let original_intervals = accepted.len();
+    let (accepted, attempts) = coalesce_adjacent(&f, accepted);
+    debug_assert!(attempts <= original_intervals.saturating_sub(1));
+    debug_assert_eq!(accepted.iter().map(|i| i.2).sum::<usize>(), count);
     Ok(Some(
         accepted
             .into_iter()
-            .map(|(a, b)| PositiveInterval {
+            .map(|(a, b, _)| PositiveInterval {
                 lower: if a.is_zero() {
                     PositiveIntervalEndpoint::Zero
                 } else {
@@ -542,6 +607,171 @@ mod tests {
         let a = Algebra::new(&["s".into(), "z".into()]).unwrap();
         let p = a.parse(text).unwrap();
         (a, p)
+    }
+
+    fn numeric_interval(a: i64, b: Option<i64>, count: usize) -> NumericInterval {
+        (Rational::from(a), b.map(Rational::from), count)
+    }
+
+    fn univariate(text: &str) -> UnivariatePolynomial<Q> {
+        let (a, p) = setup(text);
+        a.specialize_univariate(&p, 1, &[Rational::zero()]).unwrap()
+    }
+
+    #[test]
+    fn adjacent_zero_one_one_zero_and_zero_zero_pieces_coalesce_exactly() {
+        let f = univariate("(z-2)*(z+1)*(z+3)");
+        for pieces in [
+            vec![
+                numeric_interval(0, Some(1), 0),
+                numeric_interval(1, None, 1),
+            ],
+            vec![
+                numeric_interval(0, Some(3), 1),
+                numeric_interval(3, None, 0),
+            ],
+        ] {
+            let (merged, attempts) = coalesce_adjacent(&f, pieces);
+            assert_eq!(merged, vec![numeric_interval(0, None, 1)]);
+            assert_eq!(attempts, 1);
+        }
+        let f = univariate("(z+1)*(z+2)*(z+3)");
+        let pieces = (0..8)
+            .map(|i| numeric_interval(i, (i != 7).then_some(i + 1), 0))
+            .collect::<Vec<_>>();
+        let (merged, attempts) = coalesce_adjacent(&f, pieces);
+        assert_eq!(merged, vec![numeric_interval(0, None, 0)]);
+        assert_eq!(attempts, 7); // One pass, including repeated accumulator merges.
+    }
+
+    #[test]
+    fn coalescence_rejects_multiple_roots_and_unsaturated_union_bounds() {
+        let two_roots = vec![
+            numeric_interval(0, Some(2), 1),
+            numeric_interval(2, None, 1),
+        ];
+        assert_eq!(
+            coalesce_adjacent(&univariate("(z-1)*(z-3)*(z+1)"), two_roots.clone()).0,
+            two_roots
+        );
+        // Each piece has zero variations, but the union has two. The true
+        // root count alone is not sufficient for the supplied Descartes proof.
+        let rootless = vec![
+            numeric_interval(0, Some(1), 0),
+            numeric_interval(1, None, 0),
+        ];
+        assert_eq!(
+            coalesce_adjacent(&univariate("(z+2)*(z^2-z+1)"), rootless.clone()).0,
+            rootless
+        );
+    }
+
+    #[test]
+    fn coalescence_keeps_strict_endpoints_adjacency_and_nullifying_coefficients() {
+        let pieces = vec![
+            numeric_interval(0, Some(1), 0),
+            numeric_interval(1, None, 0),
+        ];
+        // Root-valued old seams must not be removed on untrusted count input.
+        assert_eq!(
+            coalesce_adjacent(&univariate("(z-1)*(z+1)*(z+2)"), pieces.clone()).0,
+            pieces
+        );
+        let endpoint = vec![
+            numeric_interval(0, Some(1), 0),
+            numeric_interval(1, Some(2), 0),
+        ];
+        assert_eq!(
+            coalesce_adjacent(&univariate("(z-2)*(z+1)*(z+3)"), endpoint.clone()).0,
+            endpoint
+        );
+        let gap = vec![
+            numeric_interval(0, Some(1), 0),
+            numeric_interval(2, None, 0),
+        ];
+        assert_eq!(
+            coalesce_adjacent(&univariate("(z+1)*(z+2)*(z+3)"), gap.clone()).0,
+            gap
+        );
+        // At s=0 the union's z^2 coefficient vanishes, although the original
+        // multivariate coefficient s is nonzero. Keep the valid smaller pieces.
+        assert_eq!(
+            coalesce_adjacent(&univariate("z^3+s*z^2+z+1"), pieces.clone()).0,
+            pieces
+        );
+    }
+
+    #[test]
+    fn coalesced_cover_rebuilds_full_map_guards_and_rejects_tampering() {
+        let a = Algebra::new(&["s".into(), "z".into(), "unused".into()]).unwrap();
+        let p = a.parse("(z-1)*(z-3)*(z+1)*(z+2)+s*z").unwrap();
+        let prefix = [Rational::zero()];
+        let f = a.specialize_univariate(&p, 1, &prefix).unwrap();
+        let pieces = vec![
+            (Rational::zero(), Some(rational("1/2").unwrap()), 0),
+            (rational("1/2").unwrap(), Some(Rational::from(2)), 1),
+            numeric_interval(2, Some(4), 1),
+            numeric_interval(4, None, 0),
+        ];
+        let (merged, attempts) = coalesce_adjacent(&f, pieces);
+        assert_eq!(attempts, 3);
+        assert_eq!(
+            merged,
+            vec![
+                numeric_interval(0, Some(2), 1),
+                numeric_interval(2, None, 1)
+            ]
+        );
+        let template = vec![
+            PositiveInterval {
+                lower: PositiveIntervalEndpoint::Zero,
+                upper: PositiveIntervalEndpoint::Rational("2".into()),
+            },
+            PositiveInterval {
+                lower: PositiveIntervalEndpoint::Rational("2".into()),
+                upper: PositiveIntervalEndpoint::PositiveInfinity,
+            },
+        ];
+        let (case, guards) = at_template(&p, 1, &prefix, &template, 4096, 65536)
+            .unwrap()
+            .unwrap();
+        assert!(guards.iter().all(|g| g.variables() == &a.variables));
+        for g in [
+            p.univariate_lcoeff(1),
+            p.replace(1, &Rational::zero()),
+            p.replace(1, &Rational::from(2)),
+        ] {
+            assert!(guards.contains(&canonical(&g)));
+        }
+        let restored = serde_json::from_slice(&serde_json::to_vec(&case).unwrap()).unwrap();
+        assert_eq!(
+            guards,
+            verify_witness(&p, 1, &prefix, &restored, 4096, 65536).unwrap()
+        );
+        let PositiveRayCase::DescartesIntervals { mut intervals } = restored else {
+            panic!()
+        };
+        assert_eq!(positive_count(&intervals), 2);
+        intervals[0].coefficient_signs[0] *= -1;
+        assert!(
+            verify_witness(
+                &p,
+                1,
+                &prefix,
+                &PositiveRayCase::DescartesIntervals { intervals },
+                4096,
+                65536
+            )
+            .is_err()
+        );
+        let mut invalid = template;
+        invalid[0].upper = PositiveIntervalEndpoint::Rational("1".into());
+        invalid[1].lower = PositiveIntervalEndpoint::Rational("1".into());
+        assert!(
+            at_template(&p, 1, &prefix, &invalid, 4096, 65536)
+                .unwrap()
+                .is_none()
+        );
     }
 
     fn oversized_source(width: u32) -> (Algebra, Poly) {

@@ -1,8 +1,10 @@
-//! Optional exact integer-translation preconditioning for native factorization.
+//! Optional exact scaling/translation preconditioning for native factorization.
 //!
 //! A degree drop on a small integer fiber can make modular evaluation and
 //! lifting expensive. This heuristic tests a fixed finite shift menu, selects
-//! at most one improved fiber, and factors its translated polynomial once.
+//! at most one improved fiber, and factors one transformed polynomial once.
+//! Nonzero diagonal scaling reaches that fiber while preserving support;
+//! integer translation remains the fallback when scaling is inadmissible.
 //! It is an algebra-only polynomial-ring automorphism: every factor is mapped
 //! back before use, including signed content and multiplicities. Original CAD
 //! coordinates, domains, roots and seams are unchanged.
@@ -24,7 +26,7 @@ const MAX_TOTAL_DEGREE: u64 = 48;
 const MAX_INPUT_BITS: u64 = 4096;
 const MAX_WORK_BITS: u64 = 8192;
 const MAX_WORK_TERMS: usize = 65_536;
-const MAX_TRANSLATION_WORK: usize = 1_048_576;
+const MAX_TRANSFORM_WORK: usize = 1_048_576;
 const MAX_PRODUCT_WORK: usize = 4_194_304;
 const SHIFT_MENU: [i64; 3] = [1, -1, 2];
 
@@ -34,6 +36,26 @@ pub(super) struct Admission {
     pub shifts: Vec<(usize, i64)>,
     pub original_degree_drops: usize,
     pub translated_degree_drops: usize,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum TransformKind {
+    DiagonalScaling,
+    IntegerTranslation,
+}
+
+impl TransformKind {
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::DiagonalScaling => "diagonal_scaling",
+            Self::IntegerTranslation => "integer_translation",
+        }
+    }
+}
+
+#[cfg(test)]
+thread_local! {
+    static NATIVE_CALLS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
 }
 
 fn bounded(p: &Poly, terms: usize, bits: u64) -> bool {
@@ -112,12 +134,11 @@ pub(super) fn admission(p: &Poly) -> Option<Admission> {
 
 /// Bound every intermediate expansion before Symbolica allocates it. A shift
 /// replaces x^d by at most d+1 monomials and never raises any original degree.
-fn translate(p: &Poly, shifts: &[(usize, i64)]) -> Option<Poly> {
+fn translate(p: &Poly, shifts: &[(usize, i64)], work: &mut usize) -> Option<Poly> {
     if !bounded(p, MAX_WORK_TERMS, MAX_WORK_BITS) {
         return None;
     }
     let mut q = p.clone();
-    let mut work = 0usize;
     let mut seen = vec![false; p.nvars()];
     for &(axis, shift) in shifts {
         if axis >= p.nvars() || seen[axis] || shift.unsigned_abs() > 8 {
@@ -131,8 +152,8 @@ fn translate(p: &Poly, shifts: &[(usize, i64)]) -> Option<Poly> {
                 return None;
             }
         }
-        work = work.checked_add(expanded)?;
-        if work > MAX_TRANSLATION_WORK {
+        *work = work.checked_add(expanded)?;
+        if *work > MAX_TRANSFORM_WORK {
             return None;
         }
         let mut powers = vec![0; p.nvars()];
@@ -146,13 +167,88 @@ fn translate(p: &Poly, shifts: &[(usize, i64)]) -> Option<Poly> {
     Some(q)
 }
 
+/// Nonzero diagonal Q-automorphism. Every monomial keeps its exponents. The
+/// conservative height preflight precedes coefficient/power allocation; inverse
+/// scaling is exact rational arithmetic, never division by a polynomial.
+fn scale(p: &Poly, scales: &[(usize, i64)], inverse: bool, work: &mut usize) -> Option<Poly> {
+    if !bounded(p, MAX_WORK_TERMS, MAX_WORK_BITS) || scales.len() > MAX_ACTIVE {
+        return None;
+    }
+    let mut seen = vec![false; p.nvars()];
+    let mut growth = Vec::new();
+    for &(axis, value) in scales {
+        if axis >= p.nvars() || seen[axis] || value == 0 || value.unsigned_abs() > 9 {
+            return None;
+        }
+        seen[axis] = true;
+        // ceil(log2(abs(value))); 1 and -1 do not increase bit length.
+        growth.push((
+            axis,
+            u64::from(64 - (value.unsigned_abs() - 1).leading_zeros()),
+        ));
+    }
+    for (coefficient, exponents) in p.coefficients.iter().zip(p.exponents_iter()) {
+        let extra = growth.iter().try_fold(0u64, |sum, &(axis, bits)| {
+            sum.checked_add(bits.checked_mul(u64::from(exponents[axis]))?)
+        })?;
+        let height = if inverse {
+            coefficient.denominator_ref().significant_bits()
+        } else {
+            coefficient.numerator_ref().significant_bits()
+        };
+        if height.checked_add(extra)? > MAX_WORK_BITS {
+            return None;
+        }
+    }
+    let power_work = scales.iter().try_fold(0usize, |sum, &(axis, _)| {
+        sum.checked_add(p.degree(axis) as usize)
+    })?;
+    *work = work.checked_add(
+        p.nterms()
+            .checked_mul(scales.len())?
+            .checked_add(power_work)?,
+    )?;
+    if *work > MAX_TRANSFORM_WORK {
+        return None;
+    }
+    let powers = scales
+        .iter()
+        .map(|&(axis, value)| {
+            let base = if inverse {
+                Rational::from((1, value))
+            } else {
+                Rational::from(value)
+            };
+            let mut table = Vec::with_capacity(p.degree(axis) as usize + 1);
+            table.push(Rational::one());
+            for exponent in 1..=p.degree(axis) as usize {
+                table.push(&table[exponent - 1] * &base);
+            }
+            (axis, table)
+        })
+        .collect::<Vec<_>>();
+    let mut q = p.clone();
+    for (coefficient, exponents) in q.coefficients.iter_mut().zip(p.exponents_iter()) {
+        for (axis, table) in &powers {
+            *coefficient = &*coefficient * &table[exponents[*axis] as usize];
+        }
+    }
+    if q.variables() != p.variables()
+        || !bounded(&q, MAX_WORK_TERMS, MAX_WORK_BITS)
+        || q.nterms() != p.nterms()
+        || !q.exponents_iter().eq(p.exponents_iter())
+    {
+        return None;
+    }
+    Some(q)
+}
+
 /// Complete signed reconstruction, including constants and multiplicities.
-fn reconstructed(original: &Poly, factors: &[(Poly, usize)]) -> Option<Poly> {
+fn reconstructed(original: &Poly, factors: &[(Poly, usize)], work: &mut usize) -> Option<Poly> {
     if factors.len() > MAX_TOTAL_DEGREE as usize + 1 {
         return None;
     }
     let mut product = original.one();
-    let mut work = 0usize;
     let mut total_degree = 0u64;
     for (factor, multiplicity) in factors {
         if factor.variables() != original.variables()
@@ -186,8 +282,8 @@ fn reconstructed(original: &Poly, factors: &[(Poly, usize)]) -> Option<Poly> {
             else {
                 return None;
             };
-            work = next_work;
-            if work > MAX_PRODUCT_WORK {
+            *work = next_work;
+            if *work > MAX_PRODUCT_WORK {
                 return None;
             }
             product = &product * factor;
@@ -201,30 +297,58 @@ fn reconstructed(original: &Poly, factors: &[(Poly, usize)]) -> Option<Poly> {
 
 #[cfg(test)]
 fn reconstructs(original: &Poly, factors: &[(Poly, usize)]) -> bool {
-    reconstructed(original, factors).is_some_and(|p| p == *original)
+    reconstructed(original, factors, &mut 0).is_some_and(|p| p == *original)
 }
 
 pub(super) fn try_factor(original: &Poly) -> Result<Option<Vec<(Poly, usize)>>> {
+    Ok(try_factor_with_kind(original, |_| Ok(()))?.map(|(factors, _)| factors))
+}
+
+/// The observer runs only after an exact prepared transform is selected and
+/// before the single native call; it cannot mislabel a pending scale attempt.
+pub(super) fn try_factor_with_kind(
+    original: &Poly,
+    mut selected: impl FnMut(TransformKind) -> Result<()>,
+) -> Result<Option<(Vec<(Poly, usize)>, TransformKind)>> {
     let Some(plan) = admission(original) else {
         return Ok(None);
     };
+    let mut transform_work = 0;
+    let scales = plan
+        .shifts
+        .iter()
+        .map(|&(i, s)| Some((i, s.checked_add(1)?)))
+        .collect::<Option<Vec<_>>>();
+    let scaled = scales.as_ref().and_then(|scales| {
+        let image = scale(original, scales, false, &mut transform_work)?;
+        let restored = scale(&image, scales, true, &mut transform_work)?;
+        Some((image, restored))
+    });
     let inverse = plan
         .shifts
         .iter()
         .map(|&(i, s)| (i, -s))
         .collect::<Vec<_>>();
-    let Some(shifted) = translate(original, &plan.shifts) else {
-        return Ok(None);
-    };
-    let Some(restored) = translate(&shifted, &inverse) else {
-        return Ok(None);
+    let (shifted, restored, kind) = if let Some((image, restored)) = scaled {
+        (image, restored, TransformKind::DiagonalScaling)
+    } else {
+        let Some(image) = translate(original, &plan.shifts, &mut transform_work) else {
+            return Ok(None);
+        };
+        let Some(restored) = translate(&image, &inverse, &mut transform_work) else {
+            return Ok(None);
+        };
+        (image, restored, TransformKind::IntegerTranslation)
     };
     ensure!(
         restored == *original,
         "affine factor preconditioner inverse mismatch"
     );
-    // One native call only. Native irreducibility is preserved by the inverse
-    // polynomial-ring automorphism, with no rational-function denominators.
+    selected(kind)?;
+    // One native call only: a stalled call cannot trigger timed fallback.
+    // Native irreducibility is preserved by the inverse Q-ring automorphism.
+    #[cfg(test)]
+    NATIVE_CALLS.with(|calls| calls.set(calls.get() + 1));
     let mut factors = shifted.factor();
     ensure!(
         factors
@@ -232,23 +356,29 @@ pub(super) fn try_factor(original: &Poly) -> Result<Option<Vec<(Poly, usize)>>> 
             .all(|(p, m)| p.variables() == original.variables() && *m > 0 && !p.is_zero()),
         "invalid native factors in affine preconditioner"
     );
-    let product = reconstructed(&shifted, &factors)
+    let mut product_work = 0;
+    let product = reconstructed(&shifted, &factors, &mut product_work)
         .context("affine factor reconstruction exceeded work limits after native factoring")?;
     ensure!(
         product == shifted,
-        "translated signed factor reconstruction mismatch"
+        "transformed signed factor reconstruction mismatch"
     );
     for (factor, _) in &mut factors {
-        *factor = translate(factor, &inverse)
-            .context("affine factor inverse exceeded work limits after native factoring")?;
+        *factor = match kind {
+            TransformKind::DiagonalScaling => {
+                scale(factor, scales.as_ref().unwrap(), true, &mut transform_work)
+            }
+            TransformKind::IntegerTranslation => translate(factor, &inverse, &mut transform_work),
+        }
+        .context("affine factor inverse exceeded work limits after native factoring")?;
     }
-    let product = reconstructed(original, &factors)
+    let product = reconstructed(original, &factors, &mut product_work)
         .context("original factor reconstruction exceeded work limits after native factoring")?;
     ensure!(
         product == *original,
         "original signed factor reconstruction mismatch"
     );
-    Ok(Some(factors))
+    Ok(Some((factors, kind)))
 }
 
 #[cfg(test)]
@@ -261,13 +391,23 @@ mod tests {
     }
 
     #[test]
-    fn signed_repeated_factors_and_inactive_coordinates_survive_translation() {
+    fn signed_repeated_factors_and_inactive_coordinates_survive_scaling() {
         let a = algebra();
         let p = a.parse("-5*((y-1)*x^2+z+2)^2*(x+y+z)^3/7").unwrap();
         let plan = admission(&p).unwrap();
         assert_eq!(plan.shifts, vec![(0, 1), (2, 2), (3, 3)]);
         assert!(plan.translated_degree_drops < plan.original_degree_drops);
-        let fs = try_factor(&p).unwrap().unwrap();
+        NATIVE_CALLS.with(|calls| calls.set(0));
+        let mut observed = Vec::new();
+        let (fs, kind) = try_factor_with_kind(&p, |kind| {
+            observed.push(kind);
+            Ok(())
+        })
+        .unwrap()
+        .unwrap();
+        assert_eq!(kind, TransformKind::DiagonalScaling);
+        assert_eq!(observed, vec![kind]);
+        NATIVE_CALLS.with(|calls| assert_eq!(calls.get(), 1));
         assert!(reconstructs(&p, &fs));
         for (expression, multiplicity) in [("(y-1)*x^2+z+2", 2), ("x+y+z", 3)] {
             assert!(fs.iter().any(|(f, m)| canonical(f)
@@ -288,7 +428,13 @@ mod tests {
         assert_eq!(plan.shifts, vec![(0, -1), (2, -2), (3, -3)]);
         assert_eq!(plan.original_degree_drops, 1);
         assert_eq!(plan.translated_degree_drops, 0);
-        assert!(reconstructs(&p, &try_factor(&p).unwrap().unwrap()));
+        // The selected regular point has a zero first coordinate. Diagonal
+        // scaling would not be invertible, so retain the old translation.
+        NATIVE_CALLS.with(|calls| calls.set(0));
+        let (factors, kind) = try_factor_with_kind(&p, |_| Ok(())).unwrap().unwrap();
+        assert_eq!(kind, TransformKind::IntegerTranslation);
+        assert!(reconstructs(&p, &factors));
+        NATIVE_CALLS.with(|calls| assert_eq!(calls.get(), 1));
     }
 
     #[test]
@@ -325,16 +471,98 @@ mod tests {
         assert!(!reconstructs(&p, &[(p.clone(), 0)]));
         assert!(!reconstructs(&p, &[(p.one(), 1)]));
         assert!(!reconstructs(&p, &[(p.clone(), usize::MAX)]));
-        assert!(translate(&p, &[(0, 1), (0, -1)]).is_none());
-        assert!(translate(&p, &[(4, 1)]).is_none());
+        assert!(translate(&p, &[(0, 1), (0, -1)], &mut 0).is_none());
+        assert!(translate(&p, &[(4, 1)], &mut 0).is_none());
         let plan = admission(&p).unwrap();
-        let shifted = translate(&p, &plan.shifts).unwrap();
+        let shifted = translate(&p, &plan.shifts, &mut 0).unwrap();
         assert_ne!(shifted, p);
         let inverse = plan
             .shifts
             .iter()
             .map(|&(i, s)| (i, -s))
             .collect::<Vec<_>>();
-        assert_eq!(translate(&shifted, &inverse).unwrap(), p);
+        assert_eq!(translate(&shifted, &inverse, &mut 0).unwrap(), p);
+    }
+
+    #[test]
+    fn diagonal_scaling_preserves_support_and_native_initial_leading_layers() {
+        let a = algebra();
+        let p = a.parse("-3*((y-1)*x^2+z)^2/7").unwrap();
+        let scales = [(0, 2), (2, 3), (3, 4)];
+        let mut work = 0;
+        let q = scale(&p, &scales, false, &mut work).unwrap();
+        assert!(q.exponents_iter().eq(p.exponents_iter()));
+        assert_eq!(q.variables(), p.variables());
+        for axis in [0, 2, 3] {
+            assert_eq!(q.degree(axis), p.degree(axis));
+            assert_eq!(
+                q.univariate_lcoeff(axis).nterms(),
+                p.univariate_lcoeff(axis).nterms()
+            );
+        }
+        let preparation_work = work;
+        assert_eq!(scale(&q, &scales, true, &mut work).unwrap(), p);
+        assert!(work > preparation_work);
+        assert_ne!(
+            scale(&q, &[(0, 2), (2, 2), (3, 4)], true, &mut 0).unwrap(),
+            p
+        );
+    }
+
+    #[test]
+    fn scaling_keeps_permuted_full_maps_and_negative_rational_units() {
+        for names in [vec!["x", "unused", "y", "z"], vec!["z", "y", "unused", "x"]] {
+            let a = Algebra::new(&names.into_iter().map(String::from).collect::<Vec<_>>()).unwrap();
+            let p = a.parse("-11/13*((y-1)*x^2+z+2)^2*(x+y+z)^3").unwrap();
+            let (factors, kind) = try_factor_with_kind(&p, |_| Ok(())).unwrap().unwrap();
+            assert_eq!(kind, TransformKind::DiagonalScaling);
+            assert!(reconstructs(&p, &factors));
+            assert!(factors.iter().all(|(f, _)| f.variables() == p.variables()));
+        }
+        let a = algebra();
+        let p = a.parse("-11/13*(x-y)^2*(x+z)").unwrap();
+        let scales = [(0, -2), (2, 3), (3, -4)];
+        let q = scale(&p, &scales, false, &mut 0).unwrap();
+        assert_eq!(scale(&q, &scales, true, &mut 0).unwrap(), p);
+        let wrong = Algebra::new(&["y".into(), "unused".into(), "x".into(), "z".into()]).unwrap();
+        assert!(!reconstructs(
+            &p,
+            &[(wrong.parse("-11/13*(x-y)^2*(x+z)").unwrap(), 1)]
+        ));
+    }
+
+    #[test]
+    fn scaling_and_both_replays_share_finite_budgets() {
+        let a = algebra();
+        let p = a.parse("(y-1)*x^2+z").unwrap();
+        for scales in [
+            vec![(0, 0)],
+            vec![(0, 10)],
+            vec![(0, i64::MIN)],
+            vec![(0, 2), (0, 3)],
+            vec![(4, 2)],
+        ] {
+            assert!(scale(&p, &scales, false, &mut 0).is_none());
+        }
+        let mut exhausted = MAX_TRANSFORM_WORK;
+        assert!(scale(&p, &[(0, 2)], false, &mut exhausted).is_none());
+        let mut exhausted = MAX_TRANSFORM_WORK;
+        assert!(translate(&p, &[(0, 1)], &mut exhausted).is_none());
+        let tall = p
+            .clone()
+            .mul_coeff(Rational::from(Integer::from(2).pow(MAX_WORK_BITS - 1)));
+        assert!(scale(&tall, &[(0, 9)], false, &mut 0).is_none());
+        let tiny = p.clone().mul_coeff(Rational::from((
+            Integer::one(),
+            Integer::from(2).pow(MAX_WORK_BITS - 1),
+        )));
+        assert!(scale(&tiny, &[(0, 9)], true, &mut 0).is_none());
+        let factors = vec![(p.clone(), 1)];
+        let mut work = MAX_PRODUCT_WORK - p.nterms();
+        assert_eq!(reconstructed(&p, &factors, &mut work).unwrap(), p);
+        assert!(reconstructed(&p, &factors, &mut work).is_none());
+        NATIVE_CALLS.with(|calls| calls.set(0));
+        assert!(try_factor_with_kind(&p, |_| anyhow::bail!("observer failed")).is_err());
+        NATIVE_CALLS.with(|calls| assert_eq!(calls.get(), 0));
     }
 }

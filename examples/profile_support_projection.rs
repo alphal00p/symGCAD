@@ -53,7 +53,7 @@ struct Args {
     #[arg(long, default_value_t = DEFAULT_SOURCE_TERMS)]
     max_source_terms: usize,
     /// Inspect exact degree drops at the fixed affine menu; perform no factors.
-    #[arg(long, conflicts_with_all = ["factor_translation", "native_factor", "factor_guards", "square_free_only"])]
+    #[arg(long, conflicts_with_all = ["factor_translation", "factor_scale", "native_factor", "factor_guards", "square_free_only"])]
     admission_only: bool,
     /// Also compute exact full univariate fibers and gcd(f, f') at the fixed menu.
     #[arg(long, requires = "admission_only")]
@@ -63,10 +63,10 @@ struct Args {
     #[arg(long, requires_all = ["admission_only", "fiber_gcds"])]
     fiber_factors: bool,
     /// Replay signed square-free blocks, then stop before any projection.
-    #[arg(long, conflicts_with_all = ["factor_translation", "native_factor", "factor_guards", "admission_only"])]
+    #[arg(long, conflicts_with_all = ["factor_translation", "factor_scale", "native_factor", "factor_guards", "admission_only"])]
     square_free_only: bool,
     /// Matched native control: factor the original source and replay its product.
-    #[arg(long, conflicts_with_all = ["factor_translation", "admission_only", "factor_guards"])]
+    #[arg(long, conflicts_with_all = ["factor_translation", "factor_scale", "admission_only", "factor_guards"])]
     native_factor: bool,
     /// Factor every generated guard with signed product replay before continuing.
     #[arg(long)]
@@ -77,6 +77,11 @@ struct Args {
     /// factor once, invert the shifts, and replay the complete signed source.
     #[arg(long, allow_hyphen_values = true)]
     factor_translation: Option<i64>,
+    /// Separate algebra-only experiment: one nonzero integer scale per active
+    /// axis, in map order (e.g. 2,3,4). Invert over Q and replay signed products.
+    #[arg(long, value_delimiter = ',', allow_hyphen_values = true,
+        conflicts_with_all = ["factor_translation", "native_factor", "factor_guards", "admission_only", "square_free_only"])]
+    factor_scale: Vec<i64>,
     #[arg(long, hide = true)]
     worker: bool,
 }
@@ -149,6 +154,51 @@ fn translate(a: &Algebra, p: &Poly, shifts: &[(usize, i64)]) -> Result<Poly> {
         q = q.replace_with_poly(axis, &replacement);
         bounded(&q)?;
     }
+    Ok(q)
+}
+
+fn scale(a: &Algebra, p: &Poly, scales: &[(usize, i64)], inverse: bool) -> Result<Poly> {
+    ensure!(
+        p.variables() == &a.variables,
+        "scaling full variable map mismatch"
+    );
+    bounded(p)?;
+    ensure!(scales.len() <= 3, "scaling axis count cap");
+    let mut seen = Vec::new();
+    let mut powers = Vec::new();
+    for &(axis, value) in scales {
+        ensure!(
+            axis < p.nvars() && !seen.contains(&axis),
+            "scaling axis map"
+        );
+        ensure!(
+            value != 0 && value.unsigned_abs() <= 64,
+            "nonzero scaling bound"
+        );
+        seen.push(axis);
+        let base = if inverse {
+            Rational::from((1, value))
+        } else {
+            Rational::from(value)
+        };
+        powers.push((
+            axis,
+            (0..=p.degree(axis))
+                .map(|e| base.pow(e as u64))
+                .collect::<Vec<_>>(),
+        ));
+    }
+    let mut q = p.clone();
+    for (coefficient, exponents) in q.coefficients.iter_mut().zip(p.exponents_iter()) {
+        for (axis, table) in &powers {
+            *coefficient = &*coefficient * &table[exponents[*axis] as usize];
+        }
+    }
+    bounded(&q)?;
+    ensure!(
+        q.nterms() == p.nterms() && q.exponents_iter().eq(p.exponents_iter()),
+        "nonzero scaling changed monomial support"
+    );
     Ok(q)
 }
 
@@ -395,18 +445,27 @@ fn restore_factors(
     factors: Vec<(Poly, usize)>,
     inverse: &[(usize, i64)],
 ) -> Result<Vec<Poly>> {
+    restore_factors_by(a, source, factors, &mut 0, |q| translate(a, q, inverse))
+}
+
+fn restore_factors_by(
+    a: &Algebra,
+    source: &Poly,
+    factors: Vec<(Poly, usize)>,
+    work: &mut usize,
+    mut transform: impl FnMut(&Poly) -> Result<Poly>,
+) -> Result<Vec<Poly>> {
     let mut restored = source.one();
     let mut mapped = Vec::new();
-    let mut work = 0usize;
     ensure!(factors.len() <= 64, "factor count cap");
     for (q, m) in factors {
         ensure!(
             q.variables() == &a.variables && m > 0 && m <= 64,
             "factor map/multiplicity cap"
         );
-        let r = translate(a, &q, inverse)?;
+        let r = transform(&q)?;
         for _ in 0..m {
-            work = work
+            *work = work
                 .checked_add(
                     restored
                         .nterms()
@@ -414,7 +473,7 @@ fn restore_factors(
                         .context("product work overflow")?,
                 )
                 .context("product work overflow")?;
-            ensure!(work <= MAX_PRODUCT_WORK, "product cap");
+            ensure!(*work <= MAX_PRODUCT_WORK, "product cap");
             restored = &restored * &r;
             bounded(&restored)?;
         }
@@ -562,6 +621,57 @@ fn worker(args: &Args) -> Result<()> {
         report["phase"] = json!("admission_complete");
         return write(&output, &report);
     }
+    if !args.factor_scale.is_empty() {
+        let active = (0..p.nvars())
+            .filter(|&i| p.degree(i) > 0)
+            .collect::<Vec<_>>();
+        ensure!(
+            active.len() == args.factor_scale.len(),
+            "one scale per active axis required"
+        );
+        let scales = active
+            .into_iter()
+            .zip(args.factor_scale.iter().copied())
+            .collect::<Vec<_>>();
+        let start = Instant::now();
+        let scaled = scale(&a, &p, &scales, false)?;
+        ensure!(
+            scale(&a, &scaled, &scales, true)? == p,
+            "scaling inverse failed"
+        );
+        report["scaling"] = json!({"scales":scales,"seconds":start.elapsed().as_secs_f64(),
+            "inverse_verified":true,"support_preserved":true,"polynomial":describe(&a,&scaled)});
+        report["phase"] = json!("scaled_factorization");
+        write(&output, &report)?;
+        let start = Instant::now();
+        let factors = scaled.factor();
+        report["factor_seconds"] = json!(start.elapsed().as_secs_f64());
+        let multiplicities = factors.iter().map(|(_, m)| *m).collect::<Vec<_>>();
+        let start = Instant::now();
+        let mut replay_work = 0;
+        restore_factors_by(&a, &scaled, factors.clone(), &mut replay_work, |q| {
+            scale(&a, q, &[], false)
+        })?;
+        let restored = restore_factors_by(&a, &p, factors, &mut replay_work, |q| {
+            scale(&a, q, &scales, true)
+        })?;
+        report["reconstruction_seconds"] = json!(start.elapsed().as_secs_f64());
+        report["reconstruction_work"] = json!(replay_work);
+        report["phase"] = json!("complete");
+        report["signed_scaled_product_verified"] = json!(true);
+        report["signed_product_verified"] = json!(true);
+        report["restored_factors"] = json!(
+            restored
+                .iter()
+                .zip(multiplicities)
+                .map(|(r, m)| json!({"multiplicity":m,"polynomial":describe(&a,r)}))
+                .collect::<Vec<_>>()
+        );
+        report["scope"] = json!(
+            "Internal algebra-only diagonal Q-automorphism; no CAD coordinate transformation or completion"
+        );
+        return write(&output, &report);
+    }
     if args.factor_translation.is_some() || args.native_factor {
         let shifts = if let Some(k) = args.factor_translation {
             ensure!(SHIFT_MENU.contains(&k), "translation menu bound");
@@ -694,6 +804,7 @@ fn validate_args(args: &Args) -> Result<()> {
     let affine_trial = args.admission_only
         || args.native_factor
         || args.factor_translation.is_some()
+        || !args.factor_scale.is_empty()
         || args.square_free_only;
     let deadline_ceiling = if affine_trial { 60.0 } else { 600.0 };
     ensure!(
@@ -756,6 +867,15 @@ fn main() -> Result<()> {
     }
     if let Some(k) = args.factor_translation {
         command.arg("--factor-translation").arg(k.to_string());
+    }
+    if !args.factor_scale.is_empty() {
+        command.arg("--factor-scale").arg(
+            args.factor_scale
+                .iter()
+                .map(ToString::to_string)
+                .collect::<Vec<_>>()
+                .join(","),
+        );
     }
     let limits = Limits {
         wall_time_secs: args.seconds,
@@ -1136,5 +1256,103 @@ mod tests {
         assert_eq!(translate(&a, &q, &[(0, -2), (1, -4), (2, -6)]).unwrap(), p);
         assert_eq!(q.degree(3), 0);
         assert!(translate(&a, &p, &[(3, 65)]).is_err());
+    }
+
+    #[test]
+    fn diagonal_scaling_preserves_support_full_map_and_regular_fibers() {
+        let a = Algebra::new(&["u".into(), "unused".into(), "v".into(), "x".into()]).unwrap();
+        let p = a.parse("-5/7*(u-1)*(x^2+v+1)^2*(x+u)").unwrap();
+        let scales = [(0, 2), (2, 3), (3, 4)];
+        let q = scale(&a, &p, &scales, false).unwrap();
+        assert_eq!(q.variables(), &a.variables);
+        assert_eq!(q.degree(1), 0);
+        assert!(q.exponents_iter().eq(p.exponents_iter()));
+        assert_eq!(scale(&a, &q, &scales, true).unwrap(), p);
+        let diagnostics = degree_drop_diagnostics(&a, &p, false).unwrap();
+        assert!(diagnostics["original_degree_drop_count"].as_u64().unwrap() > 0);
+        assert_eq!(
+            degree_drop_diagnostics(&a, &q, false).unwrap()["original_degree_drop_count"],
+            0
+        );
+    }
+
+    #[test]
+    fn scaled_signed_replay_checks_units_multiplicities_and_shared_budget() {
+        let a = Algebra::new(&["u".into(), "unused".into(), "v".into(), "x".into()]).unwrap();
+        let p = a.parse("-5/7*(u-1)*(x^2+v+1)^2*(x+u)").unwrap();
+        let scales = [(0, -2), (2, 3), (3, 4)];
+        let q = scale(&a, &p, &scales, false).unwrap();
+        let factors = q.factor();
+        let mut work = 0;
+        restore_factors_by(&a, &q, factors.clone(), &mut work, |r| {
+            scale(&a, r, &[], false)
+        })
+        .unwrap();
+        let first_work = work;
+        let restored = restore_factors_by(&a, &p, factors.clone(), &mut work, |r| {
+            scale(&a, r, &scales, true)
+        })
+        .unwrap();
+        assert!(work > first_work && restored.iter().all(|r| r.variables() == &a.variables));
+        let mut bad = factors.clone();
+        bad[0].0 = bad[0].0.clone().mul_coeff(Rational::from(2));
+        assert!(restore_factors_by(&a, &p, bad, &mut 0, |r| scale(&a, r, &scales, true)).is_err());
+        let mut bad = factors.clone();
+        bad[0].1 = 0;
+        assert!(restore_factors_by(&a, &p, bad, &mut 0, |r| scale(&a, r, &scales, true)).is_err());
+        assert!(
+            restore_factors_by(&a, &p, factors, &mut MAX_PRODUCT_WORK.clone(), |r| scale(
+                &a, r, &scales, true
+            ))
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn scaling_rejects_zero_duplicate_axes_bad_maps_and_coefficient_growth() {
+        let a = Algebra::new(&["u".into(), "v".into()]).unwrap();
+        let p = a.parse("u^3+v").unwrap();
+        for scales in [
+            vec![(0, 0)],
+            vec![(0, 65)],
+            vec![(0, i64::MIN)],
+            vec![(0, 2), (0, 3)],
+            vec![(2, 2)],
+        ] {
+            assert!(scale(&a, &p, &scales, false).is_err());
+        }
+        let wrong = Algebra::new(&["v".into(), "u".into()]).unwrap();
+        assert!(scale(&wrong, &p, &[(0, 2)], false).is_err());
+        let tall = p.mul_coeff(Rational::from(Integer::from(2).pow(8190)));
+        assert!(scale(&a, &tall, &[(0, 64)], false).is_err());
+    }
+
+    #[test]
+    fn scaling_cli_is_separate_and_keeps_the_short_algebra_deadline() {
+        let base = [
+            "probe",
+            "p.json",
+            "--capture-sha256",
+            "abcd",
+            "--output",
+            "out",
+            "--factor-scale",
+            "2,3,4",
+        ];
+        let mut args = Args::try_parse_from(base).unwrap();
+        assert_eq!(args.factor_scale, vec![2, 3, 4]);
+        validate_args(&args).unwrap();
+        args.seconds = 61.0;
+        assert!(validate_args(&args).is_err());
+        for option in [
+            "--native-factor",
+            "--admission-only",
+            "--factor-guards",
+            "--square-free-only",
+        ] {
+            let mut flags = base.to_vec();
+            flags.push(option);
+            assert!(Args::try_parse_from(flags).is_err());
+        }
     }
 }
