@@ -108,3 +108,9 @@ policy serialization, context isolation and preservation of a same-sign
 interior singular seam. An initial incorrect test expectation about a
 negative shift was corrected after the policy detected a new degree drop on
 another axis; the policy itself did not change.
+
+The subsequent [full production gate](COMBINED_FAST_VALIDATION.md) passed
+622 tracked tests with zero failures and two ignored against the normal
+unpatched Symbolica checkout. The [original Gluza33 continuation](AFFINE_GLUZA33_CONTINUATION.md)
+passed the captured factor obstruction, saved further operations and reached
+a different unresolved discriminant; it supplies no completion credit.

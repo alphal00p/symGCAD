@@ -71,3 +71,42 @@ Evidence under `artifacts/research/quadratic-fast-suite-01/`:
 | `run.process.json` | `d9f462003ed91485951262d1af9fea4c90b48c373cb223acec3ec86a0354da32` |
 | `source-hashes.txt` | `ceefe93aee544944f472652d05858de88aa36b71c299b96088d34f074a945e7c` |
 | `source-check.txt` | `5495c5de11f506dc9249a87a079c224bcb535b0d5fb39ce2ddcff65b982419db` |
+
+## Affine factor preconditioning gate
+
+On 11 October 2026, the production sources from `8de480f` passed **622
+tracked tests across 45 targets, zero failed, two ignored**, using the normal
+unpatched Symbolica checkout. The source snapshot was taken at `2ba8dfa`,
+which additionally contains research helpers and documentation. The run
+selected the library, binary and every tracked top-level integration target;
+the separate workstream's untracked alternate-mass regression was excluded.
+
+The eight new production checks cover the bounded affine policy, signed
+factor reconstruction, finite shift admission, context isolation,
+serialization, independent verification and same-sign interior seams.
+All tracked source/dependency hashes matched after the run. The default
+policy remains disabled. Formatting and pinned-dependency checks passed.
+
+The locked Nix run used CPUs 6 and 7, two Cargo build jobs and one test thread
+per target. Only symGCAD's test/development debug information was disabled;
+Cargo.toml and release settings were unchanged. Two compile-only attempts
+are retained: an unused dependency profile was stopped, and the ordinary
+backend rebuild reached its 900-second build limit before tests ran. The
+cached continuation compiled in 2 minutes 33 seconds and completed every
+target successfully; test-body times summed to **63.11 seconds**. These
+build and validation costs are not benchmark solve times.
+
+Evidence under `artifacts/research/affine-factor-policy-01/validation/`:
+
+| Record | SHA-256 |
+| --- | --- |
+| `fast.log` | `f4b61793c223dd5a52061f31677259175eb082e460c6016b80b73cae3861c247` |
+| `summary.json` | `484492d948f70fa5fdd7ef5b4828371eb31ff94d67acefb14320347a12a6dd49` |
+| `source-hashes.txt` | `8af1db6c4e04d46e3ad6cecbddbdcbbe003154bea550d2019da8a9bc381f17ca` |
+| `test-targets.txt` | `51538194c0e8fa1f82c949e2645fadea234e749b75782f3fab22fc52614646d2` |
+| `source-check.log` | `8d00848355741807ddb3dc2c1238e7a0747564f89e8fbc2cc7abe390b3977493` |
+
+The separate [quadratic-face diagnostic](QUADRATIC_BLOCK_FACE_DIAGNOSTIC.md)
+passed six helper tests, and the [larger witness-budget probe](GLUZA33_WITNESS_BUDGET.md)
+passed seven. These helper checks are outside the 622-test production count.
+Neither diagnostic adds an original-corpus completion.

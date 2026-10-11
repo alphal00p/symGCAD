@@ -101,6 +101,8 @@ with three fresh repetitions and identical orders. *±* means two separate sign-
   A later warm Gluza33 trial with opt-in affine factor preconditioning timed out at
   *300.021 s*, using *452 MiB*. It passed the old factor obstruction in 0.152 s and saved
   384 further operations before a degree-16 discriminant. This is progress, not a solved time.
+  A separate larger-budget probe constructed and factored all 18 positive-root separator
+  guards in 2.623 s / 16 MiB; their remaining projection and production integration are untested.
 
   Measurements prefer verified three-repeat controls, otherwise the fastest accepted original-problem
   run. Builds are labelled. Cache tags mean cold (C), shared and possibly warm (S), or unrecorded (?).

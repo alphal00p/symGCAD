@@ -13,6 +13,9 @@ use symgcad::{
     roots::{isolate_union, refine_once, sector_sample},
 };
 
+const DEFAULT_MAX_TERMS: usize = 4096;
+const RESEARCH_MAX_TERMS: usize = 65_536;
+
 #[derive(Parser)]
 struct Args {
     capture: PathBuf,
@@ -22,6 +25,9 @@ struct Args {
     output: PathBuf,
     #[arg(long)]
     factor_guards: bool,
+    /// Research-only source-term budget; production eligibility is unchanged.
+    #[arg(long, default_value_t = DEFAULT_MAX_TERMS)]
+    max_terms: usize,
     #[arg(long, default_value_t = 60.0)]
     seconds: f64,
     #[arg(long, default_value_t = 7)]
@@ -52,9 +58,25 @@ struct Probe {
     guards: Vec<(String, Poly)>,
 }
 
-fn witness(algebra: &Algebra, p: &Poly, variable: usize, prefix: &[Rational]) -> Result<Probe> {
+fn witness(
+    algebra: &Algebra,
+    p: &Poly,
+    variable: usize,
+    prefix: &[Rational],
+    max_terms: usize,
+) -> Result<Probe> {
     ensure!(
-        p.degree(variable) <= 32 && p.nterms() <= 4096,
+        (1..=RESEARCH_MAX_TERMS).contains(&max_terms),
+        "research max-terms must be between 1 and 65536"
+    );
+    ensure!(
+        variable < algebra.names.len()
+            && prefix.len() == variable
+            && p.variables() == &algebra.variables,
+        "source axis, prefix, or full variable map mismatch"
+    );
+    ensure!(
+        p.degree(variable) <= 32 && p.nterms() <= max_terms,
         "research arithmetic cap"
     );
     let started = Instant::now();
@@ -74,6 +96,7 @@ fn witness(algebra: &Algebra, p: &Poly, variable: usize, prefix: &[Rational]) ->
         })
         .1;
     let mut report = json!({"degree":p.degree(variable),"terms":p.nterms(),
+        "research_max_terms":max_terms,"production_default_max_terms":DEFAULT_MAX_TERMS,
         "degrees":(0..p.nvars()).map(|v|p.degree(v)).collect::<Vec<_>>(),
         "coefficient_degrees":coefficients.iter().map(|(_,d)|d).collect::<Vec<_>>(),
         "coefficient_signs":coefficient_signs,"variations":variations,"eligible":false});
@@ -210,7 +233,7 @@ fn work(args: &Args) -> Result<Value> {
         .iter()
         .map(|s| rational(s))
         .collect::<Result<Vec<_>>>()?;
-    let Probe { mut report, guards } = witness(&algebra, &p, variable, &prefix)?;
+    let Probe { mut report, guards } = witness(&algebra, &p, variable, &prefix, args.max_terms)?;
     report["capture_sha256"] = json!(format!("{:x}", Sha256::digest(bytes)));
     report["input_hash"] = json!(capture.input_hash);
     report["variables"] = json!(capture.variable_names);
@@ -245,6 +268,10 @@ fn main() -> Result<()> {
         args.seconds.is_finite() && args.seconds > 0.0 && args.seconds <= 120.0,
         "deadline exceeds120s"
     );
+    ensure!(
+        (1..=RESEARCH_MAX_TERMS).contains(&args.max_terms),
+        "research max-terms must be between 1 and 65536"
+    );
     if args.worker {
         println!("{}", work(&args)?);
         return Ok(());
@@ -273,6 +300,7 @@ fn main() -> Result<()> {
         outcome.stdout.clear();
     }
     let report = json!({"process":outcome,"result":result,"limits":limits,"cpu":args.cpu,
+        "research_max_terms":args.max_terms,
         "binary_sha256":format!("{:x}",Sha256::digest(std::fs::read(executable)?)),
         "note":"Research guard-cost diagnostic, not a complete GCAD or a production certificate."});
     write_atomic(&args.output, &report)?;
@@ -290,6 +318,7 @@ mod tests {
             &a.parse(expression).unwrap(),
             1,
             &[rational(sample).unwrap()],
+            DEFAULT_MAX_TERMS,
         )
         .unwrap()
     }
@@ -332,5 +361,65 @@ mod tests {
                 json!([1, -1, 1])
             );
         }
+    }
+
+    #[test]
+    fn bounded_research_term_override_preserves_default_and_exact_guards() {
+        let a = Algebra::new(&["s".into(), "x".into()]).unwrap();
+        // A positive coefficient multiplier times (x-1)(x-2), with 4101
+        // sparse terms. Source size alone crosses the ordinary admission cap;
+        // at s=0 every coefficient and separator evaluation is nonzero.
+        let mut p = a.parse("0").unwrap();
+        for s_power in 0..1367u32 {
+            for (x_power, coefficient) in [(0, 2), (1, -3), (2, 1)] {
+                p.append_monomial(Rational::from(coefficient), &[s_power, x_power]);
+            }
+        }
+        assert_eq!(p.nterms(), 4101);
+        assert!(witness(&a, &p, 1, &[Rational::zero()], DEFAULT_MAX_TERMS).is_err());
+        let probe = witness(&a, &p, 1, &[Rational::zero()], 8192).unwrap();
+        assert_eq!(probe.report["eligible"], true);
+        assert_eq!(probe.report["positive_roots"], 2);
+        assert_eq!(probe.report["research_max_terms"], 8192);
+        assert_eq!(probe.guards.len(), 4);
+        assert!(
+            probe
+                .guards
+                .iter()
+                .all(|(_, q)| q.variables() == &a.variables)
+        );
+        let mut reconstructed = p.zero();
+        for (degree, (label, q)) in probe.guards.iter().take(3).enumerate() {
+            assert_eq!(label, &format!("coefficient_{degree}"));
+            reconstructed =
+                &reconstructed + &(q * &p.monomial(Rational::one(), vec![0, degree as u32]));
+        }
+        assert_eq!(reconstructed, p);
+    }
+
+    #[test]
+    fn source_admission_rejects_invalid_budgets_axes_prefixes_and_degree() {
+        let a = Algebra::new(&["s".into(), "x".into()]).unwrap();
+        let p = a.parse("x^2-3*x+2").unwrap();
+        for limit in [0, RESEARCH_MAX_TERMS + 1, usize::MAX] {
+            assert!(witness(&a, &p, 1, &[Rational::zero()], limit).is_err());
+        }
+        assert!(witness(&a, &p, 2, &[Rational::zero()], 8192).is_err());
+        assert!(witness(&a, &p, 1, &[], 8192).is_err());
+        assert!(
+            witness(
+                &a,
+                &a.parse("x^33-3*x+2").unwrap(),
+                1,
+                &[Rational::zero()],
+                8192
+            )
+            .is_err()
+        );
+        let other = Algebra::new(&["z".into(), "x".into()]).unwrap();
+        assert!(witness(&other, &p, 1, &[Rational::zero()], 8192).is_err());
+        let args =
+            Args::try_parse_from(["probe", "capture.json", "--output", "result.json"]).unwrap();
+        assert_eq!(args.max_terms, DEFAULT_MAX_TERMS);
     }
 }

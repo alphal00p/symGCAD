@@ -38,14 +38,13 @@ allowance. This warm diagnostic adds no completion credit.
 
 ## Validation and performance evidence
 
-The latest complete production fast suite passed **614 tracked tests**, with
+The latest complete production fast suite passed **622 tracked tests**, with
 zero failures and two deliberately expensive tests ignored. A separate
-workstream's uncommitted alternate-mass test also passed; it is excluded from
+workstream's uncommitted alternate-mass test was excluded from this run,
 the tracked count and the original corpus. The
 [validation record](COMBINED_FAST_VALIDATION.md) binds the exact source and logs.
-The subsequent opt-in affine factorization policy has separate module and
-solve/verify regressions; its full-suite follow-up is recorded with that
-milestone. Research helpers retain their own focused checks.
+This includes the opt-in affine factorization policy's module and solve/verify
+regressions. Research helpers retain their own focused checks.
 
 All **66 release solve-and-verify trials** for the quadratic-certificate
 ablations and quadratic-ladder examples completed. The crossed A446 chamber
