@@ -98,19 +98,22 @@ with three fresh repetitions and identical orders. *±* means two separate sign-
   an earlier 1650 MiB peak. Nine hash-bound continuation records are retained in the JSON.
   Interrupted algebra experiments and restricted-domain successes add no original coverage.
 
-  Subsequent bounded Gluza33 continuations passed several captured obstructions through
-  exact affine factor preconditioning and positive-ray witness/interval certificates.
-  Each preserved original coordinates, every interior zero sheet and completed algebra.
-  An isolated Wang-preflight patch factors a 2410-term obstruction in *1.039 s*, versus a matched
-  disabled-control timeout at *60.034 s*. Both exported factors reconstruct it exactly.
-  A four-operand adoption pilot established no additional speedup, so the patch remains optional.
-  At a later prefix, a complete four-interval positive-ray certificate has 97 guards and
-  109,726 terms, exceeding the default 65,536-term resource limit. All guards factor and
-  reconstruct in a *33.730 s* diagnostic. A new explicit 131,072-term allowance then passes
-  this obstruction in the original solve. That warm debug trial retained *7194 new operations*
-  before timing out at *600.069 s / 542 MiB* on a different factorization.
-  The production dependency and default budgets are unchanged; Gluza33 remains incomplete.
-  These incomplete probes add no original coverage or solved-time ratio.
+  Further Gluza33 continuations use exact factor preconditioning and positive-ray certificates,
+  preserving every interior zero sheet. An isolated Wang-preflight patch factors a 2410-term
+  obstruction in *1.039 s*, versus a matched disabled-control timeout at *60.034 s*; the signed
+  product is exact. A broader pilot found no additional speedup, so this backend remains optional.
+  Production interval coalescence constructs a four-root cover with 97 guards / 109,726 terms
+  in *1.604 s*, with exact replay in *1.538 s*. An explicit 131,072-term allowance admits it;
+  the default remains 65,536. The subsequent warm original release trial still times out at
+  *600.126 s / 860 MiB*, at a different recorded prefix. There, a fresh global Descartes
+  certificate preserves three positive roots with 27 required guards / 22,436 terms,
+  including every original coefficient. Construction takes *0.060 s*, exact replay *0.026 s*.
+  It requires the existing source allowance to rise from 8192 to 32,768; finite template
+  stocks and proof obligations stay unchanged. The final original configuration trial still
+  times out: *300.101 s total / 638 MiB* (299.434 s worker), at the recorded quarter prefix.
+  Fresh-stock checks do not reconstruct the original worker's accumulated state.
+  Gluza33 remains incomplete; partial algebra and certificate timings add no coverage
+  or solved-time ratio.
 
   Measurements prefer verified three-repeat controls, otherwise the fastest accepted original-problem
   run. Builds are labelled. Cache tags mean cold (C), shared and possibly warm (S), or unrecorded (?).
@@ -154,6 +157,9 @@ with three fresh repetitions and identical orders. *±* means two separate sign-
   Optional affine factor preconditioning detects evaluation-fiber degree drops or searches
   bounded pairwise shears for simpler leading coefficients. Exact inverse maps and signed
   product reconstruction preserve all original coordinates and zero sheets.
+  Support-preserving diagonal scaling now addresses the same degree-drop heuristic before
+  translation; its operand controls retain signed units and repeated factors. Exact adjacent
+  interval coalescence can reduce certificate guards while retaining every positive root.
 
   *Smaller valid decompositions.* Positive-domain certificates, homogeneous charts, conditional
   quadratic monotone reduction and strict linear/bilinear identities can avoid irrelevant projection
@@ -221,11 +227,13 @@ with three fresh repetitions and identical orders. *±* means two separate sign-
   exact signed reconstruction. Original continuations retain completed work but remain incomplete.
   Throttling redundant progress writes reduced system CPU from *17.505 to 1.282 s* in
   matched 60-second controls; a separate trace recorded 91.2% fewer progress writes.
-  A subsequent warm debug continuation timed out at *600.050 s / 266 MiB*, retaining
-  279 new exact operations. Activity counts and I/O improvements are not solve-time ratios.
+  Subsequent C470 release trials with larger caches stop at the one-million-refinement limit:
+  *343.614 s / 460 MiB* with the previous scale and warm cache, then *231.608 s / 492 MiB*
+  with a fresh cache and an alternative legal scale. Neither completes; the shorter stop is
+  not a speedup. Activity counts and I/O improvements are not solve-time ratios.
   Conditional AM–GM certificates are a further proposal for proved bounded domains; global
   support screening found no new small-source candidate. All interior threshold sheets remain required.
-  The latest tracked fast suite passed 646 tests, with zero failures and two expensive tests ignored.
+  The latest tracked fast suite passed 653 tests, with zero failures and two expensive tests ignored.
 
   #block(breakable: false)[
   == Reproduce and inspect

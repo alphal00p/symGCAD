@@ -91,6 +91,12 @@ The subsequent original C470 continuation timed out at 600.050 seconds with
 265.9 MiB peak RSS, retaining 279 additional operations. All 58,749 inherited
 operation records and 4,096 support proposals passed their metadata checks;
 no complete result or verification was exported.
+The subsequent release run with larger conditional caches stopped at its
+one-million-refinement limit after 343.614 seconds / 459.5 MiB. A fresh
+[alternative-scale trial](LINEAR_PREFIX_RESEARCH.md) stopped at the same limit
+after 231.608 seconds / 492.3 MiB, without filling its support registry.
+Neither completed. The next proposed diagnostic distinguishes repeated child
+obligations from genuinely new fibers before increasing resource caps again.
 
 At Gluza33's next recorded prefix, the [interval-guard diagnostic](GLUZA33_FINAL_INTERVAL_FRONTIER.md)
 reconstructs a complete four-piece positive-ray cover with 97 guards. All guards
@@ -104,15 +110,58 @@ It timed out at **600.069 seconds / 541.5 MiB** on a different 1,283-term
 factorization. All 16,739 inherited records were unchanged. This is measurable
 progress through the original problem, but not a complete decomposition.
 
+A [matched native control](AFFINE_COMPONENT_DISPATCH_RESEARCH.md) factors
+the next 1,283-term source in 0.043 seconds, while the optional translation
+stalls. An original release continuation with that option disabled passes the
+factor in 0.0084 seconds and retains 140 further operations. It nevertheless
+times out at 600.101 seconds / 859.6 MiB on the large discriminant at prefix
+`[2,1/4]`, with no result or verification. Exact isolation now finds four
+positive roots, so the earlier two-root cover cannot simply be reused.
+A separately reconstructed compact cover fits the existing 131,072-term
+guard budget; the lifetime template quota remains an independent limit.
+The new production coalescer subsequently reproduces that four-root cover
+with 97 guards and 109,726 terms in 1.604 seconds; fresh exact verification
+passes in 1.538 seconds. This isolated fresh-stock check does not establish
+that the original solve's accumulated templates permit the same step.
+
+The [diagonal-scaling study](DIAGONAL_FACTORIZATION_RESEARCH.md) preserves
+monomial support while correcting the same evaluation-fiber degree drops.
+It exactly factors both the historical translation success and the new
+translation regression. These algebra controls motivate the bounded optional
+policy; they are not new original-case completions.
+
+The combined coalescence/scaling release subsequently times out after
+**600.126 seconds / 859.9 MiB**, with the same large discriminant at the
+different recorded prefix `[2,3/2]`. It retains 244 new completed operations;
+all inherited records and the resulting 24,317-operation cache pass the audit.
+Fresh production replay at that point
+preserves three positive roots. The interval certificate needs 73 guards /
+79,798 terms; the existing global saturated-Descartes certificate instead
+needs **27 raw guards / 22,436 terms**, including all 25 original coefficients.
+Its construction takes 0.060 seconds and exact replay 0.026 seconds. Raising
+the existing global source allowance from 8,192 to 32,768 admits this proof;
+the original control declines at source admission. Finite template stocks
+and every proof obligation remain unchanged. These diagnostics do not
+reconstruct the original worker's stock history or prove domain coverage.
+The final original configuration trial raises only that source allowance and
+uses a fresh copy of the audited cache. It still times out: **300.101 seconds
+total campaign, 299.434 seconds worker, 638.3 MiB peak RSS**, with the large
+discriminant at the recorded quarter prefix. No result or verification is
+produced. It retains 89 further factorizations; the resulting 24,406-operation
+cache passes the complete metadata/hash audit. This leaves Gluza33 unresolved and motivates source-specific
+template/call-path diagnostics before attributing the fallback to stock
+exhaustion or raising further limits.
+
 ## Validation and performance evidence
 
-The latest complete production fast suite passed **646 tracked tests**, with
+The latest complete production fast suite passed **653 tracked tests**, with
 zero failures and two deliberately expensive tests ignored. A separate
 workstream's uncommitted alternate-mass test was excluded from this run,
 the tracked count and the original corpus. The
 [validation record](COMBINED_FAST_VALIDATION.md) binds the exact source and logs.
 This includes the opt-in affine factorization policy's module and solve/verify
-regressions, configurable source and aggregate-guard budgets, and progress I/O. Research helpers
+regressions, support-preserving diagonal scaling, exact adjacent-interval
+coalescence, configurable source and aggregate-guard budgets, and progress I/O. Research helpers
 retain their own focused checks.
 
 All **66 release solve-and-verify trials** for the quadratic-certificate

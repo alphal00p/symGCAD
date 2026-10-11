@@ -209,3 +209,72 @@ The useful next distinction is therefore between refinement-heavy B/D orders
 and C470's specific retained factor operand. Blindly extending these prefix
 scores into a solve-success prediction, or treating the tied gauges as a
 demonstrated improvement, would be unsupported.
+
+## Alternate C470 gauge after the algebra and reporting improvements
+
+The tied x6 candidate was subsequently promoted with original order
+`[s,t,x6,x1,x2,x4,x8,x7]`. Original F, constraints, exact parameters and variable
+groups are unchanged; x6 is explicitly positive and passes the exact homogeneous
+chart admission. Kinematics remain outermost. The frozen release was
+`571f37a5c868aaa2055fb1c2a667332d0f7ff1df0a7e26d87a9edab493ee2c30`.
+Its checkpoint namespace began empty: no algebra or proof was transferred from
+the x1 gauge. The complete earlier C470 prefix-search cost, **1.280762242 s**,
+remains separate from this solve and is not attributed to this candidate alone.
+
+CPU 10, 8 GiB, a 300-second solve limit, existing 256/64 MiB conditional-cache
+budgets, and the unchanged one-million-refinement/ten-million-node caps produced
+an explicit **incomplete: local projection refinement limit** result after
+**231.607739 s**, with **504,136 KiB** peak RSS. User/system CPU were
+215.126596/9.130234 s. It reached 1,000,001 refinements and 4,258,270 speculative
+nodes; these are activity, not final cells or certified coverage. No independent
+CAD verification ran. An empty cell list in this incomplete result is not an
+emptiness proof. No additional campaign followed this comparison.
+
+The x1 release continuation also reached the same refinement cap, after
+343.614492 s, but used newer warm algebra state. Gauge, traversal and warm state
+differ, so the shorter x6 stopping time is not an isolated heuristic gain or a
+time-to-solve ratio. See [BASE_PROGRESS_THROTTLE.md](BASE_PROGRESS_THROTTLE.md)
+for that run and the separately controlled diagnostic-I/O improvement.
+
+The x6 registry retained 3,164 sources with **zero source-limit declines**,
+while its conditional caches recorded 1,861,475 subtree and 933,855 learned-cut
+evictions. Its fresh inventory preserves 4,985 completed ordinary operations
+(1,406 factors, 2,398 resultants, 1,181 discriminants) and 3,164 support proposals.
+No invalid checkpoints, rejected support proposals or post-entry failures were
+reported. This shows that raising the 4,096-source registry ceiling alone is
+not the demonstrated missing lever. Both legal gauges remain unresolved.
+
+Exact inputs, commands, cold-cache provenance, snapshots and result are under
+`artifacts/research/c470-gauge-x6-01/`; result SHA-256
+`d9866aba78232b15ad9f8ad2b733bb5aef4f5ca164ee35f1389288c4cc9da40c`,
+final inventory SHA-256
+`e9028734a9cc508dd707c2eef5a1f308b36d0d869a769928cd9bc7b6ba4e1f3c`.
+The full comparison is preserved there in `REPORT.md`.
+
+### Next diagnostic: completed-child obligation rediscovery
+
+Cache pressure does not show whether evicted entries are requested again.
+Repeated outer prefixes likewise do not establish an identical full-prefix or
+cut-set revisit. Each refinement within one invocation strictly adds a new cut;
+successful children can introduce obligations that require rebuilding sectors.
+No exact cycle is demonstrated. A bounded, read-only diagnostic should:
+
+- Scope a shadow ledger to each active parent invocation and exact rational
+  prefix; record completed child prefixes and their transitive requirements.
+- Observe actual ordinary-cache misses at previously completed child prefixes,
+  newly added obligations, discarded sibling roots, and new versus retained
+  sample choices. Do not sum nested descendant work as independent savings.
+- Bound metadata and disable further recording on overflow; preserve skipped
+  counts. Never change cache admission, cut selection, samples, proof acceptance,
+  configured solver limits or failure routing. Throttle I/O; retain final output.
+- Validate on/off behavior with fixed-work exact-result/operation comparisons
+  before a short C470/B471 profile. Every retained child still owes all original
+  projection, root-order and exhaustive-sector obligations.
+
+Instrumentation still consumes time; wall-limited activity can change even when
+mathematical choices do not. Fixed-work checks must precede timing profiles.
+
+The detailed unimplemented design is retained in
+`artifacts/research/c470-gauge-x6-01/OBLIGATION_REDISCOVERY_DESIGN.md`.
+It follows the earlier [local refinement analysis](LOCAL_REFINEMENT_PROFILE.md)
+and is more informative than another blind increase of the refinement cap.

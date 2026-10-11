@@ -73,8 +73,9 @@ failure. The first draft trace under `new-traced/` is preserved as preliminary
 and excluded from these final-patch comparisons because that draft could delay
 the first diagnostic snapshot.
 
-The active bottleneck is again exact search and refinement. A separate
-cache-first support policy has not been implemented: admitted support sources
+The run still spends its remaining budget in search and refinement; profiling
+is needed to apportion the untimed work. A separate cache-first support policy
+has not been implemented: admitted support sources
 currently enter the support registry before ordinary-factor lookup. A future
 policy would need a lookup-only API and existing exact cache validation; a
 native-factor call on a cache miss would defeat the intended fallback.
@@ -155,3 +156,67 @@ The combined tracked regression suite subsequently passed **646 tests, zero
 failures, two slow tests ignored**, across 49 targets (59.23 seconds of test
 bodies). That suite also includes the separate default-compatible interval
 aggregate-budget change; it is correctness evidence, not part of these timings.
+
+## Release continuation with larger existing caches
+
+The next run used the validated release worker
+`571f37a5c868aaa2055fb1c2a667332d0f7ff1df0a7e26d87a9edab493ee2c30`,
+CPU 10, 8 GiB and the existing 256/64 MiB subtree/learned-cut settings. Original
+mathematics, order, anchor and other options were unchanged. A fresh copy of the
+previous final cache supplied 59,028 ordinary operations and 4,096 proposals.
+Release mode, warm state and cache budgets change together; this is a campaign,
+not an isolated cache timing comparison.
+
+It returned **incomplete: local projection refinement limit** after
+343.614492 seconds, with 307.942026 user seconds, 28.356578 system seconds and
+470,572 KiB peak RSS. The configured one-million-refinement limit stopped it
+before the 600-second wall limit. Its 4,775,254 speculative nodes, 1,000,001
+refinements and 1,361,519 added-cut occurrences are not certified cells or
+coverage. The empty exported cell list of this incomplete result establishes
+nothing about whether the original solution set is empty. No verification ran.
+
+The enlarged caches again reached their count limits, recording 2,098,296
+subtree and 924,588 learned-cut evictions. Saved prefixes repeatedly enter the
+outer `s=13/3` region, but lack the per-prefix cut-set history needed to distinguish
+new fibers from rebuilding an evicted identical prefix. Each invocation's
+refinement loop strictly adds a new cut; no exact cycle is demonstrated. These
+results support a different legal gauge/order candidate or targeted rebuilding
+instrumentation before another long trial with a larger refinement cap.
+
+All inherited files remained unchanged. The final cache holds **60,376 ordinary
+operations and 4,096 proposals**, adding 702 factors, 575 resultants and 71
+discriminants. All support proposals replayed without rejection or post-entry
+failure. Evidence and the precise diagnostic limits are in
+`artifacts/research/c470-shear-continuation-05/REPORT.md` and
+`PREFIX_DIAGNOSTIC.md`. The actual result preserves the exact stopping reason;
+the older controller's compact summary omits that diagnostic. Result SHA-256:
+`7cc5c6b4565516948cbae1dec6b46f62b90576c521e7882dc07102565a40340d`;
+final cache/input audit SHA-256:
+`99ab66acd1154aa99f6e39d58d4ba869178e6a86b2654db3a9d4fcec354bbbb8`.
+
+The subsequent fresh-cache x6 gauge promotion also stopped at the unchanged
+refinement cap, after 231.607739 seconds, with no support source-limit declines.
+The portfolio follow-up and its limitations are recorded in
+[LINEAR_PREFIX_RESEARCH.md](LINEAR_PREFIX_RESEARCH.md). Neither gauge produced a
+complete decomposition; no further trial followed that comparison.
+
+## Next discriminator: admission versus eviction
+
+A read-only source audit identifies a missing distinction. `CompletedSubtrees::insert`
+can decline oversized or deep proofs, and `LearnedCuts::remember` can decline
+oversized hint sets. A later prefix miss therefore need not follow eviction.
+Before changing retention or refinement limits, record actual lookup, admission,
+rejection and eviction outcomes, together with the full exact prefix and sorted
+cut IDs before each projection round. Child-return records should distinguish
+successful proof obligations from `Stop::Guard` and show which cuts are new to
+the current invocation.
+
+A bounded observational sidecar could retain exact keys and a small tombstone
+window under a fixed aggregate memory limit. An observed admission, eviction
+and subsequent exact-key miss establishes an eviction revisit; a rejection
+followed by repeated construction is a different cause. Unretained history
+must remain unclassified. Equal prefix/cut sets establish repeated projection
+requests, not identical complete solver states: permanent witness stocks and
+registries can differ. Instrumentation must not alter solver choices and must
+report its own saturation and overhead. This is an implementation proposal,
+not a measured cause or an additional optimization.
