@@ -234,7 +234,7 @@ with three fresh repetitions and identical orders. *±* means two separate sign-
   All remain incomplete; activity controls and retained algebra do not establish a solve-time gain.
   Conditional AM–GM certificates are a further proposal for proved bounded domains; global
   support screening found no new small-source candidate. All interior threshold sheets remain required.
-  The latest tracked fast suite passed 659 tests, with zero failures and two expensive tests ignored.
+  The latest tracked fast suite passed 662 tests, with zero failures and two expensive tests ignored.
 
   #block(breakable: false)[
   == Reproduce and inspect

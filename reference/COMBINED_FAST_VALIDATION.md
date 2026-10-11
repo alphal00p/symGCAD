@@ -288,3 +288,61 @@ Source rechecks pass. A fresh repeated-factor seam problem with the 1024-node
 policy exports four cells; independent release verification passes all four
 cells and three stacks. This adds no original corpus completion. Build and
 smoke records are in the sibling `release/` directory.
+
+## Final public-dependency and certificate-budget integration
+
+The final gate passes **662 tracked tests across 51 targets, zero failures and
+two deliberately expensive tests ignored**. Test-body times sum to **74.80
+seconds**; the fresh public-dependency compilation takes **17 minutes 49
+seconds** separately. These are correctness-gate costs, not solver benchmarks.
+
+This combines [PR #1](https://github.com/alphal00p/symGCAD/pull/1), exact head
+`a1132d4f4545c7784b3ec61239a05485e544b403`, and
+[PR #2](https://github.com/alphal00p/symGCAD/pull/2), exact head
+`45246b7b27a5c21293b829458470cd34b03f199e`, with the prior production changes.
+The test worktree commit is `ad60764801aa70aa69159a24641c9f248150682a`; its
+tracked `src/`, tests and Cargo files match the final integrated source.
+Original PR commits remain ancestors of the publication branch. No reviewer
+was assigned and no PR review/comment was posted by this integration.
+
+The clean isolated worktree has **no `DO_NOT_PUSH_REFERENCES` directory** and
+no untracked alternate-mass test. Cargo fetches the unchanged pinned public
+Symbolica/Numerica/Graphica sources. In the locked Nix shell, with the license
+supplied through the environment, the command is:
+
+```sh
+taskset -c 6,7 bash -c 'CARGO_BUILD_JOBS=2 scripts/test.sh fast --locked'
+```
+
+The new certificate checks exercise a genuine `4^9` Bernstein tensor, exact
+discovery, independent and serialized replay, lowered-limit rejection, invalid
+options and allocation-free tensor-cardinality overflow refusal. Defaults and
+the certificate mathematics stay unchanged. The test validates the larger
+work option; it does not claim to consume more than the former work ceiling.
+The existing unused `TransformKind::name` warning remains; no test fails.
+
+Public-Cargo packaging also receives a setup-only audit. The explicit local
+backend selector is atomic/idempotent, preserves manifest features, and rejects
+unsupported layouts and unsafe paths. Plain `cargo metadata` changes precisely
+the three backend source identities, retaining every other lockfile byte.
+Selective `cargo update` is deliberately not prescribed because testing showed
+it could change transitive versions. Historical positive-axis replay prepares
+from its authenticated old source tree, preserving all four frozen dependency
+hashes and the original measured helper/patch bytes. No historical measurement
+is relabeled as a result from the new Cargo packaging.
+
+Evidence is retained under
+`artifacts/research/gluza33-final-main-axis-campaign-01/` and
+`artifacts/research/public-cargo-integration-01/`:
+
+| Record | SHA-256 |
+| --- | --- |
+| `pr-integration-fast.log` | `a96e12a5e68ae7409f5f8fce9e7af6f5a2deddeb401f531fc495954a70ab1189` |
+| Integrated `Cargo.toml` | `5f68b0a0776dd5cb309386edd0225f19051bdb8c0e2fc2f7e1fc668f68946a61` |
+| Integrated `Cargo.lock` | `8b47462bb94f06dc21130ed3d013dde207532ba4807d08ab70abf354679d6065` |
+| Integrated `src/domain.rs` | `35c0744b8882139fb2503ecd64c0f201be632268def30a3570121b5745caea7b` |
+| `tests/domain_budgets.rs` | `32f72c634f46abe47cc76d9b030ad5711d3e45f5dd3182ba3207fa0acb32c3a1` |
+| Local-backend selector | `09a25b344131f936fff2cfea1af8955fbf2412aa24e68f2fcb52752e8fade422` |
+| Setup audit `REPORT.md` | `3cd07ada39b0894756f3812ae6bdd7afc135227e502ac0b66c5bb67e1fed4b6e` |
+
+This gate adds no original corpus completion or revised runtime-ratio claim.

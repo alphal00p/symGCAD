@@ -201,10 +201,11 @@ The separately replayable patch remains optional, leaving production unchanged.
 
 ## Validation and performance evidence
 
-The latest complete production fast suite passed **659 tracked tests**, with
-zero failures and two deliberately expensive tests ignored. A separate
-workstream's uncommitted alternate-mass test was excluded from this run,
-the tracked count and the original corpus. The
+The final integrated production fast suite passed **662 tracked tests across
+51 targets**, with zero failures and two deliberately expensive tests ignored.
+It used a clean isolated worktree, public Cargo sources and no reference
+checkout. Test bodies took 74.80 seconds; fresh compilation took 17 minutes
+49 seconds separately. The unrelated alternate-mass test was absent. The
 [validation record](COMBINED_FAST_VALIDATION.md) binds the exact source and logs.
 This includes the opt-in affine factorization policy's module and solve/verify
 regressions, support-preserving diagonal scaling, exact adjacent-interval

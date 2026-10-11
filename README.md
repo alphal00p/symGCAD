@@ -4,7 +4,7 @@ Exact generic cylindrical algebraic decomposition in Rust, using Symbolica for a
 
 The audited checkpoint solves **303/331 distinct original problems**, including **124/124 fixed-kinematics ZZ cases**. The remaining 27 symbolic ZZ problems and positive Gluza33 are explicitly incomplete. A446 and its crossing complete at fixed kinematics; their full symbolic domains remain unresolved.
 
-The [benchmark](benchmark/benchmark.pdf) reports every original problem, including unresolved one-hour attempts and Gluza33's subsequent two-hour timeout. The tracked fast suite passes **659 tests**, with two expensive tests ignored. Completed algebra is retained between bounded campaigns; timeouts and conditional chambers receive no original-completion credit.
+The [benchmark](benchmark/benchmark.pdf) reports every original problem, including unresolved one-hour attempts and Gluza33's subsequent two-hour timeout. The tracked fast suite passes **662 tests**, with two expensive tests ignored. Completed algebra is retained between bounded campaigns; timeouts and conditional chambers receive no original-completion credit.
 
 The [implementation checkpoint](reference/FINAL_CHECKPOINT.md) records the certified reductions, measured improvements and remaining work. The latest optional [factorization-axis experiment](reference/GLUZA33_FINAL_FACTOR_PUSH.md) clears a captured Gluza33 obstruction: its 1,731-term component factors in 0.280 seconds, and the full 2,867-term source in 1.951 seconds, with exact signed reconstruction. These are isolated algebra measurements; the production dependency is unchanged.
 
