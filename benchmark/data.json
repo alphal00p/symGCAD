@@ -40,7 +40,7 @@
   },
   "generator_source_sha256": "347e4246b7c9857f472e8c167b877d5c7b9c4d337681d7b433ac5079b162009c",
   "incomplete_followups": {
-    "manifest_sha256": "2899ef694685ab3f28b51f758e9610e6f2dcf491c313f6a364319c05811adb66",
+    "manifest_sha256": "616c23cf88dda19a87068f90f0563df13bca29060cf8f6ebb550c249c86ad873",
     "records": [
       {
         "audit": {
@@ -859,6 +859,118 @@
         "variant": "warm-original-x3-anchor-x5-last-fifty-gib-two-hour",
         "verify_limit_secs": 7200.0,
         "wall_time_secs": 7200.039706647
+      },
+      {
+        "audit": {
+          "path": "artifacts/research/affine-gluza33-continuation-01/final-audit.json",
+          "sha256": "9d86e6d967657287a963db579cc479dc03edbe051145a9e40e0b6dce3e2c054a"
+        },
+        "cache_policy": "shared",
+        "campaign_limit_secs": 300,
+        "completion_credit": false,
+        "executable_sha256": "18b916fd4e2b09898779b2f4446af7df5855ae29a67ebb7cad7b582fe8f83730",
+        "final_cache_files": 5561,
+        "final_cache_manifest": {
+          "bytes": 1284972,
+          "path": "artifacts/research/affine-gluza33-continuation-01/final-cache-manifest.json",
+          "sha256": "68c8194a3ad2415098c49aadc6ac92731d3e0eef9546f9fe3e408c502c7c8ae4"
+        },
+        "identifier": "test_gluza_ex33/solve/3",
+        "initial_cache_files": 5177,
+        "launch": {
+          "bytes": 1329,
+          "path": "artifacts/research/affine-gluza33-continuation-01/launch.json",
+          "sha256": "00e2dd1367c8ffd40511fd8e4a7fd6bdb6dc0543d897938c0d40ca1fffba29d7"
+        },
+        "ledger": {
+          "bytes": 3717,
+          "path": "artifacts/research/affine-gluza33-continuation-01/results/ledger.json",
+          "sha256": "ebf1fa6945a1ebb5de1b4b842ca4e42a8fe02825f535a02bc5d15af5e621809d"
+        },
+        "memory_limit_mib": 51200,
+        "new_completed_operations": 384,
+        "order": [
+          "x0",
+          "x2",
+          "x1",
+          "x7",
+          "x4",
+          "x6",
+          "x3",
+          "x5"
+        ],
+        "original_input": {
+          "bytes": 2682,
+          "path": "artifacts/corpus/symbolic/0338_test_gluza_ex33_solve_3.toml",
+          "sha256": "63247029fd6de5073d0b3b3587689e2235b987d6bfdd2ec9fe8139c5ffa20574"
+        },
+        "peak_rss_kib": 462972,
+        "prior_costs": {
+          "prior_cache_manifest": {
+            "bytes": 1113978,
+            "path": "/common/dev/gcad/artifacts/research/gluza33-x0-anchor-hour-01/final-cache-manifest.json",
+            "sha256": "fe3dac6ee33672e0c1eb60180257a5274b52edaa0411491f920cd2ec0d68a37d"
+          },
+          "prior_cost_policy": "Prior one-hour solve and operand discovery excluded from warm continuation timing",
+          "prior_original_input": {
+            "bytes": 3243,
+            "path": "/common/dev/gcad/artifacts/research/gluza33-x0-anchor-hour-01/input.toml",
+            "sha256": "f0932cf08e031bdcd15abcc7b9eaf94945ef7534bcc6ee21d6312c49d9656a99"
+          }
+        },
+        "solve_limit_secs": 300.0,
+        "solver_options": {
+          "affine_factorization": true,
+          "cache_memory_mib": 128,
+          "checkpoint_dir": "/common/dev/gcad/artifacts/research/affine-gluza33-continuation-01/checkpoints",
+          "engine": "local",
+          "homogeneous_anchor": "x0",
+          "homogeneous_block": [
+            "x0",
+            "x1",
+            "x2",
+            "x3",
+            "x4",
+            "x5",
+            "x6",
+            "x7"
+          ],
+          "input_positivity": false,
+          "local_adjacent_pairs": true,
+          "local_descartes_intervals": true,
+          "local_descartes_witnesses": true,
+          "local_max_nodes": 200000000,
+          "local_max_refinements": 20000000,
+          "local_positive_pair_witnesses": true,
+          "max_rollouts": 256,
+          "merge": "none",
+          "order": [
+            "x0",
+            "x2",
+            "x1",
+            "x7",
+            "x4",
+            "x6",
+            "x3",
+            "x5"
+          ],
+          "ordering": "given",
+          "positivity": true,
+          "prune_operations": false,
+          "search_local_progress": true,
+          "search_pruning": true,
+          "search_time_secs": 300.0,
+          "seed": 0
+        },
+        "status": "timeout",
+        "trial_input": {
+          "bytes": 3311,
+          "path": "artifacts/research/affine-gluza33-continuation-01/results/00000-ea199a3cef4874aa-1791727278599848777-0/input.toml",
+          "sha256": "bc874cbe1b01272274775c740054b23231a068522907b479e239ceb6400b6001"
+        },
+        "variant": "original-x0-anchor-affine-factorization-warm",
+        "verify_limit_secs": 300.0,
+        "wall_time_secs": 300.020937589
       }
     ],
     "scope": "Audited incomplete original-problem followups only; no completion or baseline-ratio credit. Prior search and warm-cache costs remain separate."
@@ -36885,6 +36997,12 @@
     "artifacts/research/a377-segmentation-warm-hour-07/launch.json": "245bdd1247791b0c47f528d2d29e6118dd51c41a009d0e467e6c1edb70d03b2f",
     "artifacts/research/a377-segmentation-warm-hour-07/results/00000-1836384c63c548da-1791651507151418310-0/input.toml": "7bc984f1aa17663645f835f05d9ef0022b589406338965c22344a57fd1239e85",
     "artifacts/research/a377-segmentation-warm-hour-07/results/ledger.json": "8fd6dbd397ee5a0b7b186d0c80a5cb47175eaf23b361f3304d49e6ef8b74e0a7",
+    "artifacts/research/affine-gluza33-continuation-01/bin/symgcad": "18b916fd4e2b09898779b2f4446af7df5855ae29a67ebb7cad7b582fe8f83730",
+    "artifacts/research/affine-gluza33-continuation-01/final-audit.json": "9d86e6d967657287a963db579cc479dc03edbe051145a9e40e0b6dce3e2c054a",
+    "artifacts/research/affine-gluza33-continuation-01/final-cache-manifest.json": "68c8194a3ad2415098c49aadc6ac92731d3e0eef9546f9fe3e408c502c7c8ae4",
+    "artifacts/research/affine-gluza33-continuation-01/launch.json": "00e2dd1367c8ffd40511fd8e4a7fd6bdb6dc0543d897938c0d40ca1fffba29d7",
+    "artifacts/research/affine-gluza33-continuation-01/results/00000-ea199a3cef4874aa-1791727278599848777-0/input.toml": "bc874cbe1b01272274775c740054b23231a068522907b479e239ceb6400b6001",
+    "artifacts/research/affine-gluza33-continuation-01/results/ledger.json": "ebf1fa6945a1ebb5de1b4b842ca4e42a8fe02825f535a02bc5d15af5e621809d",
     "artifacts/research/ax318-segmentation-warm-hour-01/final-audit.json": "31a1810a214200eb2ab5f5aa2b60bbc5909d54d89b7b83e58584e64422e87c62",
     "artifacts/research/ax318-segmentation-warm-hour-01/final-cache-manifest.json": "0508158c0ae0613e60267deeedd1f708d7609a6e791a87608b70676fb822f9b0",
     "artifacts/research/ax318-segmentation-warm-hour-01/input.toml": "3ef96648dffe059450004c8d1f7bf5fcf7dab3a0c44fc3c20d5b144bcb0ba6f8",

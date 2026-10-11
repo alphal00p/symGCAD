@@ -8,6 +8,8 @@ All 28 unresolved problems timed out in their first one-hour slow campaign. The 
 
 The subsequent [positive Gluza33 continuation](reference/GLUZA33_AFFINE_ORDER_CONTINUATION.md) also timed out at two hours with a 50 GiB allowance and 3.81 GiB reported peak RSS. Its ground-truth decomposition remains unresolved.
 
+A later [five-minute affine-factor continuation](reference/AFFINE_GLUZA33_CONTINUATION.md) passed the captured factor obstruction and saved 384 more operations before a degree-16 discriminant. This advances the original solve without adding completion credit.
+
 The [final checkpoint](reference/FINAL_CHECKPOINT.md) separates verified original results, tested improvements and remaining research. No timeout or conditional chamber is counted as an original completion.
 
 ## Quick start

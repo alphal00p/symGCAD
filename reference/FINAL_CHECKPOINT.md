@@ -30,6 +30,12 @@ nor a two-hour timeout. Completed exact operation caches remain outside Git.
 See the [original attempts](GLUZA33_AFFINE_ORDER_CONTINUATION.md) and the
 [algebra experiment](THREE_PARAMETER_SEGMENTATION_RESEARCH.md).
 
+The subsequent [affine-factor continuation](AFFINE_GLUZA33_CONTINUATION.md)
+passed the captured 224-term factor obstruction in 0.152 seconds and saved
+384 additional exact operations. It timed out after 300.021 seconds on a
+6,938-term degree-16 discriminant, with 452 MiB peak RSS under a 50 GiB
+allowance. This warm diagnostic adds no completion credit.
+
 ## Validation and performance evidence
 
 The latest complete production fast suite passed **614 tracked tests**, with
@@ -37,8 +43,9 @@ zero failures and two deliberately expensive tests ignored. A separate
 workstream's uncommitted alternate-mass test also passed; it is excluded from
 the tracked count and the original corpus. The
 [validation record](COMBINED_FAST_VALIDATION.md) binds the exact source and logs.
-Subsequent changes are research helpers and documentation, with their own
-focused checks.
+The subsequent opt-in affine factorization policy has separate module and
+solve/verify regressions; its full-suite follow-up is recorded with that
+milestone. Research helpers retain their own focused checks.
 
 All **66 release solve-and-verify trials** for the quadratic-certificate
 ablations and quadratic-ladder examples completed. The crossed A446 chamber
@@ -64,6 +71,15 @@ information alone does not remove cylindrical boundaries. The
 [exact critical-exclusion gate](SELECTED_CRITICAL_CERTIFICATE_GATE.md) give
 explicit proof obligations for avoiding irrelevant resultant collisions.
 They have not become a general production solver.
+
+The [quadratic-face diagnostic](QUADRATIC_BLOCK_FACE_DIAGNOSTIC.md) replays
+all 27 stationary-face identities in a graph-derived three-coordinate cube
+and measures completed ordinary projection through that block. The remaining
+prefix decomposition, boundary ordering and original-coordinate restoration
+are unresolved. The [SubTropica review](TROPICAL_SUBTROPICA_RESEARCH.md)
+recommends joint scale-variable and short linear-prefix ordering proposals.
+Tropical support and integration reductions do not justify deleting interior
+threshold boundaries; no GCAD performance gain is claimed from that review.
 
 The [Taylor-shift experiments](FAST_TAYLOR_SHIFT_RESEARCH.md) and
 [positive-axis isolation investigation](POSITIVE_AXIS_ISOLATION_RESEARCH.md)

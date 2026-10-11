@@ -33,6 +33,10 @@
     {
       "path": "artifacts/research/gluza33-x5-last-warm50g-two-hour-05/final-audit.json",
       "sha256": "5acf6d1714c0e21a7aaff51b2a6ef85c1a4703654e0192f3a228aa3229aad400"
+    },
+    {
+      "path": "artifacts/research/affine-gluza33-continuation-01/final-audit.json",
+      "sha256": "9d86e6d967657287a963db579cc479dc03edbe051145a9e40e0b6dce3e2c054a"
     }
   ]
 }

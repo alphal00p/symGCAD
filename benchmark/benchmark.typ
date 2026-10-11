@@ -90,13 +90,17 @@ with three fresh repetitions and identical orders. *±* means two separate sign-
   These attempts add no completion credit; the frozen queue snapshot and all 28 ledger
   hashes are in the JSON. Targeted continuations retain completed algebra separately.
 
-  The latest original Gluza33 continuation also timed out after *7200.040 s*, with a
+  The longest original Gluza33 continuation timed out after *7200.040 s*, with a
   50 GiB ceiling and *3902 MiB measured peak RSS*. The latest A377 continuation timed
   out after *3600.031 s*, at 892 MiB peak RSS under a 12 GiB ceiling. Both used audited
   warm native-operation caches and exported no result. Their earlier search and solve
   costs remain separate. The table includes the highest retained RSS, so A377 shows
-  an earlier 1650 MiB peak. Eight hash-bound continuation records are retained in the JSON.
+  an earlier 1650 MiB peak. Nine hash-bound continuation records are retained in the JSON.
   Interrupted algebra experiments and restricted-domain successes add no original coverage.
+
+  A later warm Gluza33 trial with opt-in affine factor preconditioning timed out at
+  *300.021 s*, using *452 MiB*. It passed the old factor obstruction in 0.152 s and saved
+  384 further operations before a degree-16 discriminant. This is progress, not a solved time.
 
   Measurements prefer verified three-repeat controls, otherwise the fastest accepted original-problem
   run. Builds are labelled. Cache tags mean cold (C), shared and possibly warm (S), or unrecorded (?).
@@ -137,6 +141,8 @@ with three fresh repetitions and identical orders. *±* means two separate sign-
   resultants and rational root work. Canonical factors, deterministic algorithms and bounded caches
   avoid repeated work. Certified sum-variable preprocessing and primitive parameter-linear factors
   address measured algebra bottlenecks.
+  Optional affine factor preconditioning detects evaluation-fiber degree drops and exactly
+  reconstructs the signed factors after translation; it changes no original coordinates.
 
   *Smaller valid decompositions.* Positive-domain certificates, homogeneous charts, conditional
   quadratic monotone reduction and strict linear/bilinear identities can avoid irrelevant projection
@@ -194,6 +200,11 @@ with three fresh repetitions and identical orders. *±* means two separate sign-
   CAD completion or solver-speedup claim. The corpus backend is unchanged, and positive-only
   indices cannot silently replace full-real indices in proofs. Evidence and public replay
   instructions are in #text(font: "Libertinus Mono")[reference/POSITIVE_AXIS_ISOLATION_RESEARCH.md].
+
+  *Projection research.* A graph-derived quadratic block completed three ordinary elimination
+  stages in 8.643 s; its 27 stationary-face identities replayed in 0.446 s. These have different
+  proof obligations and are not a solver-speedup comparison. SubTropica suggests joint positive-scale
+  and linear-prefix ordering proposals; tropical support cannot remove interior threshold sheets.
 
   #block(breakable: false)[
   == Reproduce and inspect
