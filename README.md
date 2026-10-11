@@ -99,6 +99,8 @@ The quadratic ladder also gives five verified cells for the crossed A446 chamber
 
 Current physics-guided research studies [CFF-informed kinematic chambers](reference/CFF_KINEMATIC_PROJECTION.md), [positive-root critical maps](reference/RATIONAL_KINEMATIC_PAIR_MAP.md), and [two-point matrix pencils](reference/TWO_POINT_MATRIX_PENCIL.md). Exact identity replays support these investigations; full projection and boundary-ordering obligations remain.
 
+The latest investigations identify [affine factorization preconditioning and exact root certificates for Gluza33](reference/GLUZA33_NEXT_INVESTIGATION.md), [graph-based coordinates with jointly quadratic insertion blocks](reference/CFF_PROJECTION_NEXT_INVESTIGATION.md), and [weighted Hermite queries for selected real roots](reference/PARAMETRIC_PROJECTION_NEXT_RESEARCH.md). These are bounded algebra experiments and proposed solver improvements; they add no original-problem completions or benchmark speedups.
+
 A [supplemental seeded sanity check](reference/SUPPLEMENTAL_SANITY.md) sampled two fresh interior points in each fixed A446 cell: all 8 cells, 16 exact F evaluations and 112 original-constraint checks passed. This check recomputes boundaries at each new prefix and is excluded from benchmark timings; it does not replace the coverage proof.
 
 - [Benchmark document](benchmark/benchmark.pdf) and [Typst source](benchmark/benchmark.typ): per-problem comparison and methodology.
