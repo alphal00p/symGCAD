@@ -170,3 +170,17 @@ The fixed workload uses `mt2=1,mz2=5/18,s=10,t=-3`. The original symbolic ZZ wor
 The benchmark runner first freezes reference-completing cases and their orders, then performs repeated fresh-process comparisons. The parity ratio uses matched projection, lifting and merging phases; preparation and process wall times are reported separately. See `reference/README.md` for campaign configuration. Local milestone commits do not imply that unresolved corpus cases have been solved.
 
 `BENCHMARKS.md` records validated milestones, artifact hashes, and the limits of each performance claim. The Nix shell includes `perf` and Valgrind for profiling captured algebra workloads.
+
+## Library certificate budgets
+
+`domain::CertificateOptions` lets a caller raise `work_limit` to 1,000,000,000
+and `bernstein_coefficients` to 262,144 for larger exact nonvanishing proofs.
+Defaults remain 1,000,000 work units and 4,096 coefficients. Other portfolio,
+polynomial, depth and node limits are unchanged; solver defaults are unchanged.
+These are explicit finite allowances, not guarantees that a proof will finish.
+Use a caller-owned wall-time and memory supervisor for expensive inputs.
+
+The exact chosen options are serialized with each `DomainCertificate` and
+checked again by `verify_certificate`. Verification can perform the same costly
+exact arithmetic; lowering a stored allowance can make replay fail. A bounded
+discovery miss remains inconclusive and is never a sign or zero certificate.
