@@ -141,6 +141,14 @@ These results rank candidates, not completed decompositions. The experiment
 retains every ordinary projection obligation and does not import Fubini-set
 intersection into CAD.
 
+A subsequent three-stage probe completes the remaining linear block for
+B471 and D375: eight candidates take 2.638 seconds of combined controller
+time and yield one exactly checked 11-factor, 112-term basis per family.
+Full original solves using the three-axis prefix and a static ranking of the
+remaining axes still time out at 60 seconds. Thus this connection to
+SubTropica has produced executable ordering proposals, but no new complete
+decomposition or established solve-time gain.
+
 ### 2. Use matroid and cut information to propose sum/fraction blocks
 
 **Second priority; coordinate discovery only until restoration is proved.**

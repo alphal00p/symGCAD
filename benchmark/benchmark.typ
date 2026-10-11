@@ -111,7 +111,10 @@ with three fresh repetitions and identical orders. *±* means two separate sign-
   It requires the existing source allowance to rise from 8192 to 32,768; finite template
   stocks and proof obligations stay unchanged. The final original configuration trial still
   times out: *300.101 s total / 638 MiB* (299.434 s worker), at the recorded quarter prefix.
-  Fresh-stock checks do not reconstruct the original worker's accumulated state.
+  A later exact source trace confirms both saved interval covers fail there and the
+  permanent two-template quota prevents new discovery. Four slots bypass this obstruction;
+  the instrumented original trial retains 1,094 new operations but still times out at
+  *180.078 s / 595 MiB*, with a factor call pending.
   Gluza33 remains incomplete; partial algebra and certificate timings add no coverage
   or solved-time ratio.
 
@@ -189,12 +192,10 @@ with three fresh repetitions and identical orders. *±* means two separate sign-
     [Quadratic constant / components], [18.342 → 7.629], [8 → 1],
     [Local linear split / components], [2.374 → 0.823], [12 → 2],
   )
-  These are internal phases, not the public solve column. Median process times for the
-  same rows were 0.102508 → 0.061243 s, 0.081800 → 0.061391 s, and
-  0.061425 → 0.061435 s respectively. Startup and supervision dominate the approximately
-  61 ms group; its small differences establish no end-to-end gain. The local split keeps
-  both signs and its interior zero sheet. Some certificates cost more on other cases,
-  so the results support selective opt-in use.
+  Median process times for these rows were 0.102508 → 0.061243 s, 0.081800 → 0.061391 s,
+  and 0.061425 → 0.061435 s. Startup dominates the approximately 61 ms group; its small
+  differences establish no end-to-end gain. The local split retains both signs and its
+  interior zero sheet. Costs on other cases support selective opt-in use.
 
   The conditional full crossed A446 ladder case took a 0.061135 s median public solve
   and 0.020867 s fresh verification, with five cells and 6196 KiB maximum RSS.
@@ -204,25 +205,23 @@ with three fresh repetitions and identical orders. *±* means two separate sign-
   and hashes are in #text(font: "Libertinus Mono")[reference/QUADRATIC_RELEASE_ABLATION.md].
 
   == Root-isolation research
-  On one captured degree-1478 discriminant block, an isolated backend with unit-shift and
-  positive-axis patches took *765.808 s* to isolate all *294 real roots* (813 MiB peak RSS),
-  versus *557.983 s* for its *145 positive roots* (421 MiB), using the same CPU and build.
-  Positive-only isolation used 27.1% less API time in this single-run comparison.
-  Fresh exact ordered comparisons matched all 294 old full-real roots and all 145 positive
-  roots; their separate process costs were 34.577 s and 20.528 s. Equality required an exact
-  root or a sign-changing interval intersection, not identical interval spelling.
-
-  The old full-real wrapper took 1138.550 s, but also included retained-fiber and interval
-  preparation; it is not a matched API ratio. These isolated measurements add no original
-  CAD completion or solver-speedup claim. The corpus backend is unchanged, and positive-only
-  indices cannot silently replace full-real indices in proofs. Evidence and public replay
-  instructions are in #text(font: "Libertinus Mono")[reference/POSITIVE_AXIS_ISOLATION_RESEARCH.md].
+  On a captured degree-1478 block, an isolated backend with unit-shift and positive-axis
+  patches isolated *294 real roots in 765.808 s / 813 MiB*, versus *145 positive roots in
+  557.983 s / 421 MiB*: 27.1% less API time in one matched CPU/build comparison.
+  Fresh exact ordered comparisons matched every root, costing 34.577 s and 20.528 s
+  separately; equality used exact roots or sign-changing interval intersections.
+  An older 1138.550 s wrapper included extra preparation and is not a matched ratio.
+  No original CAD completion follows. The corpus backend is unchanged; positive indices
+  cannot replace full-real indices silently. Replay:
+  #text(font: "Libertinus Mono")[reference/POSITIVE_AXIS_ISOLATION_RESEARCH.md].
 
   *Projection research.* A graph-derived quadratic block completed three ordinary elimination
   stages in 8.643 s; its 27 stationary-face identities replayed in 0.446 s. These have different
   proof obligations and are not a solver-speedup comparison. A SubTropica-inspired anchor/order
   probe completed 24 exact two-stage candidates in 3.945 s. Three shortlisted symbolic orders
   each timed out at 60 s: better prefix scores have not yielded new completions.
+  A further eight candidates complete three linear stages in 2.638 s, producing 11 factors /
+  112 terms per family; both full original promotions still time out at 60 s.
   Automatic shear preconditioning factors the captured C470 obstruction in 0.088 s, with
   exact signed reconstruction. Original continuations retain completed work but remain incomplete.
   Throttling redundant progress writes reduced system CPU from *17.505 to 1.282 s* in
@@ -230,19 +229,19 @@ with three fresh repetitions and identical orders. *±* means two separate sign-
   Subsequent C470 release trials with larger caches stop at the one-million-refinement limit:
   *343.614 s / 460 MiB* with the previous scale and warm cache, then *231.608 s / 492 MiB*
   with a fresh cache and an alternative legal scale. Neither completes; the shorter stop is
-  not a speedup. Activity counts and I/O improvements are not solve-time ratios.
+  not a speedup. A bounded observer records 148 revisits after individual proof-size rejection;
+  raising that entry's node cap reduces observed revisits to one but increases evictions.
+  Both instrumented trials time out; this is not a completed-solve speedup.
   Conditional AM–GM certificates are a further proposal for proved bounded domains; global
   support screening found no new small-source candidate. All interior threshold sheets remain required.
   The latest tracked fast suite passed 653 tests, with zero failures and two expensive tests ignored.
 
   #block(breakable: false)[
   == Reproduce and inspect
-  The Typst source and frozen #text(font: "Libertinus Mono")[data.json] render without private
-  literature or original proof files. Regeneration from retained evidence uses the Rust example
-  #raw("benchmark_report --followups benchmark/followups.json").
-  Its metadata-only overlay checks pinned ledgers,
-  exact original fields, legal orders and executable hashes; it changes no completion or ratio.
-  Run #text(font: "Libertinus Mono")[benchmark/render.sh] to render both PDFs. Full provenance remains in the JSON snapshot
-  and the repository's benchmark/reference notes.
+  Typst and frozen #text(font: "Libertinus Mono")[data.json] render without private literature
+  or proof files. The Rust example #raw("benchmark_report --followups benchmark/followups.json")
+  checks ledger/input/order/executable provenance without changing completion or ratios.
+  #text(font: "Libertinus Mono")[benchmark/render.sh] renders both PDFs; detailed evidence is
+  in the JSON snapshot and repository reference notes.
 ]
 ]

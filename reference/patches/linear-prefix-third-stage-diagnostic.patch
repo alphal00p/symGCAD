@@ -1,0 +1,55 @@
+--- a/examples/profile_linear_prefix.rs
++++ b/examples/profile_linear_prefix.rs
+@@ -1,4 +1,4 @@
+-//! Research-only joint homogeneous-anchor and exact two-stage projection costs.
++//! Research-only joint homogeneous-anchor and exact three-stage projection costs.
+ //! Every candidate retains the standard projection basis. No CAD completion,
+ //! root deletion, or reuse after an unchecked variable-map change is asserted.
+ use anyhow::{Context, Result, ensure};
+@@ -28,7 +28,7 @@
+ const INPUT_BYTES: usize = 1024 * 1024;
+ const REPORT_BYTES: usize = 16 * 1024 * 1024;
+ const MAX_CANDIDATES: usize = 8;
+-const STAGES: usize = 2;
++const STAGES: usize = 3;
+
+ #[derive(Parser)]
+ struct Args {
+@@ -544,7 +544,7 @@
+             let rank = if stage == 0 {
+                 request.candidate.first_rank
+             } else {
+-                request.candidate.second_rank
++                if stage == 1 { request.candidate.second_rank } else { 0 }
+             };
+             let Some(name) = choices.get(rank).cloned() else {
+                 report["status"] = json!("declined_duplicate_or_inactive_first_rank");
+@@ -554,6 +554,11 @@
+             let bearing = basis.iter().filter(|p| p.degree(axis) > 0).count();
+             let maximum_degree = basis.iter().map(|p| p.degree(axis)).max().unwrap_or(0);
+             let all_linear = bearing > 0 && maximum_degree == 1;
++            if stage == 2 && !all_linear {
++                report["status"] = json!("declined_third_stage_not_all_linear");
++                report["third_axis_ranking"] = json!(choices);
++                return Ok(());
++            }
+             let input = cost(algebra, &basis)?;
+             report["phase"] = json!("project_one");
+             report["active_axis"] = json!(name);
+@@ -632,6 +637,7 @@
+                 .filter(|v| v.as_str() != request.candidate.anchor.as_deref())
+                 .collect::<Vec<_>>()
+         );
++        report["remaining_legal_axis_ranking"] = json!(axis_choices(&request.problem, algebra, &basis, &remaining));
+         report["final_basis"] = json!(cost(algebra, &basis)?);
+         report["projection_report"] = json!(cache.report);
+         report["status"] = json!("prefix_completed_not_solved");
+@@ -698,7 +704,7 @@
+     ensure!(!candidates.is_empty(), "no legal anchor/order candidate");
+     let executable = std::env::current_exe()?;
+     let mut report = json!({
+-        "kind":"research_joint_anchor_two_stage_portfolio_not_completion", "seed":0,
++        "kind":"research_joint_anchor_three_stage_portfolio_not_completion", "seed":0,
+         "source":args.problem,"source_sha256":hash(&source),"problem":problem,
+         "binary_sha256":hash(&fs::read(&executable)?),"candidate_plans":candidates,
+         "anchor_menu":args.anchors,

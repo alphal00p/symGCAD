@@ -278,3 +278,64 @@ The detailed unimplemented design is retained in
 `artifacts/research/c470-gauge-x6-01/OBLIGATION_REDISCOVERY_DESIGN.md`.
 It follows the earlier [local refinement analysis](LOCAL_REFINEMENT_PROFILE.md)
 and is more informative than another blind increase of the refinement cap.
+The [executed observer](C470_REFINEMENT_OBSERVER.md) now identifies repeated
+requests following rejection of completed proofs by the per-entry node limit.
+
+### Completing the available linear block
+
+A subsequent audit found an inexpensive omission in the two-stage proposal:
+the B471 and D375 bases still allow a third linear elimination. The earlier
+promoted orders instead entered the remaining variables in input order. An
+isolated extension now evaluates the cheapest legal third axis on the actual
+second-stage basis, declining if that axis is not linear. It retains the
+ordinary factor-first projection, every pair/leading-coefficient obligation,
+the exact homogeneous chart and the full variable map. No production source
+or dependency changed.
+
+All eight candidates completed: four permutations of the same three linear
+axes for each family, with combined controller time **2.637954 s**. Third-stage
+algebra took **0.015820–0.032946 s** per candidate. Each family's four final
+mapped polynomial arrays are exactly equal; this was checked independently,
+not inferred from an eliminated-variable subset or hash alone.
+
+| Original family / anchor | Eliminated block | Final factors / terms | Final basis SHA-256 |
+| --- | --- | ---: | --- |
+| B471 / x6 | x0, x1, x2 | 11 / 112 | `cd3d244d646a9f2211cfc6a9044ee4e9fac53a71bba30a67cc2e5ef70c4e3caf` |
+| D375 / x5 | x0, x1, x2 | 11 / 112 | `09072bc911e436e83302a77dc32a6191d6ef94b4d8edb4965c778e547a492df3` |
+
+These are two distinct bases. The remaining Feynman axes were ranked once by
+maximum degree, bearing-term count and map index on this final basis. That
+static ranking is a prediction, not further exact projection. Fresh original
+solves used lifting orders `[s,t,x6,x8,x7,x4,x2,x1,x0]` and
+`[s,t,x5,x8,x6,x4,x2,x1,x0]`, respectively. The original constraints, parameter
+substitutions, split polynomials and groups are unchanged; both scale anchors
+precede their ratios. These actual worker orders differ from the helper's
+historical input-order tail in its saved restart proposal.
+
+| Original promotion | Worker time | Peak RSS | Last recorded refinements / speculative nodes | Outcome |
+| --- | ---: | ---: | ---: | --- |
+| B471, ranked remaining axes | 60.035472 s | 160,080 KiB | 302,929 / 1,311,862 | Timeout; no result or verification |
+| D375, ranked remaining axes | 60.023262 s | 85,928 KiB | 282,483 / 1,125,298 | Timeout; no result or verification |
+
+Both used the ordinary frozen release
+`40f8740952452433f9a68d67db54a3b8632f2827f660f1ad83e2240eb6e324f3`,
+one CPU (6), 4 GiB and initially empty operation caches. No profiler operations
+were injected. Local certificates and all interior zero boundaries remain
+required. The large activity counts do not count cells or covered regions;
+the third linear stage has not established an original-problem speedup.
+
+The seven existing helper regressions pass against the isolated extension.
+For replay, apply [the diagnostic-only patch](patches/linear-prefix-third-stage-diagnostic.patch)
+to this helper in a disposable checkout, build its example, and repeat the
+earlier profiling command with `--candidates 4` and just the first anchor per
+family. The patch fixes the extra stage at three and declines a nonlinear
+third choice; it is not a production solver option. Use the two explicit
+orders above for a subsequent original solve, retaining all original fields.
+
+Evidence is under `artifacts/research/linear-prefix-third-stage-01/`.
+The extended helper source has SHA-256
+`8c091f7647ad0f48171ec99b8ba4d2df8f535f1084cbbef0c2e163886653202c`;
+its binary is `2a956bf10f2ace4879f3c8571d3189ca80aaaa6732c2911abe3783f8c21e05f7`.
+B471/D375 reports have hashes
+`a551e4176dc32f676eeb194b54f1d17daf6dce7792fa45704939d24dd337f42b` and
+`68dd7538d81f294f7acd7eb6d2debefeedb33961f0af06ad453f792e3ef2b4f7`.

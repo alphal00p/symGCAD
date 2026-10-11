@@ -1,5 +1,10 @@
 # Gluza33: the next interval-witness resource gate
 
+The later [source-specific stock trace](GLUZA33_WITNESS_STOCK_TRACE.md) now
+identifies the actual quarter-prefix fallback: both permanent interval slots
+are occupied and their covers fail, so fresh discovery is skipped. The
+standalone successes and earlier continuations below remain separate evidence.
+
 The isolated Wang continuation completed the previously blocking factor but
 stopped again at discriminant `4fa9b805…`, input hash `eba809f2…`. It is the
 same 19,942-term degree-24 polynomial diagnosed earlier, with full variable
