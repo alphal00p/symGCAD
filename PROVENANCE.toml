@@ -6,6 +6,7 @@ revision = "fb6ebe3aa0e3fdd073f410d01050a4ed7e235f4e"
 local_path = "DO_NOT_PUSH_REFERENCES/gcad"
 
 [symbolica]
+# Standalone Cargo root patch; local_path is optional research/patch checkout.
 source = "https://github.com/symbolica-dev/symbolica"
 revision = "75f8350094b90254ee71dc2a391fde0d14b0204a"
 local_path = "DO_NOT_PUSH_REFERENCES/symbolica"
@@ -19,8 +20,10 @@ branch = "no_deformation"
 revision = "99f96a5623eb5059f83c340833fafc2858498966"
 local_path = "DO_NOT_PUSH_REFERENCES/fastSecDec"
 
-# These are tracked workspace members of the same Symbolica checkout, not
-# independently versioned repositories. The subtree IDs pin their exact sources.
+# These are tracked workspace members of the same public Symbolica revision,
+# not independently versioned repositories. Cargo root patches fetch them;
+# local_path identifies only the optional bootstrap checkout for research.
+# The subtree IDs pin their exact sources.
 [numerica]
 source = "https://github.com/symbolica-dev/symbolica"
 revision = "75f8350094b90254ee71dc2a391fde0d14b0204a"

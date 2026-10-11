@@ -20,8 +20,8 @@ two optional upstream fixes, once each. Repeated calls are idempotent.
 --reference also fetches the independent GCAD sources; --check changes nothing.
 --fastsecdec also fetches the pinned no_deformation-branch FastSecDec producer
 for optional graph-driven tests. It remains a separate external repository.
---directory overrides the external-source directory for setup validation only;
-Cargo expects the default DO_NOT_PUSH_REFERENCES location.
+--directory overrides the optional external-source directory. Cargo fetches
+its public root pins independently; bootstrap is not required for a build.
 Existing checkouts at another revision or with unrelated changes are rejected;
 this script never resets a checkout or deletes user changes.
 EOF

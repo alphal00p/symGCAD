@@ -109,7 +109,11 @@ pub struct CertificateOptions {
     pub polya_order: u32,
     pub bernstein_depth: usize,
     pub bernstein_nodes: usize,
+    /// Caller-selected tensor size, up to 262144 coefficients. Defaults stay
+    /// small; larger proofs also need caller-owned wall-time and memory caps.
     pub bernstein_coefficients: usize,
+    /// Caller-selected exact arithmetic allowance, up to one billion units.
+    /// The allowance is recorded in the certificate and enforced on replay.
     pub work_limit: usize,
     /// Zero disables this independent portfolio member for ablations.
     #[serde(default = "default_sturm_degree")]
@@ -189,12 +193,12 @@ impl CertificateOptions {
             "Bernstein subdivision is capped at depth eight and 511 nodes"
         );
         ensure!(
-            self.bernstein_coefficients > 0 && self.bernstein_coefficients <= 65_536,
-            "Bernstein coefficient budget must be in 1..=65536"
+            self.bernstein_coefficients > 0 && self.bernstein_coefficients <= 262_144,
+            "Bernstein coefficient budget must be in 1..=262144"
         );
         ensure!(
-            self.work_limit > 0 && self.work_limit <= 10_000_000,
-            "certificate arithmetic budget must be in 1..=10000000"
+            self.work_limit > 0 && self.work_limit <= 1_000_000_000,
+            "certificate arithmetic budget must be in 1..=1000000000"
         );
         Ok(())
     }
@@ -1499,7 +1503,7 @@ fn bernstein_coefficients(
     let degrees: Vec<_> = active.iter().map(|&v| p.degree(v)).collect();
     let count = degrees
         .iter()
-        .try_fold(1usize, |n, &d| n.checked_mul(d as usize + 1))?;
+        .try_fold(1usize, |n, &d| n.checked_mul((d as usize).checked_add(1)?))?;
     if count > options.bernstein_coefficients {
         return None;
     }
@@ -1928,5 +1932,25 @@ mod affine_identity_tests {
             .unwrap();
             assert_eq!(actual, algebra.parse(expected).unwrap());
         }
+    }
+}
+
+#[cfg(test)]
+mod budget_tests {
+    use super::*;
+
+    #[test]
+    fn overflowing_tensor_count_refuses_before_allocation() {
+        let algebra = Algebra::new(&["x".into(), "y".into()]).unwrap();
+        let mut polynomial = algebra.parse("0").unwrap();
+        polynomial.append_monomial(Rational::one(), &[u32::MAX, u32::MAX]);
+        let options = CertificateOptions {
+            bernstein_coefficients: 262_144,
+            work_limit: 1_000_000_000,
+            ..Default::default()
+        };
+        let mut budget = ProofBudget::new(&options);
+        assert!(bernstein_coefficients(&polynomial, &[0, 1], &options, &mut budget).is_none());
+        assert_eq!(budget.work, options.work_limit);
     }
 }
