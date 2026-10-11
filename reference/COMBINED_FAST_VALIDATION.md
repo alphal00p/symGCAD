@@ -134,3 +134,27 @@ Evidence under `artifacts/research/descartes-source-budget-production-01/validat
 | `source-hashes.txt` | `cceffcc8c4e264bfbd46828b58c3e26d62dc9335a9aadaa369fab64c6131226e` |
 | `test-targets.txt` | `8d7df6063ab855c89d80d7b99d3e8bb64994f5cc3b58829b2877c0779a6d92ba` |
 | `source-check.log` | `d7caaf1f26ed6570c71a643c861dec5f97b11c26cac2b103cc0f171ff92e9b3e` |
+
+## Interval-Descartes source-admission gate
+
+The subsequent interval-source option passed **633 tracked tests across
+47 targets, zero failed, two ignored** on the ordinary Symbolica backend.
+All source hashes matched after the run. The six additional checks cover
+discovery, template reuse, independent raw-projection replay, serialization,
+historical defaults, rejected tampering and the unchanged per-guard limit.
+The separate workstream's untracked alternate-mass fixture remained excluded.
+
+The same locked Nix environment, CPUs 6 and 7, two Cargo jobs and one test
+thread per target were used. Test bodies summed to **52.49 seconds**.
+All 34 focused tests also passed. Neither this validation gate nor the
+separate warm Gluza33 continuation adds an original completion by itself.
+
+Evidence under `artifacts/research/interval-source-budget-production-01/validation/`:
+
+| Record | SHA-256 |
+| --- | --- |
+| `fast.log` | `bc856fe7d1fc387b57c35b7869e1d5952810aea896a073560dbd1b8a06ee8b74` |
+| `summary.json` | `7af3e228495dcf404f02a5a96d348b4255192bbdf4457b014d549f26d51c0e55` |
+| `source-hashes.txt` | `2c2e1835209b925f94a790891babefe757c1b162ef7e8d0b2758bc442d49bf89` |
+| `test-targets.txt` | `668b3507cccc2f5f9c80076f615332fcac5a848797b9ce0986c9517442596127` |
+| `source-check.log` | `0419b0862c0b4aae1c31e80964b02865aa1b62d9a5d1282dab1217d2cbe76cf5` |

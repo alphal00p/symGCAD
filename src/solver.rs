@@ -631,6 +631,7 @@ fn solve_impl(problem: &Problem) -> Result<SolveResult> {
                 descartes_witnesses: problem.solver.local_descartes_witnesses,
                 descartes_witness_max_terms: problem.solver.local_descartes_witness_max_terms,
                 descartes_intervals: problem.solver.local_descartes_intervals,
+                descartes_interval_max_terms: problem.solver.local_descartes_interval_max_terms,
                 descartes_interval_template_limit: problem
                     .solver
                     .local_descartes_interval_template_limit,

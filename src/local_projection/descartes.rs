@@ -536,6 +536,7 @@ mod tests {
                 limit,
                 Some(&mut stock),
                 false,
+                crate::config::DEFAULT_DESCARTES_INTERVAL_MAX_TERMS,
                 None,
                 replay,
                 false,

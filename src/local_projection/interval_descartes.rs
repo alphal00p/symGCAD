@@ -11,7 +11,9 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use symbolica::prelude::*;
 
 const MAX_DEGREE: usize = 32;
-const MAX_TERMS: usize = 4096;
+// Independent of configurable SOURCE admission. Increasing source admission
+// must never increase the cost bounds on the resulting exact guard set.
+const MAX_GUARD_TERMS: usize = 4096;
 const MAX_COEFFICIENT_SLOTS: usize = 256;
 const MAX_GUARDS: usize = 256;
 const MAX_TOTAL_TERMS: usize = 65536;
@@ -50,32 +52,42 @@ pub struct PositiveIntervalWitness {
 /// induction therefore still gives a finite set of possible projection guards.
 pub(super) struct WitnessStock {
     limit: usize,
+    max_terms: usize,
     entries: HashMap<usize, Vec<Vec<PositiveInterval>>>,
     admitted: usize,
     reused: usize,
     budget_fallbacks: usize,
+    source_term_fallbacks: usize,
 }
 
 impl Default for WitnessStock {
     fn default() -> Self {
         Self {
             limit: 2,
+            max_terms: crate::config::DEFAULT_DESCARTES_INTERVAL_MAX_TERMS,
             entries: HashMap::new(),
             admitted: 0,
             reused: 0,
             budget_fallbacks: 0,
+            source_term_fallbacks: 0,
         }
     }
 }
 
 impl WitnessStock {
+    #[cfg(test)]
     pub(super) fn new(limit: usize) -> Result<Self> {
+        Self::with_max_terms(limit, crate::config::DEFAULT_DESCARTES_INTERVAL_MAX_TERMS)
+    }
+    pub(super) fn with_max_terms(limit: usize, max_terms: usize) -> Result<Self> {
         ensure!(
             (2..=8).contains(&limit),
             "interval template limit must be between two and eight"
         );
+        crate::config::validate_descartes_interval_max_terms(max_terms)?;
         Ok(Self {
             limit,
+            max_terms,
             ..Self::default()
         })
     }
@@ -87,12 +99,16 @@ impl WitnessStock {
         variable: usize,
         prefix: &[Rational],
     ) -> Result<Option<(PositiveRayCase, Vec<Poly>)>> {
-        if !eligible(p, variable) {
+        if p.nterms() > self.max_terms {
+            self.source_term_fallbacks += 1;
+            return Ok(None);
+        }
+        if !eligible(p, variable, self.max_terms) {
             return Ok(None);
         }
         let templates = self.entries.entry(id).or_default();
         for template in templates.iter() {
-            if let Some(proof) = at_template(p, variable, prefix, template)? {
+            if let Some(proof) = at_template(p, variable, prefix, template, self.max_terms)? {
                 self.reused += 1;
                 return Ok(Some(proof));
             }
@@ -101,10 +117,10 @@ impl WitnessStock {
             self.budget_fallbacks += 1;
             return Ok(None);
         }
-        let Some(template) = discover(algebra, p, variable, prefix)? else {
+        let Some(template) = discover(algebra, p, variable, prefix, self.max_terms)? else {
             return Ok(None);
         };
-        let proof = at_template(p, variable, prefix, &template)?;
+        let proof = at_template(p, variable, prefix, &template, self.max_terms)?;
         if proof.is_some() {
             templates.push(template);
             self.admitted += 1;
@@ -117,11 +133,12 @@ impl WitnessStock {
         report.descartes_interval_template_limit = self.limit;
         report.descartes_interval_template_reuses = self.reused;
         report.descartes_interval_budget_fallbacks = self.budget_fallbacks;
+        report.descartes_interval_source_term_fallbacks = self.source_term_fallbacks;
     }
 }
 
-fn eligible(p: &Poly, variable: usize) -> bool {
-    (3..=MAX_DEGREE).contains(&(p.degree(variable) as usize)) && p.nterms() <= MAX_TERMS
+fn eligible(p: &Poly, variable: usize, max_terms: usize) -> bool {
+    (3..=MAX_DEGREE).contains(&(p.degree(variable) as usize)) && p.nterms() <= max_terms
 }
 fn height(x: &Rational) -> u64 {
     x.numerator_ref().significant_bits() + x.denominator_ref().significant_bits()
@@ -224,7 +241,7 @@ impl Guards {
         if self.seen.contains(&p) {
             return true;
         }
-        if p.nterms() > MAX_TERMS
+        if p.nterms() > MAX_GUARD_TERMS
             || p.coefficients
                 .iter()
                 .any(|c| height(c) > MAX_COEFFICIENT_BITS)
@@ -248,8 +265,10 @@ fn at_template(
     variable: usize,
     prefix: &[Rational],
     template: &[PositiveInterval],
+    max_terms: usize,
 ) -> Result<Option<(PositiveRayCase, Vec<Poly>)>> {
-    if !eligible(p, variable) {
+    crate::config::validate_descartes_interval_max_terms(max_terms)?;
+    if !eligible(p, variable, max_terms) {
         return Ok(None);
     }
     let degree = p.degree(variable) as usize;
@@ -332,7 +351,9 @@ pub(super) fn verify_witness(
     variable: usize,
     prefix: &[Rational],
     supplied: &PositiveRayCase,
+    max_terms: usize,
 ) -> Result<Vec<Poly>> {
+    crate::config::validate_descartes_interval_max_terms(max_terms)?;
     let PositiveRayCase::DescartesIntervals { intervals } = supplied else {
         anyhow::bail!("expected interval Descartes witness");
     };
@@ -340,7 +361,7 @@ pub(super) fn verify_witness(
         .iter()
         .map(|w| w.interval.clone())
         .collect::<Vec<_>>();
-    let Some((expected, guards)) = at_template(p, variable, prefix, &template)? else {
+    let Some((expected, guards)) = at_template(p, variable, prefix, &template, max_terms)? else {
         anyhow::bail!("interval Descartes cover or coefficient signs are invalid");
     };
     ensure!(
@@ -355,8 +376,10 @@ fn discover(
     p: &Poly,
     variable: usize,
     prefix: &[Rational],
+    max_terms: usize,
 ) -> Result<Option<Vec<PositiveInterval>>> {
-    if !eligible(p, variable) {
+    crate::config::validate_descartes_interval_max_terms(max_terms)?;
+    if !eligible(p, variable, max_terms) {
         return Ok(None);
     }
     let f = algebra.specialize_univariate(p, variable, prefix)?;
@@ -473,6 +496,184 @@ mod tests {
         (a, p)
     }
 
+    fn oversized_source(width: u32) -> (Algebra, Poly) {
+        let algebra = Algebra::new(&["a".into(), "b".into(), "z".into(), "unused".into()]).unwrap();
+        let mut support = algebra.parse("0").unwrap();
+        for a in 0..width {
+            for b in 0..width {
+                support.append_monomial(Rational::one(), &[a, b, 0, 0]);
+            }
+        }
+        // Primitive in z: gcd(support,a)=1. At a=0,b=1 the global
+        // Descartes bound is unsaturated (four variations, two roots).
+        let p = &(&support * &algebra.parse("(z-1)*(z-2)*(z^2-z+1)").unwrap())
+            + &algebra.parse("a").unwrap();
+        (algebra, p)
+    }
+
+    #[test]
+    fn source_budget_reaches_discovery_reuse_and_every_replayed_guard() {
+        let (a, p) = oversized_source(33);
+        assert_eq!(p.nterms(), 5445);
+        let prefix = [Rational::zero(), Rational::one()];
+        let mut small = WitnessStock::default();
+        assert!(small.attempt(0, &a, &p, 2, &prefix).unwrap().is_none());
+        assert!(small.entries.is_empty());
+        let mut large = WitnessStock::with_max_terms(2, 8192).unwrap();
+        let (case, guards) = large.attempt(0, &a, &p, 2, &prefix).unwrap().unwrap();
+        let restored: PositiveRayCase =
+            serde_json::from_slice(&serde_json::to_vec(&case).unwrap()).unwrap();
+        assert_eq!(
+            guards,
+            verify_witness(&p, 2, &prefix, &restored, 8192).unwrap()
+        );
+        assert!(verify_witness(&p, 2, &prefix, &restored, 4096).is_err());
+        for invalid in [0, 65537, usize::MAX] {
+            assert!(WitnessStock::with_max_terms(2, invalid).is_err());
+            assert!(verify_witness(&p, 2, &prefix, &restored, invalid).is_err());
+        }
+        assert!(large.attempt(0, &a, &p, 2, &prefix).unwrap().is_some());
+        assert_eq!((large.admitted, large.reused), (1, 1));
+        // Even a preexisting template cannot bypass a lowered source bound.
+        large.max_terms = 4096;
+        assert!(large.attempt(0, &a, &p, 2, &prefix).unwrap().is_none());
+        assert_eq!(large.source_term_fallbacks, 1);
+        let mut report = super::super::LocalReport::default();
+        large.report(&mut report);
+        assert_eq!(report.descartes_interval_source_term_fallbacks, 1);
+        assert_eq!(report.descartes_interval_budget_fallbacks, 0);
+        assert!(guards.iter().all(|g| g.variables() == &a.variables));
+        for g in [p.replace(2, &Rational::zero()), p.univariate_lcoeff(2)] {
+            assert!(guards.contains(&canonical(&g)));
+        }
+        let PositiveRayCase::DescartesIntervals { intervals } = &case else {
+            panic!()
+        };
+        let template = intervals
+            .iter()
+            .map(|i| i.interval.clone())
+            .collect::<Vec<_>>();
+        let cover = cover(&template, 4).unwrap().unwrap();
+        let coefficients = p.to_univariate_polynomial_list(2);
+        for (lower, upper) in cover {
+            if let Some(b) = &upper {
+                assert!(guards.contains(&canonical(&p.replace(2, b))));
+            }
+            for row in weights(4, &lower, upper.as_ref()) {
+                let c = coefficients.iter().fold(p.zero(), |sum, (c, j)| {
+                    sum + c.clone().mul_coeff(row[*j as usize].clone())
+                });
+                if !c.is_zero() {
+                    assert!(guards.contains(&canonical(&c)));
+                }
+            }
+        }
+        for mutation in 0..4 {
+            let mut bad = case.clone();
+            let PositiveRayCase::DescartesIntervals { intervals } = &mut bad else {
+                panic!()
+            };
+            match mutation {
+                0 => {
+                    intervals.pop();
+                }
+                1 => intervals[0].coefficient_signs[0] *= -1,
+                2 => intervals[1].interval.lower = PositiveIntervalEndpoint::Rational("99".into()),
+                _ => {
+                    intervals[0].interval.upper = PositiveIntervalEndpoint::Rational("1".into());
+                    intervals[1].interval.lower = PositiveIntervalEndpoint::Rational("1".into());
+                }
+            }
+            assert!(verify_witness(&p, 2, &prefix, &bad, 8192).is_err());
+        }
+    }
+
+    #[test]
+    fn larger_source_budget_never_raises_the_fixed_per_guard_limit() {
+        let (a, p) = oversized_source(65);
+        assert_eq!(p.nterms(), 21125);
+        assert!(eligible(&p, 2, 32768));
+        let endpoint = p.replace(2, &Rational::zero());
+        assert_eq!(endpoint.nterms(), 4225);
+        assert!(!Guards::default().add(&endpoint));
+        let mut stock = WitnessStock::with_max_terms(2, 32768).unwrap();
+        let prefix = [Rational::zero(), Rational::one()];
+        assert!(discover(&a, &p, 2, &prefix, 32768).unwrap().is_some());
+        assert!(stock.attempt(0, &a, &p, 2, &prefix).unwrap().is_none());
+        assert_eq!(stock.admitted, 0);
+        assert_eq!(stock.source_term_fallbacks, 0);
+        assert!(stock.entries[&0].is_empty());
+    }
+
+    #[test]
+    fn oversized_interval_source_reaches_raw_projection_and_independent_replay() {
+        use super::super::{
+            PositiveRayProjection, ProjectionOperations, positive_projection_raw, strict_bezout,
+        };
+        struct NoExpensiveProjection;
+        impl ProjectionOperations for NoExpensiveProjection {
+            fn discriminant(&mut self, _: &Poly, _: usize) -> Result<Poly> {
+                anyhow::bail!("ordinary discriminant fallback requested")
+            }
+            fn resultant(&mut self, _: &Poly, _: &Poly, _: usize) -> Result<Poly> {
+                anyhow::bail!("unexpected pair resultant")
+            }
+        }
+        let (algebra, p) = oversized_source(33);
+        let coordinate = algebra.parse("z").unwrap();
+        let polynomials = vec![coordinate.clone(), p.clone()];
+        let normalized = crate::problem::NormalizedProblem {
+            algebra,
+            positives: vec![coordinate],
+            split: vec![p.clone()],
+        };
+        let prefix = [Rational::zero(), Rational::one()];
+        let invoke = |limit, replay: Option<&PositiveRayProjection>| {
+            let mut stock = WitnessStock::with_max_terms(2, limit).unwrap();
+            positive_projection_raw(
+                &normalized,
+                &polynomials,
+                &[0, 1],
+                2,
+                &prefix,
+                0,
+                0,
+                false,
+                2,
+                false,
+                None,
+                false,
+                &mut strict_bezout::Registry::default(),
+                false,
+                false,
+                4096,
+                None,
+                true,
+                limit,
+                Some(&mut stock),
+                replay,
+                false,
+                &mut None,
+                &mut 0.0,
+                &mut NoExpensiveProjection,
+            )
+        };
+        assert!(
+            invoke(4096, None)
+                .unwrap_err()
+                .to_string()
+                .contains("ordinary discriminant fallback")
+        );
+        let (bearing, guards, _, _, _, proof) = invoke(8192, None).unwrap();
+        assert_eq!(bearing, vec![1]);
+        let (_, replayed, _, _, _, expected) = invoke(8192, Some(&proof)).unwrap();
+        assert_eq!(expected, proof);
+        assert_eq!(replayed, guards);
+        assert!(invoke(4096, Some(&proof)).is_err());
+        assert!(guards.contains(&canonical(&p.replace(2, &Rational::zero()))));
+        assert!(guards.contains(&canonical(&p.univariate_lcoeff(2))));
+    }
+
     #[test]
     fn coefficient_matrices_satisfy_exact_symbolic_transform_identities() {
         let algebra = Algebra::new(&["s".into(), "z".into(), "u".into()]).unwrap();
@@ -520,7 +721,7 @@ mod tests {
                 panic!()
             };
             assert_eq!(positive_count(intervals), count);
-            assert!(verify_witness(&p, 1, &[Rational::one()], &case).is_ok());
+            assert!(verify_witness(&p, 1, &[Rational::one()], &case, 4096).is_ok());
         }
     }
 
@@ -558,7 +759,7 @@ mod tests {
                 }
             }
             assert!(
-                verify_witness(&p, 1, &[Rational::one()], &changed).is_err(),
+                verify_witness(&p, 1, &[Rational::one()], &changed, 4096).is_err(),
                 "tamper {which}"
             );
         }
@@ -572,13 +773,13 @@ mod tests {
         }];
         let (_, p) = setup("z^3+(s-1)*z^2+z+1");
         assert!(
-            at_template(&p, 1, &[Rational::one()], &template)
+            at_template(&p, 1, &[Rational::one()], &template, 4096)
                 .unwrap()
                 .is_none()
         );
         let (_, p) = setup("z^3+z+1");
         assert!(
-            at_template(&p, 1, &[Rational::one()], &template)
+            at_template(&p, 1, &[Rational::one()], &template, 4096)
                 .unwrap()
                 .is_some()
         );
@@ -636,7 +837,10 @@ mod tests {
             let large_proof = large.attempt(0, &a, &p, 1, &[s.clone()]).unwrap();
             extra_success |= small_proof.is_none() && large_proof.is_some();
             if let Some((case, guards)) = large_proof {
-                assert_eq!(guards, verify_witness(&p, 1, &[s.clone()], &case).unwrap());
+                assert_eq!(
+                    guards,
+                    verify_witness(&p, 1, &[s.clone()], &case, 4096).unwrap()
+                );
             }
             if large.budget_fallbacks > 0 {
                 break;

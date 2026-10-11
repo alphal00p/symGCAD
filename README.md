@@ -89,6 +89,8 @@ The experimental solver option `affine_factorization = true` preconditions eligi
 
 With `local_descartes_witnesses = true`, the optional `local_descartes_witness_max_terms = 8192` raises the source-term budget for exact positive-root separator certificates. The default remains 4096, the ceiling is 65536, and discovery, reuse and verification share the explicit limit. All coefficient and separator guards remain mandatory, and the lifetime stock stays at two templates per polynomial. Larger inputs can still make the subsequent projection expensive; see [usage and limits](docs/USAGE.md).
 
+For unsaturated root bounds, `local_descartes_intervals = true` supports the separate `local_descartes_interval_max_terms = 32768`. It raises only source admission; individual guards still have a 4096-term cap, and all existing guard, cover and permanent-template limits remain unchanged. The default source cap remains 4096, with a ceiling of 65536.
+
 A `complete_generic` result covers full-dimensional open cells outside its recorded algebraic exceptional set. Lower-dimensional sections are excluded. The verifier reconstructs exact projection/reduction identities, root bounds and exhaustive coverage; an incomplete result cannot pass. Exceptional parameter specializations require a new solve after substitution.
 
 Exact boundary evidence retains ordinary `F=0` sheets, repeated roots and same-sign interior seams. A sign-based reduction requires an exact strict-nonvanishing certificate on the relevant domain; nonnegativity or sampled signs alone are insufficient.
