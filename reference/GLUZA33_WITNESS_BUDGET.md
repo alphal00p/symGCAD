@@ -4,8 +4,10 @@ Research-only result, 11 October 2026. Increasing the diagnostic helper's source
 budget from 4,096 to 8,192 terms admits an exact positive-root witness for the
 new Gluza33 obstruction. Discovery and all eighteen checked guard
 factorizations finish in **2.623493 seconds**, using **16,324 KiB** peak RSS.
-Production eligibility is unchanged; no lower-dimensional guard projection
-or new original-problem decomposition is claimed.
+Production eligibility was unchanged for this experiment; no lower-dimensional
+guard projection or new original-problem decomposition is claimed here. The
+subsequent [production admission option and original continuation](DESCARTES_SOURCE_BUDGET_PRODUCTION.md)
+record the integration separately.
 
 ## Bound source and prefix
 

@@ -101,8 +101,11 @@ with three fresh repetitions and identical orders. *±* means two separate sign-
   A later warm Gluza33 trial with opt-in affine factor preconditioning timed out at
   *300.021 s*, using *452 MiB*. It passed the old factor obstruction in 0.152 s and saved
   384 further operations before a degree-16 discriminant. This is progress, not a solved time.
-  A separate larger-budget probe constructed and factored all 18 positive-root separator
-  guards in 2.623 s / 16 MiB; their remaining projection and production integration are untested.
+  The integrated 8192-term witness option then passed that discriminant and saved 4554 further
+  operations in a *300.058 s / 403 MiB* warm debug continuation. Its new degree-24 discriminant
+  has two positive roots but four Descartes variations: a larger source cap alone is insufficient.
+  A separate exact interval cover constructed and factored 49 guards in *9.271 s / 32 MiB*;
+  its remaining projection is unmeasured. These probes add no original coverage.
 
   Measurements prefer verified three-repeat controls, otherwise the fastest accepted original-problem
   run. Builds are labelled. Cache tags mean cold (C), shared and possibly warm (S), or unrecorded (?).
@@ -206,7 +209,9 @@ with three fresh repetitions and identical orders. *±* means two separate sign-
   *Projection research.* A graph-derived quadratic block completed three ordinary elimination
   stages in 8.643 s; its 27 stationary-face identities replayed in 0.446 s. These have different
   proof obligations and are not a solver-speedup comparison. SubTropica suggests joint positive-scale
-  and linear-prefix ordering proposals; tropical support cannot remove interior threshold sheets.
+  and linear-prefix ordering proposals; a follow-up proposes exact sparse AM–GM certificates.
+  Neither tropical support nor stationary-face guards alone remove interior threshold sheets.
+  The latest tracked fast suite passed 627 tests, with zero failures and two expensive tests ignored.
 
   #block(breakable: false)[
   == Reproduce and inspect

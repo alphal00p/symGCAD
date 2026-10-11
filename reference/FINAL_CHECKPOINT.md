@@ -36,15 +36,26 @@ passed the captured 224-term factor obstruction in 0.152 seconds and saved
 6,938-term degree-16 discriminant, with 452 MiB peak RSS under a 50 GiB
 allowance. This warm diagnostic adds no completion credit.
 
+The subsequent [8,192-term witness-budget continuation](DESCARTES_SOURCE_BUDGET_PRODUCTION.md)
+passed that discriminant and saved **4,554** further exact operations. Its
+development worker timed out at 300.058 seconds with 402.5 MiB peak RSS on a
+new 19,942-term degree-24 discriminant. A separate exact probe found two
+positive roots against four Descartes variations there; merely increasing
+the same budget cannot certify that next fiber. A separate
+[interval proof](GLUZA33_INTERVAL_BUDGET.md) constructed and factored 49 guards
+in 9.271 seconds, all within current non-source resource limits. Its remaining
+guard projection and original completion are unmeasured.
+
 ## Validation and performance evidence
 
-The latest complete production fast suite passed **622 tracked tests**, with
+The latest complete production fast suite passed **627 tracked tests**, with
 zero failures and two deliberately expensive tests ignored. A separate
 workstream's uncommitted alternate-mass test was excluded from this run,
 the tracked count and the original corpus. The
 [validation record](COMBINED_FAST_VALIDATION.md) binds the exact source and logs.
 This includes the opt-in affine factorization policy's module and solve/verify
-regressions. Research helpers retain their own focused checks.
+regressions and the configurable witness-budget checks. Research helpers
+retain their own focused checks.
 
 All **66 release solve-and-verify trials** for the quadratic-certificate
 ablations and quadratic-ladder examples completed. The crossed A446 chamber
@@ -75,10 +86,16 @@ The [quadratic-face diagnostic](QUADRATIC_BLOCK_FACE_DIAGNOSTIC.md) replays
 all 27 stationary-face identities in a graph-derived three-coordinate cube
 and measures completed ordinary projection through that block. The remaining
 prefix decomposition, boundary ordering and original-coordinate restoration
-are unresolved. The [SubTropica review](TROPICAL_SUBTROPICA_RESEARCH.md)
+are unresolved. The [ordered quadratic identities](QUADRATIC_FLAG_IDENTITIES_RESEARCH.md)
+give a counterexample to stationary-face sufficiency and a narrower exact
+route through smaller resultants; eighteen Symbolica identity checks pass,
+but the production dispatcher is unimplemented. The [SubTropica review](TROPICAL_SUBTROPICA_RESEARCH.md)
 recommends joint scale-variable and short linear-prefix ordering proposals.
 Tropical support and integration reductions do not justify deleting interior
 threshold boundaries; no GCAD performance gain is claimed from that review.
+The [tropical follow-up](TROPICAL_FOLLOWUP_RESEARCH.md) proposes sparse exact
+AM–GM certificates and graph-cut coefficient allocation. Strict coefficient
+margins, not support geometry alone, would justify nonvanishing removal.
 
 The [Taylor-shift experiments](FAST_TAYLOR_SHIFT_RESEARCH.md) and
 [positive-axis isolation investigation](POSITIVE_AXIS_ISOLATION_RESEARCH.md)

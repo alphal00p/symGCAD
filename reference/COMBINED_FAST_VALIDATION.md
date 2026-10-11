@@ -110,3 +110,27 @@ The separate [quadratic-face diagnostic](QUADRATIC_BLOCK_FACE_DIAGNOSTIC.md)
 passed six helper tests, and the [larger witness-budget probe](GLUZA33_WITNESS_BUDGET.md)
 passed seven. These helper checks are outside the 622-test production count.
 Neither diagnostic adds an original-corpus completion.
+
+## Descartes source-admission gate
+
+The subsequent production change `8e28c21` passed **627 tracked tests across
+46 targets, zero failed, two ignored** on the ordinary Symbolica backend.
+All source hashes matched after the run. The separate workstream's untracked
+alternate-mass fixture remained excluded. This adds five checks for bounded
+source admission, full raw guard preservation, reuse, independent replay,
+historical defaults and altered evidence.
+
+The locked Nix run used CPUs 6 and 7, two Cargo jobs and one test thread per
+target, with the same package-specific debug settings as the preceding gate.
+Test bodies summed to **50.96 seconds**. This is regression validation, not a
+solver timing comparison. All 27 earlier focused tests also passed.
+
+Evidence under `artifacts/research/descartes-source-budget-production-01/validation/`:
+
+| Record | SHA-256 |
+| --- | --- |
+| `fast.log` | `208f0e9d261c07775faf305858814d30cedf5a649a9e5f0d057da8818d33f35d` |
+| `summary.json` | `c09881f179377150120437176b8dcfa99797c0afcdafbee4c735433364cec567` |
+| `source-hashes.txt` | `cceffcc8c4e264bfbd46828b58c3e26d62dc9335a9aadaa369fab64c6131226e` |
+| `test-targets.txt` | `8d7df6063ab855c89d80d7b99d3e8bb64994f5cc3b58829b2877c0779a6d92ba` |
+| `source-check.log` | `d7caaf1f26ed6570c71a643c861dec5f97b11c26cac2b103cc0f171ff92e9b3e` |
