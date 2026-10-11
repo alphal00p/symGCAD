@@ -136,7 +136,30 @@ injected. It preserves the original problem, variable order, scale and solver
 options. Only the optional backend policy, checkpoint location and deadline
 change. One CPU and 50 GiB are available, with 6,600 seconds for solving and
 up to 600 seconds for independent verification within a shared 7,200-second
-campaign. The terminal result is recorded here after the campaign finishes.
+campaign. The worker times out after **6,603.858274935 seconds**, with
+**2,010,632 KiB peak RSS** (1,963.508 MiB). Total campaign wall time is
+6,604.300292846 seconds; worker user/system CPU times are 6,402.654628 and
+24.558223 seconds. The small solve-deadline overshoot is included in these
+observed timings. No result is exported and independent verification does not
+run. Positive Gluza33 remains unresolved; the original aggregate stays 303/331.
+
+The original worker clears the former 2,867-term factor in 1.996107155 seconds,
+then continues through resultants. The terminal cache contains **32,456 records,
+4,559 new**: 4,013 factorizations, 40 discriminants and 506 resultants.
+Every inherited file is checked for unchanged bytes, and new
+operation keys and output hashes are independently recomputed. This checks
+artifact integrity, not the mathematical result of every algebra operation.
+No standalone profiler factors are inserted into the cache.
+
+The last full progress snapshot is at 879.837742911 seconds, prefix
+`[2,6/13]`, with 124,218 speculative nodes and 17,355 refinements. Later
+operation captures and new cache files show continued work; these counters
+are neither current cell counts nor a completion estimate. The last captured
+call is a resultant in `x7`, key
+`c395fcc77e3ffcf7095dc236dbab6ce7a9e4763e33032358dd7d23ae835838e2`,
+input hash `8ab3ce7689cc50f11ed077a54f6db59dd943877199b9778a11b4f123e7478068`.
+The capture has no elapsed-call time, so the campaign duration must not be
+attributed to that one operation. All campaign processes have exited.
 
 ## Evidence bindings
 
@@ -154,3 +177,13 @@ The route diagnostics are under `artifacts/research/gluza33-factor-route-01/`.
 | Control report | `bd68eabe6d00f94bd47cbdd9ed013d8e011395cc097395f88de2cadfc4e01927` |
 | Frozen solver | `4d4af2f11744ca267723958944987d2e4d608e293074b24d9d7b669ec798198d` |
 | Frozen campaign harness | `0a1790d3a2ac2f3344d3a04fa1f3eb87127e18fc1a239c6987847f314031ef88` |
+| Final worker record | `1a7519f7dd970314063d90c2623b086720f82c72a05d807637d58e11f7a34e63` |
+| Final campaign provenance | `3cc6a9c5a7ec48db202b928edf651ef10b6d9a76275e956af9e309ae289d65ba` |
+| Final cache manifest | `29e4f6a1bd7e25ff69d8641b30bd532155f5e393f8648ec0e25675c86c7402f7` |
+| Final integrity audit | `50e02619cae6953de858c23bf8e0fb68578e4acf2400c36afe4dbe9109bece60` |
+| Final active-operation capture | `c93e651825a53dba90da8e51fdfbde4095a5985e7ef4fec9b08e182cfee1f72d` |
+
+The final campaign files are under
+`artifacts/research/gluza33-final-main-axis-campaign-01/`; the audit completed
+at 2026-10-11 22:43:44 UTC. Large caches and result artifacts remain outside
+Git; the public record preserves their bindings and scope.

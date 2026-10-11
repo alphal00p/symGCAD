@@ -111,8 +111,8 @@ with three fresh repetitions and identical orders. *±* means two separate sign-
   solve ratios. All optional Wang images reject; the changed axis lets ordinary fallback
   succeed. Generic admitted-policy regressions retain units, multiplicities and inactive
   coordinates. The patch is optional and leaves the production dependency unchanged.
-  The final original campaign starts from the audited cache with 50 GiB and a shared
-  two-hour solve/verification budget. Its terminal outcome is recorded after completion.
+  The final warm original continuation times out at *6603.858 s* / *1964 MiB*,
+  retaining 32,456 operation records (4,559 new). No result is exported; verification does not run.
 
   Measurements prefer verified three-repeat controls, otherwise the fastest accepted original-problem
   run. Builds are labelled. Cache tags mean cold (C), shared and possibly warm (S), or unrecorded (?).

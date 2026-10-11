@@ -199,6 +199,15 @@ route is the changed axis and ordinary native fallback. Generic admitted
 controls preserve rational units, multiplicities and inactive map entries.
 The separately replayable patch remains optional, leaving production unchanged.
 
+The final warm original continuation with that optional backend times out at
+**6,603.858 seconds**, with **1,963.508 MiB peak RSS** under a 50-GiB cap.
+It clears the captured factor inside the original solver, then continues
+through resultants. The cache retains **32,456 operations, 4,559 new**.
+No decomposition is exported and no verification runs. The original problem
+remains unresolved; operation counts are not cell counts. The
+[terminal record](GLUZA33_FINAL_FACTOR_PUSH.md) and [handoff](../HANDOFF.md)
+retain the source bindings, integrity-audit scope and remaining frontier.
+
 ## Validation and performance evidence
 
 The final integrated production fast suite passed **662 tracked tests across
