@@ -98,19 +98,18 @@ with three fresh repetitions and identical orders. *±* means two separate sign-
   an earlier 1650 MiB peak. Nine hash-bound continuation records are retained in the JSON.
   Interrupted algebra experiments and restricted-domain successes add no original coverage.
 
-  A later warm Gluza33 trial with opt-in affine factor preconditioning timed out at
-  *300.021 s*, using *452 MiB*. It passed the old factor obstruction in 0.152 s and saved
-  384 further operations before a degree-16 discriminant. This is progress, not a solved time.
-  The integrated 8192-term witness option then passed that discriminant and saved 4554 further
-  operations in a *300.058 s / 403 MiB* warm debug continuation. Its new degree-24 discriminant
-  has two positive roots but four Descartes variations: a larger source cap alone is insufficient.
-  An exact interval cover constructed and factored 49 guards in *9.271 s / 32 MiB*.
-  The integrated interval option passed that discriminant and saved 6422 further operations
-  in a *600.055 s / 364 MiB* warm debug trial, ending on a new factorization.
-  An isolated Wang-preflight patch factors this source in *1.039 s*, versus a matched
+  Subsequent bounded Gluza33 continuations passed several captured obstructions through
+  exact affine factor preconditioning and positive-ray witness/interval certificates.
+  Each preserved original coordinates, every interior zero sheet and completed algebra.
+  An isolated Wang-preflight patch factors a 2410-term obstruction in *1.039 s*, versus a matched
   disabled-control timeout at *60.034 s*. Both exported factors reconstruct it exactly.
-  A warm patched solve saved 202 further operations before a *600.096 s / 763 MiB*
-  timeout on a discriminant. The production dependency is unchanged; Gluza33 remains incomplete.
+  A four-operand adoption pilot established no additional speedup, so the patch remains optional.
+  At a later prefix, a complete four-interval positive-ray certificate has 97 guards and
+  109,726 terms, exceeding the default 65,536-term resource limit. All guards factor and
+  reconstruct in a *33.730 s* diagnostic. A new explicit 131,072-term allowance then passes
+  this obstruction in the original solve. That warm debug trial retained *7194 new operations*
+  before timing out at *600.069 s / 542 MiB* on a different factorization.
+  The production dependency and default budgets are unchanged; Gluza33 remains incomplete.
   These incomplete probes add no original coverage or solved-time ratio.
 
   Measurements prefer verified three-repeat controls, otherwise the fastest accepted original-problem
@@ -219,13 +218,14 @@ with three fresh repetitions and identical orders. *±* means two separate sign-
   probe completed 24 exact two-stage candidates in 3.945 s. Three shortlisted symbolic orders
   each timed out at 60 s: better prefix scores have not yielded new completions.
   Automatic shear preconditioning factors the captured C470 obstruction in 0.088 s, with
-  exact signed reconstruction. Warm original continuations timed out at 300.028 s (136 MiB)
-  and 600.061 s (222 MiB), retaining 56,671 then 1,205 new operations. A further
-  600.035 s / 185 MiB support-basis trial also timed out, with no demonstrated overall gain.
-  None supplies a completed-solve speedup ratio.
+  exact signed reconstruction. Original continuations retain completed work but remain incomplete.
+  Throttling redundant progress writes reduced system CPU from *17.505 to 1.282 s* in
+  matched 60-second controls; a separate trace recorded 91.2% fewer progress writes.
+  A subsequent warm debug continuation timed out at *600.050 s / 266 MiB*, retaining
+  279 new exact operations. Activity counts and I/O improvements are not solve-time ratios.
   Conditional AM–GM certificates are a further proposal for proved bounded domains; global
   support screening found no new small-source candidate. All interior threshold sheets remain required.
-  The latest tracked fast suite passed 642 tests, with zero failures and two expensive tests ignored.
+  The latest tracked fast suite passed 646 tests, with zero failures and two expensive tests ignored.
 
   #block(breakable: false)[
   == Reproduce and inspect

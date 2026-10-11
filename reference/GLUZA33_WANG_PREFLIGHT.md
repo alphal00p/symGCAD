@@ -82,6 +82,11 @@ blocker. This evidence supports an optional experimental backend candidate;
 broader factorization-corpus measurements remain necessary before a default
 upstream policy change.
 
+The subsequent [four-operand pilot](WANG_ADOPTION_PILOT.md) found no additional
+completed speedup. Two newly admitted sources exhausted the finite candidate
+menu before falling back; one has an exact parity obstruction to every integer
+specialization under the current image gates. The patch remains experimental.
+
 The isolated test build exposed unrelated evaluator tests importing native/JIT
 APIs when that feature is disabled. The separate
 [test-harness patch](../patches/experimental/symbolica-factor-tests-without-native-codegen.patch)

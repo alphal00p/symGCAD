@@ -4,15 +4,9 @@ Exact generic cylindrical algebraic decomposition in Rust, using Symbolica for a
 
 The audited checkpoint solves **303/331 distinct original problems**, including **124/124 fixed-kinematics ZZ cases**. The remaining 27 symbolic ZZ problems and positive Gluza33 are explicitly incomplete. A446 and its crossing complete at fixed kinematics; their full symbolic domains remain unresolved.
 
-All 28 unresolved problems timed out in their first one-hour slow campaign. The [benchmark](benchmark/benchmark.pdf) records those censored times and memory measurements; targeted continuations preserve completed algebra without claiming new coverage.
+The [benchmark](benchmark/benchmark.pdf) reports every original problem, including unresolved one-hour attempts and Gluza33's subsequent two-hour timeout. The tracked fast suite passes **646 tests**, with two expensive tests ignored. Completed algebra is retained between bounded campaigns; timeouts and conditional chambers receive no original-completion credit.
 
-The subsequent [positive Gluza33 continuation](reference/GLUZA33_AFFINE_ORDER_CONTINUATION.md) also timed out at two hours with a 50 GiB allowance and 3.81 GiB reported peak RSS. Its ground-truth decomposition remains unresolved.
-
-Later affine preconditioning and configurable root certificates passed two discriminant bottlenecks. The latest [interval-certificate continuation](reference/INTERVAL_SOURCE_BUDGET_PRODUCTION.md) saved 6,422 further exact operations before its ten-minute timeout on a new factorization; Gluza33 remains incomplete. The tracked fast suite passes 642 tests, with two expensive tests ignored.
-
-An [isolated Symbolica experiment](reference/GLUZA33_WANG_PREFLIGHT.md) reconstructs a captured Gluza33 factorization bottleneck in 1.04 seconds; its matched disabled control times out at 60 seconds. The optional patch passes that obstruction in the full solver, which remains incomplete after a further ten-minute trial. The production dependency is unchanged. The [SubTropica review](reference/TROPICAL_SUBTROPICA_RESEARCH.md) led to joint scale/order probes and proposed conditional positivity certificates; neither has yet added a verified original case.
-
-The [final checkpoint](reference/FINAL_CHECKPOINT.md) separates verified original results, tested improvements and remaining research. No timeout or conditional chamber is counted as an original completion.
+The [implementation checkpoint](reference/FINAL_CHECKPOINT.md) records the certified reductions, measured improvements and remaining work. An optional [Symbolica Wang experiment](reference/GLUZA33_WANG_PREFLIGHT.md) factors one captured Gluza33 obstruction in 1.04 seconds against a 60-second control timeout. It remains experimental after a [broader pilot](reference/WANG_ADOPTION_PILOT.md); the production dependency is unchanged.
 
 ## Quick start
 
@@ -92,6 +86,8 @@ The experimental solver option `affine_factorization = true` preconditions eligi
 With `local_descartes_witnesses = true`, the optional `local_descartes_witness_max_terms = 8192` raises the source-term budget for exact positive-root separator certificates. The default remains 4096, the ceiling is 65536, and discovery, reuse and verification share the explicit limit. All coefficient and separator guards remain mandatory, and the lifetime stock stays at two templates per polynomial. Larger inputs can still make the subsequent projection expensive; see [usage and limits](docs/USAGE.md).
 
 For unsaturated root bounds, `local_descartes_intervals = true` supports the separate `local_descartes_interval_max_terms = 32768`. It raises only source admission; individual guards still have a 4096-term cap, and all existing guard, cover and permanent-template limits remain unchanged. The default source cap remains 4096, with a ceiling of 65536.
+
+`local_descartes_interval_max_total_terms = 131072` separately allows a larger total term count across a cover's distinct canonical guards. Its default is 65536 and ceiling is 262144; individual guard, coefficient, cover and lifetime-template limits stay fixed. The chosen budget is recorded and checked again during verification. See the [guard-cost measurements](reference/GLUZA33_FINAL_INTERVAL_FRONTIER.md).
 
 A `complete_generic` result covers full-dimensional open cells outside its recorded algebraic exceptional set. Lower-dimensional sections are excluded. The verifier reconstructs exact projection/reduction identities, root bounds and exhaustive coverage; an incomplete result cannot pass. Exceptional parameter specializations require a new solve after substitution.
 

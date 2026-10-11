@@ -82,15 +82,37 @@ using 221.7 MiB. It remains incomplete. The [local-refinement control](LOCAL_REF
 separately identifies successful-child obligation discovery as the main source
 of refinement in a measured B471 prefix; cache hits alone establish no speedup.
 
+The subsequent [progress-I/O profile](BASE_PROGRESS_THROTTLE.md) found an
+unthrottled optional-support fallback report. Correcting it reduced system CPU
+from 17.505 to 1.282 seconds in matched 60-second C470 trials, with unchanged
+mathematics and preserved first/failure snapshots. Both trials remain incomplete;
+activity counts are not certified coverage or solve-time ratios.
+The subsequent original C470 continuation timed out at 600.050 seconds with
+265.9 MiB peak RSS, retaining 279 additional operations. All 58,749 inherited
+operation records and 4,096 support proposals passed their metadata checks;
+no complete result or verification was exported.
+
+At Gluza33's next recorded prefix, the [interval-guard diagnostic](GLUZA33_FINAL_INTERVAL_FRONTIER.md)
+reconstructs a complete four-piece positive-ray cover with 97 guards. All guards
+factor and reconstruct exactly in a 33.730-second worker under an explicit
+131,072 aggregate-term allowance. The new production option preserves the
+65,536 default and every other guard/cover obligation. A compact-cover research
+search reduces the inventory to 73 guards but is not production discovery.
+With that explicit budget and the optional Wang backend, the original Gluza33
+continuation passed the discriminant and retained **7,194 new operations**.
+It timed out at **600.069 seconds / 541.5 MiB** on a different 1,283-term
+factorization. All 16,739 inherited records were unchanged. This is measurable
+progress through the original problem, but not a complete decomposition.
+
 ## Validation and performance evidence
 
-The latest complete production fast suite passed **642 tracked tests**, with
+The latest complete production fast suite passed **646 tracked tests**, with
 zero failures and two deliberately expensive tests ignored. A separate
 workstream's uncommitted alternate-mass test was excluded from this run,
 the tracked count and the original corpus. The
 [validation record](COMBINED_FAST_VALIDATION.md) binds the exact source and logs.
 This includes the opt-in affine factorization policy's module and solve/verify
-regressions and both configurable witness-source budgets. Research helpers
+regressions, configurable source and aggregate-guard budgets, and progress I/O. Research helpers
 retain their own focused checks.
 
 All **66 release solve-and-verify trials** for the quadratic-certificate

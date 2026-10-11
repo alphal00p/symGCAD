@@ -181,3 +181,36 @@ Evidence under `artifacts/research/shear-factor-policy-01/validation/`:
 | `source-hashes.txt` | `b6bb96ea1457b24ea0dbe5f00b4ee861ad7e2e737bbeb2efc06f910f44ccb163` |
 | `test-targets.txt` | `3bf641694675e5a0cb5d6f00aff5ba64f8fa575cde589c51c4e1674b5a4698ad` |
 | `source-check.log` | `32aa676d98c657cbd3e981690da38d82998c3449c49bba5adc162dbfa9955e79` |
+
+## Interval aggregate-guard budget and progress I/O
+
+Commit `37cff30` passed **646 tracked tests across 49 targets, zero failed,
+two ignored**, with unchanged production/test source hashes and **59.23 seconds**
+of test bodies. This includes the configurable aggregate guard budget and
+the corrected optional progress throttle. The separate workstream's untracked
+alternate-mass fixture remains excluded.
+
+The added generic guard regression exceeds the historical 65,536-term budget
+and checks exact discovery, template reuse, full-map guards and independent
+replay. Three integration tests cover configuration, serialization, historical
+defaults, rejected budget tampering and incomplete output. Existing progress
+tests preserve immediate first snapshots, capture refresh and diagnostic
+failure routing. Research-helper checks are separate from this count.
+
+Evidence under `artifacts/research/interval-total-budget-production-01/validation/`:
+
+| Record | SHA-256 |
+| --- | --- |
+| `fast.log` | `21bde3fc9e43f231a4c3b190efba8f0a92ad772d76942752f1d507cd35fc1a6d` |
+| `summary.json` | `40f0e2597cbef33695aab467e8571dd7d252d7a72bcf1628e41bdf8bbf1d3fc7` |
+| `source-hashes.txt` | `0583e3e146339bc52e468fd435222759f975e638075f8f05ce6260e8a1654259` |
+| `test-targets.txt` | `49d9f28ecdf60fd4674681cf9b22f95e880511efed84a302eae5f8484bf194bf` |
+| `source-check.log` | `51a78641599cba12c001b2e2103406e7aee0a995a009f8746d7371a7449dce6f` |
+
+All examples also passed `cargo check --locked --examples`. The release CLI
+built successfully, then independently verified a four-cell same-sign-seam
+smoke result with four stacks and ten exactly rejected branches. Source hashes
+remained unchanged. The frozen release SHA-256 is
+`571f37a5c868aaa2055fb1c2a667332d0f7ff1df0a7e26d87a9edab493ee2c30`;
+build, solve, verification and source-check logs are retained in the sibling
+`release/` directory. This smoke check adds no corpus completion.
