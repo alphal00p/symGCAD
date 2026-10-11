@@ -20,11 +20,20 @@ use symgcad::{
 
 const DEFAULT_MAX_TERMS: usize = 4096;
 const RESEARCH_MAX_TERMS: usize = 65_536;
+const DEFAULT_MAX_TOTAL_GUARD_TERMS: usize = 65_536;
+const MAX_TOTAL_GUARD_TERMS: usize = 262_144;
 
 fn validate_max_terms(max_terms: usize) -> Result<()> {
     ensure!(
         (1..=RESEARCH_MAX_TERMS).contains(&max_terms),
         "research max-terms must be between 1 and 65536"
+    );
+    Ok(())
+}
+fn validate_total_guard_terms(limit: usize) -> Result<()> {
+    ensure!(
+        (1..=MAX_TOTAL_GUARD_TERMS).contains(&limit),
+        "max-total-guard-terms must be between 1 and 262144"
     );
     Ok(())
 }
@@ -38,9 +47,16 @@ struct Args {
     output: PathBuf,
     #[arg(long)]
     factor_guards: bool,
+    /// Research-only finite rational-cover search; production budgets stay fixed.
+    #[arg(long)]
+    compact_cover_search: bool,
     /// Research source admission only; production guard limits remain separate.
     #[arg(long, default_value_t = DEFAULT_MAX_TERMS)]
     max_terms: usize,
+    /// Separate explicit guard resource policy; historical/default eligibility
+    /// remains in the report even when the selected budget admits factoring.
+    #[arg(long, default_value_t = DEFAULT_MAX_TOTAL_GUARD_TERMS)]
+    max_total_guard_terms: usize,
     #[arg(long, default_value_t = 60.0)]
     seconds: f64,
     #[arg(long, default_value_t = 0)]
@@ -258,13 +274,28 @@ fn probe(
     }
     accepted.sort_by(|a, b| a.0.a.cmp(&b.0.a));
     let count = accepted.iter().map(|x| x.3).sum::<usize>();
-    let mut report = json!({"eligible":false,"degree":d,"terms":p.nterms(),"research_max_terms":max_terms,"production_source_term_limit":DEFAULT_MAX_TERMS,"global_variations":variations(f.coefficients()),"positive_distinct_roots":roots.len(),"isolation_seconds":isolation_seconds,"numeric_discovery_seconds":started.elapsed().as_secs_f64(),"attempted_intervals":attempted,"accepted_intervals":accepted.len(),"sum_interval_variations":count,"declined":decline});
+    let report = json!({"eligible":false,"degree":d,"terms":p.nterms(),"research_max_terms":max_terms,"production_source_term_limit":DEFAULT_MAX_TERMS,"global_variations":variations(f.coefficients()),"positive_distinct_roots":roots.len(),"isolation_seconds":isolation_seconds,"numeric_discovery_seconds":started.elapsed().as_secs_f64(),"attempted_intervals":attempted,"accepted_intervals":accepted.len(),"sum_interval_variations":count,"declined":decline});
     if decline.is_some() || count != roots.len() {
         return Ok(Probe {
             report,
             guards: vec![],
         });
     }
+    construct_cover(algebra, p, variable, prefix, roots.len(), report, accepted)
+}
+
+type NumericInterval = (Interval, Vec<Vec<Rational>>, Vec<Rational>, usize);
+
+fn construct_cover(
+    algebra: &Algebra,
+    p: &Poly,
+    variable: usize,
+    prefix: &[Rational],
+    positive_roots: usize,
+    mut report: Value,
+    accepted: Vec<NumericInterval>,
+) -> Result<Probe> {
+    let d = p.degree(variable) as usize;
     let construction = Instant::now();
     let cover = accepted.iter().map(|x| x.0.clone()).collect::<Vec<_>>();
     ensure!(
@@ -356,7 +387,7 @@ fn probe(
         "intervals":cover.len()<=64,"coefficient_slots":coefficient_slots<=256,
         "guards":guards.len()<=256,"max_guard_terms":maximum_terms<=DEFAULT_MAX_TERMS,
         "total_guard_terms":total_terms<=65536,"coefficient_bits":coefficient_bits<=512,
-        "separator_bits":separator_bits<=256,"positive_roots":roots.len()<=8,
+        "separator_bits":separator_bits<=256,"positive_roots":positive_roots<=8,
         "sample_guards_nonzero":zero_obstructions==0,"full_positive_cover":true,
     });
     let production_eligible = checks.as_object().unwrap().values().all(|v| v == true);
@@ -372,6 +403,294 @@ fn probe(
     report["production_eligible"] = json!(production_eligible);
     report["production_non_source_limits_satisfied"] = json!(non_source_eligible);
     Ok(Probe { report, guards })
+}
+
+const MAX_SEARCH_KNOTS: usize = 32;
+const MAX_SYMBOLIC_CANDIDATES: usize = 4;
+
+/// A finite menu includes the bisection cover itself, permitting coalescence
+/// of adjacent pieces; the bounded path ranking need not explore every cover.
+/// Extra simple rationals adapt that menu
+/// to the existing separators; no fixture or polynomial identity is consulted.
+fn separator_menu(f: &UnivariatePolynomial<Q>, initial: &[Interval]) -> Vec<Rational> {
+    let mut essential = initial
+        .iter()
+        .filter_map(|i| i.b.clone())
+        .collect::<Vec<_>>();
+    essential.sort();
+    essential.dedup();
+    let mut extra = Vec::new();
+    for exponent in -8i32..=8 {
+        extra.push(if exponent >= 0 {
+            Rational::from(1u64 << exponent as u32)
+        } else {
+            Rational::one() / Rational::from(1u64 << (-exponent) as u32)
+        });
+    }
+    for knot in &essential {
+        for (numerator, denominator) in [(1, 2), (3, 4), (5, 4), (3, 2), (2, 1)] {
+            extra.push(knot * &Rational::from((numerator, denominator)));
+        }
+    }
+    for pair in essential.windows(2) {
+        extra.push((&pair[0] + &pair[1]) / Rational::from(2));
+    }
+    extra.sort_by(|a, b| height(a).cmp(&height(b)).then_with(|| a.cmp(b)));
+    for knot in extra {
+        if essential.len() == MAX_SEARCH_KNOTS {
+            break;
+        }
+        if knot > Rational::zero()
+            && height(&knot) <= 256
+            && !f.evaluate(&knot).is_zero()
+            && !essential.contains(&knot)
+        {
+            essential.push(knot);
+        }
+    }
+    essential.retain(|x| *x > Rational::zero() && !f.evaluate(x).is_zero());
+    essential.sort();
+    essential.dedup();
+    essential.truncate(MAX_SEARCH_KNOTS);
+    essential
+}
+
+#[derive(Clone)]
+struct CoverPath {
+    /// Indices in [0, positive rational knots..., +infinity].
+    vertices: Vec<usize>,
+    roots: usize,
+    separator_bits: u64,
+}
+
+fn numeric_interval(f: &UnivariatePolynomial<Q>, interval: Interval) -> Option<NumericInterval> {
+    if f.evaluate(&interval.a).is_zero()
+        || interval.b.as_ref().is_some_and(|b| f.evaluate(b).is_zero())
+    {
+        return None;
+    }
+    let matrix = weights(f.degree(), &interval.a, interval.b.as_ref());
+    let values = transformed(f, &matrix);
+    let count = variations(&values);
+    (count <= 1).then_some((interval, matrix, values, count))
+}
+
+/// Exact 0/1-variation edges form a finite directed acyclic graph. Each
+/// complete path covers (0,+infinity), with no gaps, overlaps or root seams.
+/// The ranking uses interval count and rational height only: symbolic cost
+/// remains unknown until every coefficient identity has been reconstructed.
+fn compact_candidates(
+    f: &UnivariatePolynomial<Q>,
+    knots: &[Rational],
+    positive_roots: usize,
+) -> Result<(Vec<Vec<NumericInterval>>, Value)> {
+    ensure!(knots.len() <= MAX_SEARCH_KNOTS, "rational-menu cap");
+    ensure!(
+        knots.iter().all(|x| *x > Rational::zero()) && knots.windows(2).all(|x| x[0] < x[1]),
+        "strictly increasing positive rational menu required"
+    );
+    let mut finite = vec![Rational::zero()];
+    finite.extend_from_slice(knots);
+    let terminal = finite.len();
+    let mut paths: Vec<Vec<CoverPath>> = vec![Vec::new(); terminal + 1];
+    paths[0].push(CoverPath {
+        vertices: vec![0],
+        roots: 0,
+        separator_bits: 0,
+    });
+    let mut attempted_edges = 0;
+    let mut accepted_edges = 0;
+    for upper in 1..=terminal {
+        for lower in 0..upper {
+            if paths[lower].is_empty() {
+                continue;
+            }
+            attempted_edges += 1;
+            let interval = Interval {
+                a: finite[lower].clone(),
+                b: finite.get(upper).cloned(),
+                depth: 0,
+            };
+            let Some((_, _, _, count)) = numeric_interval(f, interval) else {
+                continue;
+            };
+            accepted_edges += 1;
+            for mut path in paths[lower].clone() {
+                path.roots += count;
+                if path.roots > positive_roots
+                    || path.vertices.len() * (f.degree() + 1) > 256
+                    || (upper == terminal && path.roots != positive_roots)
+                {
+                    continue;
+                }
+                path.vertices.push(upper);
+                path.separator_bits += finite.get(upper).map(height).unwrap_or(0);
+                paths[upper].push(path);
+            }
+        }
+        paths[upper].sort_by(|a, b| {
+            a.vertices
+                .len()
+                .cmp(&b.vertices.len())
+                .then_with(|| a.separator_bits.cmp(&b.separator_bits))
+                .then_with(|| a.vertices.cmp(&b.vertices))
+        });
+        paths[upper].dedup_by(|a, b| a.vertices == b.vertices);
+        paths[upper].truncate(MAX_SYMBOLIC_CANDIDATES);
+    }
+    let selected = paths[terminal]
+        .iter()
+        .map(|path| {
+            path.vertices
+                .windows(2)
+                .map(|v| {
+                    numeric_interval(
+                        f,
+                        Interval {
+                            a: finite[v[0]].clone(),
+                            b: finite.get(v[1]).cloned(),
+                            depth: 0,
+                        },
+                    )
+                    .context("selected exact cover edge disappeared")
+                })
+                .collect::<Result<Vec<_>>>()
+        })
+        .collect::<Result<Vec<_>>>()?;
+    let report = json!({
+        "separator_menu":knots.iter().map(ToString::to_string).collect::<Vec<_>>(),
+        "max_menu_knots":MAX_SEARCH_KNOTS,
+        "max_symbolic_candidates":MAX_SYMBOLIC_CANDIDATES,
+        "numeric_edges_attempted":attempted_edges,
+        "numeric_edges_accepted":accepted_edges,
+        "numeric_complete_candidates":selected.len(),
+        "ranking":"fewest intervals, then rational height; prediction only",
+        "scope":"bounded finite-menu search; failure does not prove no admissible cover exists"
+    });
+    Ok((selected, report))
+}
+
+fn compact_probe(
+    algebra: &Algebra,
+    p: &Poly,
+    variable: usize,
+    prefix: &[Rational],
+    initial: Probe,
+) -> Result<Probe> {
+    let started = Instant::now();
+    let Some(raw_intervals) = initial.report["intervals"].as_array() else {
+        return Ok(initial);
+    };
+    let cover = raw_intervals
+        .iter()
+        .map(|v| {
+            Ok(Interval {
+                a: rational(v["lower"].as_str().context("initial lower endpoint")?)?,
+                b: v["upper"].as_str().map(rational).transpose()?,
+                depth: 0,
+            })
+        })
+        .collect::<Result<Vec<_>>>()?;
+    if cover.len().saturating_sub(1) > MAX_SEARCH_KNOTS {
+        let mut initial = initial;
+        initial.report["compact_cover_search"] =
+            json!({"declined":"initial separator menu exceeds finite search cap"});
+        return Ok(initial);
+    }
+    let f = algebra.specialize_univariate(p, variable, prefix)?;
+    let positive_roots = initial.report["positive_distinct_roots"]
+        .as_u64()
+        .context("positive root count")? as usize;
+    let knots = separator_menu(&f, &cover);
+    let (candidates, mut search) = compact_candidates(&f, &knots, positive_roots)?;
+    search["numeric_search_seconds"] = json!(started.elapsed().as_secs_f64());
+    search["baseline_inventory"] = initial.report["production_inventory"].clone();
+    search["baseline_intervals"] = initial.report["intervals"].clone();
+    let mut selected = initial;
+    let mut measurements = Vec::new();
+    let rank = |report: &Value| {
+        (
+            !report["production_limit_checks"]
+                .as_object()
+                .is_some_and(|checks| {
+                    checks
+                        .iter()
+                        .filter(|(name, _)| {
+                            name.as_str() != "source_terms" && name.as_str() != "total_guard_terms"
+                        })
+                        .all(|(_, ok)| ok == true)
+                }),
+            report["production_inventory"]["total_guard_terms"]
+                .as_u64()
+                .unwrap_or(u64::MAX),
+            report["production_inventory"]["max_coefficient_bits"]
+                .as_u64()
+                .unwrap_or(u64::MAX),
+        )
+    };
+    for (index, candidate) in candidates.into_iter().enumerate() {
+        let count = candidate.iter().map(|x| x.3).sum::<usize>();
+        ensure!(
+            count == positive_roots,
+            "cover does not retain exact positive root inventory"
+        );
+        let mut metadata = selected.report.clone();
+        metadata["accepted_intervals"] = json!(candidate.len());
+        metadata["sum_interval_variations"] = json!(count);
+        metadata["cover_selection"] = json!("bounded_rational_search");
+        let attempt = construct_cover(
+            algebra,
+            p,
+            variable,
+            prefix,
+            positive_roots,
+            metadata,
+            candidate,
+        )?;
+        measurements.push(
+            json!({"candidate":index,"intervals":attempt.report["intervals"],
+            "inventory":attempt.report["production_inventory"],
+            "non_source_limits_satisfied":attempt.report["production_non_source_limits_satisfied"],
+            "symbolic_guard_seconds":attempt.report["symbolic_guard_seconds"]}),
+        );
+        if rank(&attempt.report) < rank(&selected.report) {
+            selected = attempt;
+        }
+    }
+    search["symbolic_candidates"] = json!(measurements);
+    search["total_search_seconds"] = json!(started.elapsed().as_secs_f64());
+    selected.report["compact_cover_search"] = search;
+    Ok(selected)
+}
+
+fn apply_guard_policy(report: &mut Value, source_terms: usize, total_terms: usize) -> Result<()> {
+    validate_max_terms(source_terms)?;
+    validate_total_guard_terms(total_terms)?;
+    let Some(mut checks) = report["production_limit_checks"].as_object().cloned() else {
+        report["configured_policy_eligible"] = json!(false);
+        return Ok(());
+    };
+    checks.insert(
+        "source_terms".into(),
+        json!(
+            report["terms"]
+                .as_u64()
+                .is_some_and(|n| n <= source_terms as u64)
+        ),
+    );
+    checks.insert(
+        "total_guard_terms".into(),
+        json!(
+            report["production_inventory"]["total_guard_terms"]
+                .as_u64()
+                .is_some_and(|n| n <= total_terms as u64)
+        ),
+    );
+    report["configured_policy_eligible"] = json!(checks.values().all(|v| v == true));
+    report["configured_limit_checks"] = json!(checks);
+    report["configured_source_term_limit"] = json!(source_terms);
+    report["configured_total_guard_term_limit"] = json!(total_terms);
+    Ok(())
 }
 fn write_atomic(path: &std::path::Path, value: &Value) -> Result<()> {
     let tmp = path.with_extension(format!("{}.tmp", std::process::id()));
@@ -399,19 +718,25 @@ fn work(args: &Args) -> Result<Value> {
         .iter()
         .map(|x| rational(x))
         .collect::<Result<Vec<_>>>()?;
-    let Probe { mut report, guards } = probe(&algebra, &p, variable, &prefix, args.max_terms)?;
+    let initial = probe(&algebra, &p, variable, &prefix, args.max_terms)?;
+    let Probe { mut report, guards } = if args.compact_cover_search {
+        compact_probe(&algebra, &p, variable, &prefix, initial)?
+    } else {
+        initial
+    };
     report["capture_sha256"] = json!(format!("{:x}", Sha256::digest(bytes)));
     report["input_hash"] = json!(capture.input_hash);
     report["variable"] = json!(variable);
     report["variables"] = json!(capture.variable_names);
     report["prefix"] = json!(args.prefix);
+    apply_guard_policy(&mut report, args.max_terms, args.max_total_guard_terms)?;
     report["factorization"] = json!([]);
     report["factorization_complete"] = json!(false);
     let progress = args.output.with_extension("progress.json");
     write_atomic(&progress, &report)?;
     if args.factor_guards
         && report["eligible"] == true
-        && report["production_non_source_limits_satisfied"] == true
+        && report["configured_policy_eligible"] == true
     {
         for (index, g) in guards.iter().enumerate() {
             report["active_guard"] = json!(index);
@@ -430,9 +755,14 @@ fn work(args: &Args) -> Result<Value> {
 fn main() -> Result<()> {
     let args = Args::parse();
     validate_max_terms(args.max_terms)?;
+    validate_total_guard_terms(args.max_total_guard_terms)?;
     ensure!(
         args.seconds.is_finite() && args.seconds > 0.0 && args.seconds <= 120.0,
         "deadline<=120s required"
+    );
+    ensure!(
+        !args.compact_cover_search || args.seconds <= 60.0,
+        "compact cover deadline<=60s required"
     );
     if args.worker {
         println!("{}", work(&args)?);
@@ -482,6 +812,120 @@ mod tests {
             &[Rational::from(2)],
             DEFAULT_MAX_TERMS,
         )
+    }
+    #[test]
+    fn compact_search_coalesces_exact_rootless_pieces() -> Result<()> {
+        let a = Algebra::new(&["x".into()])?;
+        let p = a.parse("x^4+x^2+1")?;
+        let f = a.specialize_univariate(&p, 0, &[])?;
+        let knots = [
+            Rational::from((1, 4)),
+            Rational::from((1, 2)),
+            Rational::one(),
+        ];
+        let (covers, report) = compact_candidates(&f, &knots, 0)?;
+        assert!(!covers.is_empty());
+        assert_eq!(covers[0].len(), 1);
+        assert!(full_cover(
+            &covers[0].iter().map(|x| x.0.clone()).collect::<Vec<_>>()
+        ));
+        assert_eq!(covers[0][0].3, 0);
+        assert!(report["numeric_edges_accepted"].as_u64().unwrap() > 0);
+        Ok(())
+    }
+    #[test]
+    fn explicit_guard_budget_preserves_default_failure_and_other_limits() -> Result<()> {
+        let mut report = json!({"terms":19942,"production_inventory":{"total_guard_terms":79798},
+            "production_non_source_limits_satisfied":false,
+            "production_limit_checks":{"source_terms":false,"total_guard_terms":false,"max_guard_terms":true}});
+        apply_guard_policy(&mut report, 32768, 65536)?;
+        assert_eq!(report["configured_policy_eligible"], false);
+        apply_guard_policy(&mut report, 32768, 131072)?;
+        assert_eq!(report["configured_policy_eligible"], true);
+        assert_eq!(report["production_non_source_limits_satisfied"], false);
+        report["production_limit_checks"]["max_guard_terms"] = json!(false);
+        apply_guard_policy(&mut report, 32768, 131072)?;
+        assert_eq!(report["configured_policy_eligible"], false);
+        for invalid in [0, MAX_TOTAL_GUARD_TERMS + 1, usize::MAX] {
+            assert!(validate_total_guard_terms(invalid).is_err());
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn compact_cover_replays_all_original_guards_and_preserves_two_roots() -> Result<()> {
+        let a = Algebra::new(&["s".into(), "x".into(), "unused".into()])?;
+        let p = a.parse("(x-1)*(x-2)*(x^2-x+s)")?;
+        let prefix = [Rational::from(2)];
+        let baseline = probe(&a, &p, 1, &prefix, 4096)?;
+        let result = compact_probe(&a, &p, 1, &prefix, baseline)?;
+        assert_eq!(result.report["sum_interval_variations"], 2);
+        assert_eq!(result.report["full_positive_cover"], true);
+        assert_eq!(
+            result.report["production_non_source_limits_satisfied"],
+            true
+        );
+        assert!(result.guards.iter().all(|g| g.variables() == &a.variables));
+        assert!(result.guards.contains(&canonical(&p.univariate_lcoeff(1))));
+        assert!(
+            result
+                .guards
+                .contains(&canonical(&p.replace(1, &Rational::zero())))
+        );
+        for interval in result.report["intervals"].as_array().unwrap() {
+            if let Some(endpoint) = interval["upper"].as_str() {
+                let guard = p.replace(1, &rational(endpoint)?);
+                assert!(!guard.replace_all(&prefix).is_zero());
+                assert!(result.guards.contains(&canonical(&guard)));
+            }
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn compact_search_rejects_root_seams_repeated_roots_and_invalid_menus() -> Result<()> {
+        let a = Algebra::new(&["x".into()])?;
+        let p = a.parse("(x-1)^2*(x^2+1)")?;
+        let f = a.specialize_univariate(&p, 0, &[])?;
+        assert!(
+            numeric_interval(
+                &f,
+                Interval {
+                    a: Rational::zero(),
+                    b: Some(Rational::one()),
+                    depth: 0
+                }
+            )
+            .is_none()
+        );
+        let (covers, _) = compact_candidates(&f, &[Rational::from((1, 2)), Rational::from(2)], 1)?;
+        assert!(covers.is_empty());
+        for menu in [
+            vec![Rational::zero()],
+            vec![Rational::one(), Rational::one()],
+            vec![Rational::from(2), Rational::one()],
+            vec![Rational::one(); MAX_SEARCH_KNOTS + 1],
+        ] {
+            assert!(compact_candidates(&f, &menu, 1).is_err());
+        }
+        let menu = separator_menu(
+            &f,
+            &[
+                Interval {
+                    a: Rational::zero(),
+                    b: Some(Rational::one()),
+                    depth: 0,
+                },
+                Interval {
+                    a: Rational::one(),
+                    b: None,
+                    depth: 0,
+                },
+            ],
+        );
+        assert!(!menu.contains(&Rational::one()));
+        assert!(menu.len() <= MAX_SEARCH_KNOTS);
+        Ok(())
     }
     #[test]
     fn mobius_and_tail_weights_match_exact_cleared_evaluations() -> Result<()> {

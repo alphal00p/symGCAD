@@ -13,7 +13,14 @@ use symgcad::{
     roots::{isolate_union, refine_once, roots_in_open_interval, sector_sample},
 };
 #[cfg(not(test))]
-use symgcad::{algebra, roots, solver};
+use symgcad::{algebra, domain, local_projection, roots, solver};
+
+// The included producer also uses private configuration validation. Compile
+// that source unchanged instead of duplicating its resource limits here.
+#[cfg(not(test))]
+#[allow(dead_code)]
+#[path = "../src/config.rs"]
+mod config;
 
 // Compile the unmodified producer/checker implementation into this diagnostic.
 // Its own production tests run in the library; the example tests below exercise
@@ -232,7 +239,14 @@ fn replay(algebra: &Algebra, p: &Poly, variable: usize, prefix: &[Rational]) -> 
             "budget_fallbacks":report.descartes_interval_budget_fallbacks}),
         );
     };
-    let verified = interval_descartes::verify_witness(p, variable, prefix, &case)?;
+    let verified = interval_descartes::verify_witness(
+        p,
+        variable,
+        prefix,
+        &case,
+        config::DEFAULT_DESCARTES_INTERVAL_MAX_TERMS,
+        config::DEFAULT_DESCARTES_INTERVAL_MAX_TOTAL_TERMS,
+    )?;
     ensure!(
         guards == verified,
         "independent replay guard inventory differs"

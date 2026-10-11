@@ -145,6 +145,7 @@ fn replay(
         },
         progress_path: None,
         last_progress: started,
+        last_base_progress: None,
         guard_domains: (0..names.len())
             .map(|i| guard_domain(&normalized, i))
             .collect::<Result<_>>()?,
@@ -155,9 +156,10 @@ fn replay(
         learned_cuts: learned_cuts::LearnedCuts::new(1024 * 1024),
         hint_archive: None,
         descartes_stock: descartes::WitnessStock::default(),
-        interval_stock: interval_descartes::WitnessStock::with_max_terms(
+        interval_stock: interval_descartes::WitnessStock::with_budgets(
             2,
             crate::config::DEFAULT_DESCARTES_INTERVAL_MAX_TERMS,
+            crate::config::DEFAULT_DESCARTES_INTERVAL_MAX_TOTAL_TERMS,
         )?,
         pair_witness_stock: pair_witnesses::WitnessStock::default(),
         bezout_registry: strict_bezout::Registry::default(),
@@ -296,6 +298,8 @@ fn replay(
         descartes_witnesses: false,
         descartes_witness_max_terms: crate::config::DEFAULT_DESCARTES_WITNESS_MAX_TERMS,
         descartes_interval_max_terms: crate::config::DEFAULT_DESCARTES_INTERVAL_MAX_TERMS,
+        descartes_interval_max_total_terms:
+            crate::config::DEFAULT_DESCARTES_INTERVAL_MAX_TOTAL_TERMS,
         descartes_intervals: false,
         base_point_projection: true,
         adjacent_pairs: false,

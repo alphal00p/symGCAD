@@ -10,6 +10,24 @@ pub(crate) const DEFAULT_DESCARTES_WITNESS_MAX_TERMS: usize = 4096;
 pub(crate) const MAX_DESCARTES_WITNESS_SOURCE_TERMS: usize = 65_536;
 pub(crate) const DEFAULT_DESCARTES_INTERVAL_MAX_TERMS: usize = 4096;
 pub(crate) const MAX_DESCARTES_INTERVAL_SOURCE_TERMS: usize = 65_536;
+pub(crate) const DEFAULT_DESCARTES_INTERVAL_MAX_TOTAL_TERMS: usize = 65_536;
+pub(crate) const MAX_DESCARTES_INTERVAL_TOTAL_TERMS: usize = 262_144;
+
+pub(crate) fn default_descartes_interval_max_total_terms() -> usize {
+    DEFAULT_DESCARTES_INTERVAL_MAX_TOTAL_TERMS
+}
+
+pub(crate) fn is_default_descartes_interval_max_total_terms(value: &usize) -> bool {
+    *value == DEFAULT_DESCARTES_INTERVAL_MAX_TOTAL_TERMS
+}
+
+pub(crate) fn validate_descartes_interval_max_total_terms(value: usize) -> Result<()> {
+    ensure!(
+        (1..=MAX_DESCARTES_INTERVAL_TOTAL_TERMS).contains(&value),
+        "Descartes interval max total terms must be between 1 and 262144"
+    );
+    Ok(())
+}
 
 pub(crate) fn default_descartes_interval_max_terms() -> usize {
     DEFAULT_DESCARTES_INTERVAL_MAX_TERMS
@@ -151,6 +169,10 @@ pub struct SolverOptions {
     /// remain unchanged. Historical omitted evidence retains 4096.
     #[serde(skip_serializing_if = "is_default_descartes_interval_max_terms")]
     pub local_descartes_interval_max_terms: usize,
+    /// Total terms in the distinct canonical guard set for one interval cover.
+    /// Other coefficient, cover and permanent stock limits remain unchanged.
+    #[serde(skip_serializing_if = "is_default_descartes_interval_max_total_terms")]
+    pub local_descartes_interval_max_total_terms: usize,
     /// Lifetime interval-template stock per polynomial (two through eight).
     #[serde(skip_serializing_if = "is_two")]
     pub local_descartes_interval_template_limit: usize,
@@ -221,6 +243,7 @@ impl Default for SolverOptions {
             local_descartes_witness_max_terms: DEFAULT_DESCARTES_WITNESS_MAX_TERMS,
             local_descartes_intervals: false,
             local_descartes_interval_max_terms: DEFAULT_DESCARTES_INTERVAL_MAX_TERMS,
+            local_descartes_interval_max_total_terms: DEFAULT_DESCARTES_INTERVAL_MAX_TOTAL_TERMS,
             local_descartes_interval_template_limit: 2,
             local_positive_pair_witnesses: false,
             local_strict_bezout_hints: Vec::new(),
@@ -303,6 +326,9 @@ impl Problem {
     pub fn validate(&self) -> Result<()> {
         validate_descartes_witness_max_terms(self.solver.local_descartes_witness_max_terms)?;
         validate_descartes_interval_max_terms(self.solver.local_descartes_interval_max_terms)?;
+        validate_descartes_interval_max_total_terms(
+            self.solver.local_descartes_interval_max_total_terms,
+        )?;
         ensure!(
             (1..=2).contains(&self.solver.local_pair_cancellations),
             "local_pair_cancellations must be one or two"

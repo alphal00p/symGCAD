@@ -165,6 +165,12 @@ pub struct LocalOptions {
         skip_serializing_if = "crate::config::is_default_descartes_interval_max_terms"
     )]
     pub descartes_interval_max_terms: usize,
+    /// Budget for the distinct canonical guard set of each interval cover.
+    #[serde(
+        default = "crate::config::default_descartes_interval_max_total_terms",
+        skip_serializing_if = "crate::config::is_default_descartes_interval_max_total_terms"
+    )]
+    pub descartes_interval_max_total_terms: usize,
     /// Permanent interval templates per polynomial, from two through eight.
     #[serde(
         default = "two_interval_templates",
@@ -225,6 +231,8 @@ impl Default for LocalOptions {
             descartes_witness_max_terms: crate::config::DEFAULT_DESCARTES_WITNESS_MAX_TERMS,
             descartes_intervals: false,
             descartes_interval_max_terms: crate::config::DEFAULT_DESCARTES_INTERVAL_MAX_TERMS,
+            descartes_interval_max_total_terms:
+                crate::config::DEFAULT_DESCARTES_INTERVAL_MAX_TOTAL_TERMS,
             descartes_interval_template_limit: 2,
             base_point_projection: true,
             base_univariate_basis: false,
@@ -1116,6 +1124,7 @@ fn positive_projection_raw(
     mut witness_stock: Option<&mut descartes::WitnessStock>,
     descartes_intervals: bool,
     descartes_interval_max_terms: usize,
+    descartes_interval_max_total_terms: usize,
     mut interval_stock: Option<&mut interval_descartes::WitnessStock>,
     replay: Option<&PositiveRayProjection>,
     adjacent_pairs: bool,
@@ -1311,6 +1320,7 @@ fn positive_projection_raw(
                                     prefix,
                                     case,
                                     descartes_interval_max_terms,
+                                    descartes_interval_max_total_terms,
                                 )?,
                             ))
                         } else {
@@ -1692,6 +1702,7 @@ struct Builder<'a> {
     operations: CachedOperations<'a>,
     progress_path: Option<PathBuf>,
     last_progress: Instant,
+    last_base_progress: Option<Instant>,
     guard_domains: Vec<GuardDomain>,
     protected: BTreeSet<usize>,
     guard_certificates: Vec<LocalGuardRemoval>,
@@ -1783,6 +1794,9 @@ impl Builder<'_> {
         // last captured operation, so the next large operation must refresh.
         self.operations.last_captured_context = None;
         self.last_progress = Instant::now();
+        if self.last_base_progress.is_some() {
+            self.last_base_progress = Some(self.last_progress);
+        }
         Ok(())
     }
     fn check_budget(&self) -> Work<()> {
@@ -1809,10 +1823,18 @@ impl Builder<'_> {
         self.polynomials.push(polynomial);
         id
     }
-    /// Metadata-only snapshots before potentially blocking optional algebra or
-    /// its ordinary fallback. A failed diagnostic write cannot alter the solve.
-    fn publish_base_progress(&mut self) {
+    /// Keep capture context fresh before optional algebra or its fallback, but
+    /// throttle disk snapshots on hot fallback paths. Stops force a final
+    /// diagnostic; a failed diagnostic write cannot alter the solve.
+    fn publish_base_progress(&mut self, force: bool) {
         if self.progress_path.is_none() && self.operations.progress_path.is_none() {
+            return;
+        }
+        let write_due = force
+            || self
+                .last_base_progress
+                .is_none_or(|last| last.elapsed().as_secs_f64() >= 0.5);
+        if !write_due && self.operations.progress_path.is_none() {
             return;
         }
         let snapshot = self.snapshot();
@@ -1823,8 +1845,11 @@ impl Builder<'_> {
             // Keep the original same-prefix write/skip decision. Forcing a new
             // capture could turn a best-effort write error into an algebra stop.
         }
-        if let Some(path) = &self.progress_path {
+        if write_due && let Some(path) = &self.progress_path {
             let _ = write_progress(path, &snapshot);
+            // Separate from the ordinary publish clock: frequent optional
+            // metadata must not postpone observer and hint-archive updates.
+            self.last_base_progress = Some(Instant::now());
         }
     }
     fn observed_base_stop(&mut self, stop: Stop) -> Stop {
@@ -1839,7 +1864,7 @@ impl Builder<'_> {
                 report.phase("failure");
             }
         }
-        self.publish_base_progress();
+        self.publish_base_progress(true);
         stop
     }
     fn prepare_base_text(&mut self, source: &Poly) -> Work<Option<String>> {
@@ -1851,7 +1876,7 @@ impl Builder<'_> {
         } else {
             report.decline(BaseUnivariateDecline::SourceText);
             self.report.active_phase = "base_univariate_fallback".into();
-            self.publish_base_progress();
+            self.publish_base_progress(false);
         }
         Ok(text)
     }
@@ -1913,7 +1938,7 @@ impl Builder<'_> {
                     .unwrap()
                     .decline(reason);
                 self.report.active_phase = "base_univariate_fallback".into();
-                self.publish_base_progress();
+                self.publish_base_progress(false);
                 for factor in self.operations.factors(std::slice::from_ref(p))? {
                     result.insert(self.intern(factor));
                 }
@@ -1940,7 +1965,7 @@ impl Builder<'_> {
                     .unwrap()
                     .decline(reason);
                 self.report.active_phase = "base_univariate_fallback".into();
-                self.publish_base_progress();
+                self.publish_base_progress(false);
                 for factor in self.operations.factors(std::slice::from_ref(p))? {
                     result.insert(self.intern(factor));
                 }
@@ -1994,7 +2019,7 @@ impl Builder<'_> {
                         report.proposal(bits);
                     }
                     self.report.active_phase = format!("base_univariate_{phase}");
-                    self.publish_base_progress();
+                    self.publish_base_progress(false);
                 },
             );
             let report = self.report.base_univariate_basis.as_mut().unwrap();
@@ -2062,7 +2087,7 @@ impl Builder<'_> {
             report.retained_storage = proposed_storage;
             report.phase("admitted");
             self.report.active_phase = "base_univariate_admitted".into();
-            self.publish_base_progress();
+            self.publish_base_progress(false);
             self.check_budget()
                 .map_err(|stop| self.observed_base_stop(stop))?;
         }
@@ -2306,6 +2331,7 @@ impl Builder<'_> {
                     Some(&mut self.descartes_stock),
                     self.options.descartes_intervals,
                     self.options.descartes_interval_max_terms,
+                    self.options.descartes_interval_max_total_terms,
                     Some(&mut self.interval_stock),
                     None,
                     self.options.adjacent_pairs,
@@ -2805,6 +2831,9 @@ pub fn solve_local(problem: &Problem, options: &LocalOptions) -> Result<LocalSol
     problem.validate()?;
     crate::config::validate_descartes_witness_max_terms(options.descartes_witness_max_terms)?;
     crate::config::validate_descartes_interval_max_terms(options.descartes_interval_max_terms)?;
+    crate::config::validate_descartes_interval_max_total_terms(
+        options.descartes_interval_max_total_terms,
+    )?;
     ensure!(
         (1..=2).contains(&options.positive_pair_cancellations),
         "positive pair cancellations must be one or two"
@@ -2909,6 +2938,7 @@ pub fn solve_local(problem: &Problem, options: &LocalOptions) -> Result<LocalSol
         },
         progress_path: std::env::var_os("SYMGCAD_PROGRESS_PATH").map(PathBuf::from),
         last_progress: started,
+        last_base_progress: None,
         guard_domains: (0..order.len())
             .map(|level| guard_domain(&normalized, level))
             .collect::<Result<_>>()?,
@@ -2934,9 +2964,10 @@ pub fn solve_local(problem: &Problem, options: &LocalOptions) -> Result<LocalSol
             started,
         ),
         descartes_stock: descartes::WitnessStock::default(),
-        interval_stock: interval_descartes::WitnessStock::with_max_terms(
+        interval_stock: interval_descartes::WitnessStock::with_budgets(
             options.descartes_interval_template_limit,
             options.descartes_interval_max_terms,
+            options.descartes_interval_max_total_terms,
         )?,
         pair_witness_stock: pair_witnesses::WitnessStock::default(),
         bezout_registry,
@@ -3120,6 +3151,7 @@ struct Checker<'a> {
     descartes_witness_max_terms: usize,
     descartes_intervals: bool,
     descartes_interval_max_terms: usize,
+    descartes_interval_max_total_terms: usize,
     base_point_projection: bool,
     adjacent_pairs: bool,
     binary_discriminants: bool,
@@ -3335,6 +3367,7 @@ impl Checker<'_> {
                         None,
                         self.descartes_intervals,
                         self.descartes_interval_max_terms,
+                        self.descartes_interval_max_total_terms,
                         None,
                         Some(ray),
                         self.adjacent_pairs,
@@ -3528,6 +3561,9 @@ pub fn verify_local_parts(
     solution.problem.validate()?;
     crate::config::validate_descartes_witness_max_terms(options.descartes_witness_max_terms)?;
     crate::config::validate_descartes_interval_max_terms(options.descartes_interval_max_terms)?;
+    crate::config::validate_descartes_interval_max_total_terms(
+        options.descartes_interval_max_total_terms,
+    )?;
     ensure!(
         (1..=2).contains(&options.positive_pair_cancellations),
         "positive pair cancellations must be one or two"
@@ -3654,6 +3690,7 @@ pub fn verify_local_parts(
         descartes_witness_max_terms: options.descartes_witness_max_terms,
         descartes_intervals: options.descartes_intervals,
         descartes_interval_max_terms: options.descartes_interval_max_terms,
+        descartes_interval_max_total_terms: options.descartes_interval_max_total_terms,
         base_point_projection: options.base_point_projection,
         adjacent_pairs: options.adjacent_pairs,
     };

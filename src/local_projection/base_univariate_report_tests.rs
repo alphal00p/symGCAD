@@ -33,6 +33,7 @@ fn builder<'a>(
         },
         progress_path: None,
         last_progress: started,
+        last_base_progress: None,
         guard_domains: (0..problem.variables.len())
             .map(|i| guard_domain(normalized, i).unwrap())
             .collect(),

@@ -1063,6 +1063,8 @@ mod tests {
             descartes_witnesses: false,
             descartes_witness_max_terms: crate::config::DEFAULT_DESCARTES_WITNESS_MAX_TERMS,
             descartes_interval_max_terms: crate::config::DEFAULT_DESCARTES_INTERVAL_MAX_TERMS,
+            descartes_interval_max_total_terms:
+                crate::config::DEFAULT_DESCARTES_INTERVAL_MAX_TOTAL_TERMS,
             descartes_intervals: false,
             base_point_projection: true,
             adjacent_pairs: false,
