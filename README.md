@@ -87,6 +87,8 @@ The separate opt-in `quadratic_component_positivity = true` extends this portfol
 
 The experimental solver option `affine_factorization = true` preconditions eligible projection factorizations with an invertible integer translation. It detects degree loss at simple evaluation points, tests a finite shift menu, and checks the full signed factor product after mapping back. Projection and fresh verification use the same opt-in policy; original coordinates, domains and boundaries remain unchanged. This option is disabled by default and does not affect the separate negative-linear square-witness proposal.
 
+With `local_descartes_witnesses = true`, the optional `local_descartes_witness_max_terms = 8192` raises the source-term budget for exact positive-root separator certificates. The default remains 4096, the ceiling is 65536, and discovery, reuse and verification share the explicit limit. All coefficient and separator guards remain mandatory, and the lifetime stock stays at two templates per polynomial. Larger inputs can still make the subsequent projection expensive; see [usage and limits](docs/USAGE.md).
+
 A `complete_generic` result covers full-dimensional open cells outside its recorded algebraic exceptional set. Lower-dimensional sections are excluded. The verifier reconstructs exact projection/reduction identities, root bounds and exhaustive coverage; an incomplete result cannot pass. Exceptional parameter specializations require a new solve after substitution.
 
 Exact boundary evidence retains ordinary `F=0` sheets, repeated roots and same-sign interior seams. A sign-based reduction requires an exact strict-nonvanishing certificate on the relevant domain; nonnegativity or sampled signs alone are insufficient.

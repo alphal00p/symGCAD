@@ -147,6 +147,13 @@ pub struct LocalOptions {
     /// Disabled by default; historical evidence retains discriminants.
     #[serde(default)]
     pub descartes_witnesses: bool,
+    /// Source-term admission limit shared by discovery, reuse and proof replay.
+    /// Omitted historical evidence retains the original 4096-term limit.
+    #[serde(
+        default = "crate::config::default_descartes_witness_max_terms",
+        skip_serializing_if = "crate::config::is_default_descartes_witness_max_terms"
+    )]
+    pub descartes_witness_max_terms: usize,
     /// Cover the positive ray with bounded rational Descartes intervals.
     /// A separate permanent stock bounds covers per polynomial.
     #[serde(default)]
@@ -177,6 +184,10 @@ pub struct LocalOptions {
 fn two_interval_templates() -> usize {
     2
 }
+
+fn is_zero_count(value: &usize) -> bool {
+    *value == 0
+}
 fn is_two_interval_templates(value: &usize) -> bool {
     *value == 2
 }
@@ -204,6 +215,7 @@ impl Default for LocalOptions {
             observe_obstructions: false,
             descartes_one: true,
             descartes_witnesses: false,
+            descartes_witness_max_terms: crate::config::DEFAULT_DESCARTES_WITNESS_MAX_TERMS,
             descartes_intervals: false,
             descartes_interval_template_limit: 2,
             base_point_projection: true,
@@ -280,6 +292,9 @@ pub struct LocalReport {
     pub descartes_witness_templates: usize,
     pub descartes_witness_template_reuses: usize,
     pub descartes_witness_budget_fallbacks: usize,
+    /// Visits declined by the source-term cap, separate from template stock.
+    #[serde(skip_serializing_if = "is_zero_count")]
+    pub descartes_witness_source_term_fallbacks: usize,
     pub descartes_interval_discriminants_omitted: usize,
     pub descartes_interval_templates: usize,
     pub descartes_interval_template_limit: usize,
@@ -1087,6 +1102,7 @@ fn positive_projection_raw(
     bezout_registry: &mut strict_bezout::Registry,
     descartes_one: bool,
     descartes_witnesses: bool,
+    descartes_witness_max_terms: usize,
     mut witness_stock: Option<&mut descartes::WitnessStock>,
     descartes_intervals: bool,
     mut interval_stock: Option<&mut interval_descartes::WitnessStock>,
@@ -1232,7 +1248,14 @@ fn positive_projection_raw(
                         if let Some(case @ PositiveRayCase::DescartesWitnesses { .. }) = supplied {
                             Some((
                                 case.clone(),
-                                descartes::verify_witness(p, variable, prefix, &signs, case)?,
+                                descartes::verify_witness(
+                                    p,
+                                    variable,
+                                    prefix,
+                                    &signs,
+                                    case,
+                                    descartes_witness_max_terms,
+                                )?,
                             ))
                         } else {
                             // A stronger full-real certificate is allowed even
@@ -1243,7 +1266,15 @@ fn positive_projection_raw(
                         witness_stock
                             .as_deref_mut()
                             .ok_or_else(|| anyhow!("missing finite Descartes witness stock"))?
-                            .attempt(id, algebra, p, variable, prefix, &signs)?
+                            .attempt(
+                                id,
+                                algebra,
+                                p,
+                                variable,
+                                prefix,
+                                &signs,
+                                descartes_witness_max_terms,
+                            )?
                     };
                     root_seconds += started.elapsed().as_secs_f64();
                     if let Some((case, guards)) = attempt {
@@ -2254,6 +2285,7 @@ impl Builder<'_> {
                     &mut self.bezout_registry,
                     self.options.descartes_one,
                     self.options.descartes_witnesses,
+                    self.options.descartes_witness_max_terms,
                     Some(&mut self.descartes_stock),
                     self.options.descartes_intervals,
                     Some(&mut self.interval_stock),
@@ -2753,6 +2785,7 @@ fn unfinished(
 
 pub fn solve_local(problem: &Problem, options: &LocalOptions) -> Result<LocalSolveResult> {
     problem.validate()?;
+    crate::config::validate_descartes_witness_max_terms(options.descartes_witness_max_terms)?;
     ensure!(
         (1..=2).contains(&options.positive_pair_cancellations),
         "positive pair cancellations must be one or two"
@@ -3064,6 +3097,7 @@ struct Checker<'a> {
     stable_sector_samples: bool,
     descartes_one: bool,
     descartes_witnesses: bool,
+    descartes_witness_max_terms: usize,
     descartes_intervals: bool,
     base_point_projection: bool,
     adjacent_pairs: bool,
@@ -3276,6 +3310,7 @@ impl Checker<'_> {
                         &mut self.bezout_registry.borrow_mut(),
                         self.descartes_one,
                         self.descartes_witnesses,
+                        self.descartes_witness_max_terms,
                         None,
                         self.descartes_intervals,
                         None,
@@ -3469,6 +3504,7 @@ pub fn verify_local_parts(
         ),
     };
     solution.problem.validate()?;
+    crate::config::validate_descartes_witness_max_terms(options.descartes_witness_max_terms)?;
     ensure!(
         (1..=2).contains(&options.positive_pair_cancellations),
         "positive pair cancellations must be one or two"
@@ -3592,6 +3628,7 @@ pub fn verify_local_parts(
         stable_sector_samples: options.stable_sector_samples,
         descartes_one: options.descartes_one,
         descartes_witnesses: options.descartes_witnesses,
+        descartes_witness_max_terms: options.descartes_witness_max_terms,
         descartes_intervals: options.descartes_intervals,
         base_point_projection: options.base_point_projection,
         adjacent_pairs: options.adjacent_pairs,

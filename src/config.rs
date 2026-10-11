@@ -6,6 +6,25 @@ use std::path::PathBuf;
 /// Explicit long-running campaigns may request two hours; defaults stay at one.
 pub(crate) const MAX_WALL_TIME_SECS: f64 = 7200.0;
 
+pub(crate) const DEFAULT_DESCARTES_WITNESS_MAX_TERMS: usize = 4096;
+pub(crate) const MAX_DESCARTES_WITNESS_SOURCE_TERMS: usize = 65_536;
+
+pub(crate) fn default_descartes_witness_max_terms() -> usize {
+    DEFAULT_DESCARTES_WITNESS_MAX_TERMS
+}
+
+pub(crate) fn is_default_descartes_witness_max_terms(value: &usize) -> bool {
+    *value == DEFAULT_DESCARTES_WITNESS_MAX_TERMS
+}
+
+pub(crate) fn validate_descartes_witness_max_terms(value: usize) -> Result<()> {
+    ensure!(
+        (1..=MAX_DESCARTES_WITNESS_SOURCE_TERMS).contains(&value),
+        "Descartes witness max terms must be between 1 and 65536"
+    );
+    Ok(())
+}
+
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct Problem {
@@ -103,6 +122,10 @@ pub struct SolverOptions {
     /// strict rational-separator evaluation guards.
     #[serde(skip_serializing_if = "is_false")]
     pub local_descartes_witnesses: bool,
+    /// Source-term budget for saturated witnesses; does not increase their
+    /// permanent two-template stock or remove any exact guard obligation.
+    #[serde(skip_serializing_if = "is_default_descartes_witness_max_terms")]
+    pub local_descartes_witness_max_terms: usize,
     /// Exact finite rational interval covers with zero/one Descartes variation.
     #[serde(skip_serializing_if = "is_false")]
     pub local_descartes_intervals: bool,
@@ -173,6 +196,7 @@ impl Default for SolverOptions {
             local_pair_cancellations: 2,
             local_descartes_one: true,
             local_descartes_witnesses: false,
+            local_descartes_witness_max_terms: DEFAULT_DESCARTES_WITNESS_MAX_TERMS,
             local_descartes_intervals: false,
             local_descartes_interval_template_limit: 2,
             local_positive_pair_witnesses: false,
@@ -254,6 +278,7 @@ impl Problem {
         Ok(problem)
     }
     pub fn validate(&self) -> Result<()> {
+        validate_descartes_witness_max_terms(self.solver.local_descartes_witness_max_terms)?;
         ensure!(
             (1..=2).contains(&self.solver.local_pair_cancellations),
             "local_pair_cancellations must be one or two"

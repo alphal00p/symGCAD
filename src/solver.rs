@@ -629,6 +629,7 @@ fn solve_impl(problem: &Problem) -> Result<SolveResult> {
                 positive_pair_cancellations: problem.solver.local_pair_cancellations,
                 descartes_one: problem.solver.local_descartes_one,
                 descartes_witnesses: problem.solver.local_descartes_witnesses,
+                descartes_witness_max_terms: problem.solver.local_descartes_witness_max_terms,
                 descartes_intervals: problem.solver.local_descartes_intervals,
                 descartes_interval_template_limit: problem
                     .solver
