@@ -81,7 +81,7 @@ exact prefix keys and every returned obligation. Ordinary verification remains
 unchanged. It must measure admission, later hits, payload rejection, eviction
 and memory together: admitting larger proofs can displace useful smaller ones.
 Increasing aggregate memory alone does not remove the observed entry gate.
-No production change or performance benefit follows from this diagnostic.
+No performance benefit follows from this diagnostic alone.
 
 ## Executed 1,024-node entry control
 
@@ -125,6 +125,102 @@ The trace hash is
 the final audit is
 `2e2f1de888c8e9bacc1e13a1ec2d023bae0b8ed70f36d68a4ea99e921802e416`.
 Both cache inventories remain unchanged. All workers have stopped.
+
+## Configurable production admission policy
+
+The optional `solver.local_subtree_cache_entry_nodes` setting now exposes this
+resource policy without changing its default of 128. The accepted range is
+128 through 4096. It changes only the admission limit of an individual complete
+conditional proof. The total byte/node budgets, 16-level depth bound, 1-MiB
+payload bound, exact prefix keys, FIFO eviction and full returned obligations
+remain unchanged. It has no mathematical role in verification or durable hint
+compatibility; valid changes to the policy cannot excuse missing boundaries.
+
+Historical input and saved evidence omissions restore 128. Configuration is
+forwarded through homogeneous reduction, recorded in local reports and checked
+for malformed values during both solve and replay. Larger entries can displace
+smaller useful proofs, so the short diagnostic does not justify changing the
+default. Matched ordinary-release measurements are recorded separately below.
+
+## Ordinary-release control at a fixed refinement limit
+
+Both fresh processes use the same release solver, original x1 gauge and order,
+unchanged mathematics, and separately audited copies of the 60,376-operation /
+4,096-proposal snapshot. Only the per-entry allowance differs. The worker has
+one CPU, 8 GiB, a 120-second wall ceiling, 256/64 MiB proof/hint budgets and
+an explicit 20,000-refinement limit. Neither uses the diagnostic observer.
+
+| Final recorded quantity | 128 nodes | 1,024 nodes |
+| --- | ---: | ---: |
+| Process wall seconds | 8.398262 | 6.958375 |
+| User / system CPU seconds | 7.196034 / 1.079023 | 6.030100 / 0.828429 |
+| Peak RSS, KiB | 129,284 | 128,252 |
+| Refinements at the stop | 20,001 | 20,001 |
+| Recorded cut occurrences | 28,011 | 28,011 |
+| Speculative nodes | 100,422 | 89,680 |
+| Completed-proof cache hits | 30,734 | 21,216 |
+| Completed-proof cache misses | 41,451 | 40,227 |
+| Completed-proof cache evictions | 2,464 | 10,789 |
+
+Both save an **incomplete** result with the exact reason `local projection
+refinement limit`, zero final cells, and the same reported frontier
+`[6,-24,73/26,1]`. Neither qualifies for independent complete-result verification.
+All inherited cache files remain byte-identical, with no new native operation
+misses or writes. The source, report and selected entry policy are checked.
+
+The larger entry policy saves time in this one matched activity control while
+increasing eviction pressure. Equal refinement counts and the same frontier
+are not an exact equality-of-coverage proof. These are warm, single-pair
+diagnostics, excluding build and earlier cache-generation costs; they establish
+no completed-solve speedup or original/native runtime ratio. The default stays
+128. Artifacts are
+`artifacts/research/subtree-entry-policy-production-01/controls/`; the release
+and test provenance are in [the combined validation record](COMBINED_FAST_VALIDATION.md).
+
+| Record | SHA-256 |
+| --- | --- |
+| Paired summary | `19b9187e31f801648d763a7c1311a4733a9e7b39564b5f4b5950db361b247450` |
+| 128-node process record | `6c3a650ef98c6a7d3c16bade21fb74674ef1cf987956bf815fa867a44ceabb3b` |
+| 1,024-node process record | `be14cff2498d6bec630d5b867cd394f0dff640e8845aa045c2f324dc2de62132` |
+
+## Ten-minute ordinary-release continuation
+
+A fresh copy of the same baseline, with the 1024-node entry policy, a
+ten-million-refinement limit and a hundred-million-node limit, reaches the
+600-second wall deadline. Process time is **600.083640 s**, user/system CPU
+535.940393/54.728836 s, and peak RSS **684,980 KiB (669.0 MiB)**. There is no
+result or complete-decomposition verification. This remains the original
+symbolic input, x1 gauge and order, with one CPU, 8 GiB and no observer.
+
+It saves **1,295 new operations**: 679 factors, 103 discriminants and 513
+resultants. The restart snapshot now has **61,671 operation files** and
+4,096 support proposals. All inherited files remain byte-identical; new
+operation metadata, keys and output hashes pass the integrity audit. This
+audit does not independently replay each operation or certify a decomposition.
+
+The last periodic snapshot, at 599.987569 s, records 2,687,069 refinements,
+11,888,174 speculative nodes and prefix `[13/3,-13108]`. These are activity
+measurements, not covered cells. The completed-proof cache reaches its
+262,144-node aggregate cap while using at most 87,112,035 estimated bytes;
+it records 5,391,317 entry evictions. Increasing its byte budget alone would
+not remove that node limit. The native algebra cache separately records one
+**whole-map reset**, not one entry eviction, at its 128-MiB budget; final
+estimated retention is 77,479,202 bytes. Its many disk hits can include both
+first loads and post-reset reloads. These counters do not establish that more
+RAM would finish the problem, and no further cache policy is changed.
+
+The control's shorter activity time has not translated into a completed
+original solve. No new completion, native-GCAD ratio or benchmark-table
+replacement follows. All workers have stopped; artifacts are under
+`artifacts/research/c470-subtree-entry1024-continuation-01/`.
+
+| Record | SHA-256 |
+| --- | --- |
+| Terminal process record | `1a6ed9411a6da516f7985d9fd1299b873fa361f875d231f4d48f8402a7c31dbb` |
+| Final cache integrity audit | `a3a8276c8d056a6e5c1960fa21c8120750dadc39ecca9721298a30b6f3ca8269` |
+| Source and binary manifest | `df8476da99513279ac463e50cd8c115e9032fcbddc3a95d8c532c27dd481a96a` |
+
+## Original observer provenance
 
 Evidence is under `artifacts/research/c470-refinement-observer-01/`:
 

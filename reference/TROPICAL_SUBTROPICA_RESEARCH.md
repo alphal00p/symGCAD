@@ -1,11 +1,12 @@
 # SubTropica and tropical structure for exact GCAD
 
-Research follow-up, 11 October 2026. **The most useful new borrowing is a
-bounded search that chooses a positive scale and an elimination order together,
-favoring long linear projection prefixes.** Tropical geometry can guide this
-search and suggest coordinates; it does not certify away the interior zero
-sets of the remaining problems. No production change, new corpus completion,
-or measured GCAD speedup follows from this review.
+Research follow-up, 11 October 2026. **This review led to bounded joint scale
+and ordering experiments; a further lead is exact tropical magnitude gaps
+before positive-root isolation.** Tropical geometry can guide searches and
+suggest coordinates, but does not certify away the interior zero sets of the
+remaining problems. The ordering trials remain incomplete; a bounded exact
+root-gap screen found only outer gaps on the saved degree-1478 operand. No new
+corpus completion or measured GCAD speedup follows.
 
 ## What was inspected, and what is new
 
@@ -228,3 +229,111 @@ inadmissible anchor, a fixed incompatible order, and the saved A446 interior
 critical point. A failed/aborted proposal must return control to ordinary
 GCAD and must never authorize skipping a solution region. SubTropica's
 numerical verification and any tropical sampling remain supplemental evidence.
+
+## Follow-up: sparse structure and certified tropical root gaps
+
+A further primary-source review found no CAD-safe rule for omitting pairs
+from SubTropica's compatibility intersections. Those sets track integration
+singularities, not all real cylindrical boundary intersections. Likewise,
+[treewidth-based CAD](https://arxiv.org/html/2601.00312v1) requires sparsity
+in the polynomial variable-dependency graph; a small separator in the original
+Feynman graph does not imply that property after expansion and projection.
+
+The complete saved three-stage B471/x6 and D375/x5 bases each have 11 factors
+and 112 terms. In each basis, one polynomial involves all five remaining
+active variables, so its dependency graph is already K5. Each basis has only
+one binomial, `s-4`, with no new coupled monomial premise. This is a support
+inventory of the authenticated arrays, not new symbolic algebra. The basis
+hashes and exact projection provenance are in
+[the linear-prefix experiment](LINEAR_PREFIX_RESEARCH.md). Thus neither a
+sparse-variable orderer nor conditional binomial certificates has an immediate
+new opportunity on these particular reduced bases.
+
+Conditional circuits also need an architectural extension: `GuardDomain`
+currently authenticates original coordinate-affine bounds and keys removals
+by `(level, guard)`. Signs of projected binomials would need explicit
+ancestor-cell evidence, premise dependencies, domain-sensitive cache keys
+and independent replay. A positive sample cannot supply that evidence.
+[Borinsky–Fraaije's newer sampling paper](https://arxiv.org/html/2504.09613v2)
+uses an effectively Euclidean positive measure, with a separate residual
+kernel in its loop-tree-duality applications. It supplies no absence
+certificate for the signed Minkowski F=0 sheets.
+
+**A distinct research lead is exact magnitude gaps before positive-root
+isolation.** In the pinned Symbolica source, Newton-polygon radii already seed
+approximate complex Aberth iteration. The certified real VAS path instead
+uses local-max bounds, reciprocal lower bounds, rescaling and continued
+fractions; the inspected implementation has no preprocessing for multiple
+internal magnitude gaps. [Tropical/Pellet localization](https://repository.essex.ac.uk/15324/1/14096637x.pdf)
+provides precedent for locating root moduli, without identifying real signs.
+
+The following conservative certificate is our proposed exact rule, not a
+production optimization. For `p(x)=sum_i a_i*x^i`, accept `0<r<R` only when
+the same index k satisfies both strict rational inequalities
+
+```text
+|a_k|*r^k > sum_(i != k) |a_i|*r^i,
+|a_k|*R^k > sum_(i != k) |a_i|*R^i.
+```
+
+After division by `|a_k|*x^k`, the sum of the other absolute terms is convex
+in `log(x)`. It stays below one throughout the closed interval, proving the
+whole gap has no zero. Approximate hulls or coefficient bit lengths may
+propose dyadic endpoints; only these exact inequalities may accept them.
+
+For integer coefficients and `x=2^e`, all comparisons reduce to integer
+shifts. Preflight the intermediate bit bound
+`max_i bits(a_i) + |e|*degree + ceil(log2(degree+1)) + 1`, then bound candidate
+count, exponents and cumulative shifted-bit work. Stream the sums and decline
+over-budget proposals. Any denominator clearing must also be bounded.
+
+Every complementary positive interval still requires certified isolation,
+with exact endpoint checks, square-free/multiplicity handling and complete
+coverage of `(0,infinity)`. Rational Möbius band transforms need checked
+signed reconstruction. Tropical edge lengths are not positive-root counts.
+Positive ordinals follow the exact sorted positive inventory; full-real
+indices additionally need the exact nonpositive-root offset, including zero
+when present, under the existing multiplicity/index convention. Existing
+shared-root comparison obligations remain unchanged.
+
+For example, `1024*x^2-1048577*x+1024` has positive roots `2^-10` and `2^10`,
+and its middle term certifies the gap `[1/2,2]`. Reversing that coefficient's
+sign preserves tropical magnitudes but removes positive roots, showing why
+root counts remain essential. These are elementary identities, not executed
+performance tests.
+
+### Executed bounded feasibility screen
+
+The saved degree-1478 A377 block has 1,479 integer coefficients totaling
+21,321,388 bits. An artifact-only Rust helper uses ordinary Symbolica exact
+integers and rationals, with no factorization, root isolation or band
+expansion. Its two-root and reversed-sign toy controls pass. An initial
+1-GiB compiler limit cannot map the dependencies; a 4-GiB build retry succeeds.
+Execution retains the original one-CPU, 1-GiB, 30-second ceiling.
+
+The first screen exhausts its conservative four-billion-bit work allowance
+after four of 44 proposed endpoints. Only the two outer endpoints near zero
+pass; the other 40 are explicitly unexplored. This is not a negative result
+for the whole proposal set.
+
+A sibling retry changes only that work allowance to 64 billion bits and
+checks **all 44 endpoints, `2^e` for e=-28 through 15**, without declines.
+It takes **0.034301 s** for the screen, **0.101959 s** including parsing and
+controls, and **15,360 KiB** peak RSS. Exactly four endpoints pass: e=-28,-27
+with the constant term dominant, and e=14,15 with the leading term dominant.
+Every other proposed endpoint fails strict dominance. The two accepted
+segments are outer root-free regions. Comparisons against the source-bound
+145-root positive inventory find no accepted segment with proved positive
+roots on both sides; those comparisons are not new isolation or root counts.
+
+Thus this finite dyadic grid finds **no useful internal gap**. It does not
+exclude narrower gaps or other certificate families. No band-isolation
+implementation follows: VAS already skips outer empty regions. These timings
+measure a feasibility screen, not an isolation speedup. The experiment also
+does not address Gluza33's factorization frontier or add original coverage.
+The two frozen screens are under
+`artifacts/research/tropical-root-gap-screen-{01,02}/`; both bind the input
+hash `4fa804c83098bf885ff26f11a301b3645f4aa38d4c2eb901ee341e80a0d7a058`
+and the independently checked saved positive inventory.
+The complete retry's result hash is
+`04749592aed2dc28b255698c549bae7d494619bc42769e14630e7387c936a8a1`.

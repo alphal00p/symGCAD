@@ -152,9 +152,20 @@ cache passes the complete metadata/hash audit. This leaves Gluza33 unresolved an
 template/call-path diagnostics before attributing the fallback to stock
 exhaustion or raising further limits.
 
+The subsequent [source-specific trace](GLUZA33_WITNESS_STOCK_TRACE.md)
+confirmed that both permanent interval-template slots had been consumed.
+Increasing the existing stock limit to four admits the new exact cover and
+bypasses that discriminant. A first bounded trial saves 1,094 operations;
+the next 600.096-second continuation saves another 2,397, reaching 27,897
+audited records. It still produces no complete result or verification and
+stops during a different factorization. The earlier pending factor completes
+in 0.076 seconds on resumption, illustrating why a deadline capture alone
+does not identify a slow algebra operation. The newest captured source has
+2,867 terms and three active variables; further factorization work remains.
+
 ## Validation and performance evidence
 
-The latest complete production fast suite passed **653 tracked tests**, with
+The latest complete production fast suite passed **659 tracked tests**, with
 zero failures and two deliberately expensive tests ignored. A separate
 workstream's uncommitted alternate-mass test was excluded from this run,
 the tracked count and the original corpus. The
@@ -163,6 +174,17 @@ This includes the opt-in affine factorization policy's module and solve/verify
 regressions, support-preserving diagonal scaling, exact adjacent-interval
 coalescence, configurable source and aggregate-guard budgets, and progress I/O. Research helpers
 retain their own focused checks.
+
+The optional completed-proof cache entry limit is now configurable from 128
+through 4096 nodes, with the original 128-node default and unchanged total
+memory, depth and payload bounds. Exact replay and same-sign interior seams
+remain mandatory. The [cache investigation](C470_REFINEMENT_OBSERVER.md)
+separates admission diagnostics from original-case completion and timing.
+Matched ordinary-release controls reach the same refinement limit in 8.398
+and 6.958 seconds with entry limits 128 and 1024. A subsequent 600.084-second
+trial still times out, saving 1,295 new operations for a 61,671-record restart
+snapshot. Neither activity timings nor retained algebra establish a solve-time
+gain; C470 and the original completion count remain unchanged.
 
 All **66 release solve-and-verify trials** for the quadratic-certificate
 ablations and quadratic-ladder examples completed. The crossed A446 chamber

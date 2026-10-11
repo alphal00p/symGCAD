@@ -112,9 +112,9 @@ with three fresh repetitions and identical orders. *±* means two separate sign-
   stocks and proof obligations stay unchanged. The final original configuration trial still
   times out: *300.101 s total / 638 MiB* (299.434 s worker), at the recorded quarter prefix.
   A later exact source trace confirms both saved interval covers fail there and the
-  permanent two-template quota prevents new discovery. Four slots bypass this obstruction;
-  the instrumented original trial retains 1,094 new operations but still times out at
-  *180.078 s / 595 MiB*, with a factor call pending.
+  permanent two-template quota prevents new discovery. Four slots bypass this obstruction
+  and retain 1,094 new operations. The next continuation retains another 2,397, reaching
+  27,897 audited records, but times out at *600.096 s / 616 MiB* in a different factor call.
   Gluza33 remains incomplete; partial algebra and certificate timings add no coverage
   or solved-time ratio.
 
@@ -224,17 +224,20 @@ with three fresh repetitions and identical orders. *±* means two separate sign-
   112 terms per family; both full original promotions still time out at 60 s.
   Automatic shear preconditioning factors the captured C470 obstruction in 0.088 s, with
   exact signed reconstruction. Original continuations retain completed work but remain incomplete.
-  Throttling redundant progress writes reduced system CPU from *17.505 to 1.282 s* in
-  matched 60-second controls; a separate trace recorded 91.2% fewer progress writes.
-  Subsequent C470 release trials with larger caches stop at the one-million-refinement limit:
-  *343.614 s / 460 MiB* with the previous scale and warm cache, then *231.608 s / 492 MiB*
-  with a fresh cache and an alternative legal scale. Neither completes; the shorter stop is
-  not a speedup. A bounded observer records 148 revisits after individual proof-size rejection;
+  An exact tropical root-gap screen checks 44 dyadic points in 0.034 s: only outer
+  root-free regions are certified, giving no useful internal gap or isolation speedup.
+  Earlier C470 release trials stop at the one-million-refinement limit:
+  *343.614 s / 460 MiB* with the original scale and warm cache, then *231.608 s / 492 MiB*
+  with another scale and fresh cache. Neither completes. A bounded observer records 148
+  revisits after individual proof-size rejection;
   raising that entry's node cap reduces observed revisits to one but increases evictions.
-  Both instrumented trials time out; this is not a completed-solve speedup.
+  Both instrumented trials time out. A matched release control at 20,001 refinements takes
+  *8.398 → 6.958 s* with 128 → 1024 nodes per cached proof, at 126 → 125 MiB.
+  The 1024-node continuation times out at *600.084 s / 669 MiB*, saving 1,295 new operations.
+  All remain incomplete; activity controls and retained algebra do not establish a solve-time gain.
   Conditional AM–GM certificates are a further proposal for proved bounded domains; global
   support screening found no new small-source candidate. All interior threshold sheets remain required.
-  The latest tracked fast suite passed 653 tests, with zero failures and two expensive tests ignored.
+  The latest tracked fast suite passed 659 tests, with zero failures and two expensive tests ignored.
 
   #block(breakable: false)[
   == Reproduce and inspect

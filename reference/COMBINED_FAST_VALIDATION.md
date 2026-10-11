@@ -252,3 +252,39 @@ remained unchanged. The frozen release SHA-256 is
 build, solve, verification and source-check records are in the sibling
 `release/` directory. The separate optional-Wang hard-case worker has its own
 backend and binary provenance and is not this production release.
+
+## Configurable completed-proof admission
+
+The next gate passed **659 tracked tests across 50 targets, zero failed,
+two ignored**, with **58.83 seconds** in test bodies. It used the unchanged
+pinned Symbolica checkout, locked Nix environment, CPUs 10 and 11, one Cargo
+job and one test thread per target. Compilation is excluded from the body-time
+sum. Explicit tracked targets plus the new owned integration test exclude the
+separate workstream's untracked alternate-mass test.
+
+The new checks admit and exactly restore a 201-node conditional proof,
+preserving every requirement; reject entries above the selected limit; and
+retain all payload, depth, total-node and total-byte bounds. Integration checks
+cover configuration, historical omissions, homogeneous forwarding, independent
+proof replay, invalid saved limits and missing cells. The hint-context test
+checks that this storage policy does not change mathematical compatibility.
+The default remains 128 nodes per entry.
+
+All frozen source and backend hashes matched after the run. Evidence under
+`artifacts/research/subtree-entry-policy-production-01/validation/`:
+
+| Record | SHA-256 |
+| --- | --- |
+| `full.log` | `a94b5fae6a2cc3dd56c467ec07a28ebd2e2c8fdef2f060518f316c18d693f6f8` |
+| `source-hashes.txt` | `1949f38a4787a4aded48d53bad77d0458ae2a07238c3321649b983af6a55b736` |
+| `test-targets.txt` | `6928332a903a9462c291d80daa480fd8c0bc51ecdc4e8a4114fbdc8fba8808fd` |
+| `source-check.log` | `6ac858af06e28a3cd0e3b65830adb33e47c700cac6b62a2756141a53ce11382d` |
+
+The ordinary release build froze solver SHA-256
+`46209b905c4c893ba40c7ba921dd16333c077e1cee35b96267625e388a56b397`
+and supervisor SHA-256
+`4608d7fa14dbdb64b3b0c3976f86cd49ead4fd32f76786e8a5932bc76dbfc861`.
+Source rechecks pass. A fresh repeated-factor seam problem with the 1024-node
+policy exports four cells; independent release verification passes all four
+cells and three stacks. This adds no original corpus completion. Build and
+smoke records are in the sibling `release/` directory.

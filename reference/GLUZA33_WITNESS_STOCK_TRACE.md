@@ -118,3 +118,53 @@ The final audit hash is
 Artifacts are `artifacts/research/gluza33-interval-stock4-01/`. This is a warm,
 instrumented configuration ablation, not a release benchmark or solved-time
 comparison. All interior roots and pair-order obligations remain required.
+
+## Ten-minute continuation from the expanded cache
+
+With the same original problem, order, anchor and four-slot policy, the next
+continuation times out after **600.096063 s**, at **630,368 KiB / 615.6 MiB**
+peak RSS. No result or independent verification is produced. It retains
+**2,397 new operations**: 2,381 factors, one discriminant and 15 resultants.
+The new cache has **27,897 records / 305,478,455 bytes**. All inherited bytes
+and new operation keys/output hashes pass the final integrity audit; this is
+not a complete algebraic or decomposition verification.
+
+The previous pending factor completes in **0.075965 s**. Thus its old deadline
+capture was not evidence of a persistent bottleneck. The final new capture is
+factor key `7507bfdbc0c97c741b29794349c49eb12ffaae14ada5856a1ac88031e12b2180`,
+with input hash
+`879b4cb7d753389c91aca8553c0784da8212178f35da56bfa9944168ce3b6845`.
+An exact Symbolica metadata-only inspection finds 2,867 terms, axis degrees
+`[24,18,11,0,0,0,0]`, total degree 31 and coefficient height 64 bits. The last
+progress prefix `[2,2/5,1]` predates termination and is not an atomic binding
+of this final operation to a coordinate prefix.
+
+A bounded admission-only check rules out a simple source-cap increase for
+scaling. All three leading coefficients are nonzero at the all-ones point;
+the fixed shift menu cannot improve the original zero degree-drop count.
+Even a 4,096-term allowance therefore declines this operand. The check costs
+0.042762 s and performs no factorization, GCD, resultant or root isolation.
+No production cap is changed.
+
+Raw leading-layer sizes are 12, 57 and 174, favoring the degree-24 axis in
+the native heuristic. This does not identify the actual native primitive or
+square-free component: shear's size gates pass, but successful admission was
+not observed. The next diagnostic should record that component, actual main
+axis and retry reasons before evaluating a general bounded main-axis portfolio.
+The existing Wang prime-pair schedule changes evaluation coordinates, not the
+main variable. No further factor trial was launched.
+
+The same frozen opt-level-2 diagnostic executable and optional Wang backend
+were used, with the witness and Wang observers disabled. The worker used
+CPU 8 and a 50-GiB ceiling. This is a warm research continuation, excluding
+earlier cache-generation costs, not a production solve-time comparison.
+All workers have stopped. Evidence is under
+`artifacts/research/gluza33-stock4-continuation-01/`:
+
+| Record | SHA-256 |
+| --- | --- |
+| `REPORT.md` | `5b3ba41612ebbeb41cceb9e062c7e82d5fe2a0c8258732a262337f005b062d0f` |
+| Final capture | `eef02c540c1e3c33c19533df6062b5cf7e3bd991003d1eef99f817fde97f5ead` |
+| Final audit | `739c62bb4ad90afcc9df5559efdaf1419003a67ae2c0676f109284c1f56f4892` |
+| Final cache manifest | `30c682137336949a13f417e20abbc3af8b6f57c963295f1e54ee1120641acdc6` |
+| Admission-only result | `aa69d9d9dda112d0970c394dd638561d34cb95ec4c502df9d507397182170737` |
