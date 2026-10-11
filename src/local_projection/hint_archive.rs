@@ -243,6 +243,7 @@ fn context(
             "local_max_nodes",
             "local_max_refinements",
             "local_subtree_cache_mib",
+            "local_subtree_cache_entry_nodes",
             "local_learned_cut_cache_mib",
         ] {
             map.remove(key);
@@ -254,6 +255,7 @@ fn context(
             "max_nodes",
             "max_refinements",
             "subtree_cache_mib",
+            "subtree_cache_entry_nodes",
             "learned_cut_cache_mib",
         ] {
             map.remove(key);
@@ -785,8 +787,10 @@ mod tests {
         changed.solver.checkpoint_dir = Some("elsewhere".into());
         changed.limits.wall_time_secs = 100.0;
         changed.solver.local_hint_archive = false;
+        changed.solver.local_subtree_cache_entry_nodes = 1024;
         let mut changed_options = o.clone();
         changed_options.max_nodes += 100;
+        changed_options.subtree_cache_entry_nodes = 1024;
         assert_eq!(context(&changed, &n, &changed_options).unwrap(), key);
         changed.constraints.push("x<2".into());
         let changed_n = crate::problem::normalize(&changed, &changed.variables).unwrap();

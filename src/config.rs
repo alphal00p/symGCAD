@@ -12,6 +12,24 @@ pub(crate) const DEFAULT_DESCARTES_INTERVAL_MAX_TERMS: usize = 4096;
 pub(crate) const MAX_DESCARTES_INTERVAL_SOURCE_TERMS: usize = 65_536;
 pub(crate) const DEFAULT_DESCARTES_INTERVAL_MAX_TOTAL_TERMS: usize = 65_536;
 pub(crate) const MAX_DESCARTES_INTERVAL_TOTAL_TERMS: usize = 262_144;
+pub(crate) const DEFAULT_SUBTREE_CACHE_ENTRY_NODES: usize = 128;
+pub(crate) const MAX_SUBTREE_CACHE_ENTRY_NODES: usize = 4096;
+
+pub(crate) fn default_subtree_cache_entry_nodes() -> usize {
+    DEFAULT_SUBTREE_CACHE_ENTRY_NODES
+}
+
+pub(crate) fn is_default_subtree_cache_entry_nodes(value: &usize) -> bool {
+    *value == DEFAULT_SUBTREE_CACHE_ENTRY_NODES
+}
+
+pub(crate) fn validate_subtree_cache_entry_nodes(value: usize) -> Result<()> {
+    ensure!(
+        (DEFAULT_SUBTREE_CACHE_ENTRY_NODES..=MAX_SUBTREE_CACHE_ENTRY_NODES).contains(&value),
+        "local subtree cache entry nodes must be between 128 and 4096"
+    );
+    Ok(())
+}
 
 pub(crate) fn default_descartes_interval_max_total_terms() -> usize {
     DEFAULT_DESCARTES_INTERVAL_MAX_TOTAL_TERMS
@@ -195,6 +213,10 @@ pub struct SolverOptions {
     pub local_adjacent_pairs: bool,
     #[serde(skip_serializing_if = "is_thirty_two")]
     pub local_subtree_cache_mib: usize,
+    /// Admission limit for each cached conditional proof; does not enlarge the
+    /// total cache budget or relax proof, depth, or serialized payload checks.
+    #[serde(skip_serializing_if = "is_default_subtree_cache_entry_nodes")]
+    pub local_subtree_cache_entry_nodes: usize,
     #[serde(skip_serializing_if = "is_eight")]
     pub local_learned_cut_cache_mib: usize,
     /// Per-problem local search limits; omitted values keep LocalOptions defaults.
@@ -251,6 +273,7 @@ impl Default for SolverOptions {
             local_base_univariate_basis: false,
             local_adjacent_pairs: false,
             local_subtree_cache_mib: 32,
+            local_subtree_cache_entry_nodes: DEFAULT_SUBTREE_CACHE_ENTRY_NODES,
             local_learned_cut_cache_mib: 8,
             local_max_refinements: None,
             local_max_nodes: None,
@@ -324,6 +347,7 @@ impl Problem {
         Ok(problem)
     }
     pub fn validate(&self) -> Result<()> {
+        validate_subtree_cache_entry_nodes(self.solver.local_subtree_cache_entry_nodes)?;
         validate_descartes_witness_max_terms(self.solver.local_descartes_witness_max_terms)?;
         validate_descartes_interval_max_terms(self.solver.local_descartes_interval_max_terms)?;
         validate_descartes_interval_max_total_terms(

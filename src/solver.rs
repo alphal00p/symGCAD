@@ -644,6 +644,7 @@ fn solve_impl(problem: &Problem) -> Result<SolveResult> {
                 base_univariate_basis: problem.solver.local_base_univariate_basis,
                 adjacent_pairs: problem.solver.local_adjacent_pairs,
                 subtree_cache_mib: problem.solver.local_subtree_cache_mib,
+                subtree_cache_entry_nodes: problem.solver.local_subtree_cache_entry_nodes,
                 learned_cut_cache_mib: problem.solver.local_learned_cut_cache_mib,
                 max_refinements: problem
                     .solver

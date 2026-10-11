@@ -191,6 +191,13 @@ pub struct LocalOptions {
     /// Retained conditional-proof payload budget, clipped to 1/16 of the
     /// process memory limit. Count caps grow with budgets above the default.
     pub subtree_cache_mib: usize,
+    /// Admission limit for a complete conditional proof; total cache bounds
+    /// and proof obligations remain unchanged.
+    #[serde(
+        default = "crate::config::default_subtree_cache_entry_nodes",
+        skip_serializing_if = "crate::config::is_default_subtree_cache_entry_nodes"
+    )]
+    pub subtree_cache_entry_nodes: usize,
     /// Retained cut-hint budget, clipped to 1/128 of process memory.
     pub learned_cut_cache_mib: usize,
 }
@@ -238,6 +245,7 @@ impl Default for LocalOptions {
             base_univariate_basis: false,
             adjacent_pairs: false,
             subtree_cache_mib: 32,
+            subtree_cache_entry_nodes: crate::config::DEFAULT_SUBTREE_CACHE_ENTRY_NODES,
             learned_cut_cache_mib: 8,
         }
     }
@@ -360,6 +368,11 @@ pub struct LocalReport {
     pub coincident_pair_fallbacks: usize,
     pub subtree_cache_budget_bytes: usize,
     pub subtree_cache_node_limit: usize,
+    #[serde(
+        default = "crate::config::default_subtree_cache_entry_nodes",
+        skip_serializing_if = "crate::config::is_default_subtree_cache_entry_nodes"
+    )]
+    pub subtree_cache_entry_nodes: usize,
     pub learned_cut_cache_budget_bytes: usize,
     pub learned_cut_cache_entry_limit: usize,
     pub learned_cut_cache_id_limit: usize,
@@ -2829,6 +2842,7 @@ fn unfinished(
 
 pub fn solve_local(problem: &Problem, options: &LocalOptions) -> Result<LocalSolveResult> {
     problem.validate()?;
+    crate::config::validate_subtree_cache_entry_nodes(options.subtree_cache_entry_nodes)?;
     crate::config::validate_descartes_witness_max_terms(options.descartes_witness_max_terms)?;
     crate::config::validate_descartes_interval_max_terms(options.descartes_interval_max_terms)?;
     crate::config::validate_descartes_interval_max_total_terms(
@@ -2885,7 +2899,10 @@ pub fn solve_local(problem: &Problem, options: &LocalOptions) -> Result<LocalSol
         ))?,
         ..Default::default()
     };
-    let mut report = LocalReport::default();
+    let mut report = LocalReport {
+        subtree_cache_entry_nodes: options.subtree_cache_entry_nodes,
+        ..Default::default()
+    };
     if options.base_univariate_basis {
         report.base_univariate_basis = Some(BaseUnivariateReport::default());
     }
@@ -2945,9 +2962,10 @@ pub fn solve_local(problem: &Problem, options: &LocalOptions) -> Result<LocalSol
         protected: BTreeSet::new(),
         guard_certificates: Vec::new(),
         guard_certificate_index: HashMap::new(),
-        completed_subtrees: subtree_cache::CompletedSubtrees::new(
+        completed_subtrees: subtree_cache::CompletedSubtrees::with_entry_nodes(
             ((problem.limits.memory_mib as usize).saturating_mul(1024 * 1024) / 16)
                 .min(options.subtree_cache_mib.saturating_mul(1024 * 1024)),
+            options.subtree_cache_entry_nodes,
         ),
         learned_cuts: learned_cuts::LearnedCuts::new(
             ((problem.limits.memory_mib as usize).saturating_mul(1024 * 1024) / 128)
@@ -3559,6 +3577,7 @@ pub fn verify_local_parts(
         ),
     };
     solution.problem.validate()?;
+    crate::config::validate_subtree_cache_entry_nodes(options.subtree_cache_entry_nodes)?;
     crate::config::validate_descartes_witness_max_terms(options.descartes_witness_max_terms)?;
     crate::config::validate_descartes_interval_max_terms(options.descartes_interval_max_terms)?;
     crate::config::validate_descartes_interval_max_total_terms(
