@@ -132,6 +132,15 @@ Proposed first diagnostic budget: at most eight anchors/proposals, beam width
 four, two exact levels, and 30 seconds total within the established search
 budget. These are engineering starting points, not complexity theorems.
 
+The [first exact prefix experiment](LINEAR_PREFIX_RESEARCH.md) now implements
+this bounded proposal stage. Across three symbolic ZZ families, all 24
+two-stage candidates completed in 3.945 seconds of combined controller time.
+Different elimination pairs produced substantially different factor growth;
+the two tested anchors in each family tied on the best measured prefix costs.
+These results rank candidates, not completed decompositions. The experiment
+retains every ordinary projection obligation and does not import Fubini-set
+intersection into CAD.
+
 ### 2. Use matroid and cut information to propose sum/fraction blocks
 
 **Second priority; coordinate discovery only until restoration is proved.**
@@ -198,6 +207,12 @@ same legal orders, workers, caches and limits. Include proposal time and
 memory. Report complete verified original-cell coverage, time to completion,
 first non-linear stage, projection growth, coefficient bits and peak RSS.
 Partial projection timings are diagnostics; they are not solve-time ratios.
+
+After the negative global-orthant circuit screen, a
+[conditional-certificate follow-up](TROPICAL_CONDITIONAL_CERTIFICATES.md)
+derives an exact AM–GM rule that incorporates independently proved monomial
+domain inequalities. Its strongest prospective use is in bounded sector
+domains; no benefit on the unrestricted symbolic corpus is established.
 
 Regressions should include the `P_s` example, exceptional coefficient
 cancellation, permuted edge labels, mismatched mass/Gram metadata, an

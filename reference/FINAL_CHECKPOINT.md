@@ -50,6 +50,15 @@ a warm original continuation. It timed out at **600.055 seconds / 364.2 MiB**
 on a new 2,410-term factorization, with no result or verification. Both
 discriminant improvements therefore establish progress, not completion.
 
+The [next-factor diagnostics](GLUZA33_AFFINE_BUDGET.md) find regular all-ones
+evaluation fibers, so a larger affine source cap would not activate the current
+heuristic. Ten exact univariate factorizations instead show consistent small
+factor degrees, including a degree-two plus degree-six split along the
+lowest-degree axis. These specialized factors do not establish a factorization
+of the original source or a completed Gluza33 decomposition.
+Matched automatic, univariate and bivariate Symbolica starts each timed out
+at 60 seconds on that operand; no simple strategy switch was successful.
+
 ## Validation and performance evidence
 
 The latest complete production fast suite passed **633 tracked tests**, with
@@ -95,6 +104,13 @@ give a counterexample to stationary-face sufficiency and a narrower exact
 route through smaller resultants; eighteen Symbolica identity checks pass,
 but the production dispatcher is unimplemented. The [SubTropica review](TROPICAL_SUBTROPICA_RESEARCH.md)
 recommends joint scale-variable and short linear-prefix ordering proposals.
+The [implemented diagnostic](LINEAR_PREFIX_RESEARCH.md) completed all 24
+two-stage candidates across three symbolic families in 3.945 seconds. It
+distinguishes some elimination pairs by exact projection growth, but the new
+anchor pairs tie on their best costs; no gauge advantage is established.
+The three promoted original-problem orders each exhausted 60 seconds with no
+complete result. Their mathematical inputs were independently checked unchanged;
+completed operations and unfinished factor operands remain available for reuse.
 Tropical support and integration reductions do not justify deleting interior
 threshold boundaries; no GCAD performance gain is claimed from that review.
 The [tropical follow-up](TROPICAL_FOLLOWUP_RESEARCH.md) proposes sparse exact
@@ -106,6 +122,10 @@ coefficient-positive. Its eighteen mixed-sign factors have opposite-sign
 exposed vertices in parsed metadata; whole-orthant positivity is therefore
 an unpromising target for that snapshot. No new Symbolica certificate was
 constructed. Further candidates need independently justified subdomains.
+The [conditional follow-up](TROPICAL_CONDITIONAL_CERTIFICATES.md) gives an exact
+AM–GM rule incorporating proved monomial domain inequalities. It can overcome
+the global Newton-vertex obstruction on suitable chambers, but is unimplemented
+and has no measured corpus benefit. Its equality cases retain interior zeros.
 
 The [Taylor-shift experiments](FAST_TAYLOR_SHIFT_RESEARCH.md) and
 [positive-axis isolation investigation](POSITIVE_AXIS_ISOLATION_RESEARCH.md)

@@ -107,6 +107,7 @@ with three fresh repetitions and identical orders. *±* means two separate sign-
   An exact interval cover constructed and factored 49 guards in *9.271 s / 32 MiB*.
   The integrated interval option passed that discriminant and saved 6422 further operations
   in a *600.055 s / 364 MiB* warm debug trial, ending on a new factorization.
+  Exact image probes suggest a small factor, but have not reconstructed it.
   These incomplete probes add no original coverage or solved-time ratio.
 
   Measurements prefer verified three-repeat controls, otherwise the fastest accepted original-problem
@@ -210,10 +211,11 @@ with three fresh repetitions and identical orders. *±* means two separate sign-
 
   *Projection research.* A graph-derived quadratic block completed three ordinary elimination
   stages in 8.643 s; its 27 stationary-face identities replayed in 0.446 s. These have different
-  proof obligations and are not a solver-speedup comparison. SubTropica suggests joint positive-scale
-  and linear-prefix ordering proposals; a follow-up proposes exact sparse AM–GM certificates.
-  A first 21-factor Gluza33 support screen found no new candidate within its small-source budget.
-  Neither tropical support nor stationary-face guards alone remove interior threshold sheets.
+  proof obligations and are not a solver-speedup comparison. A SubTropica-inspired anchor/order
+  probe completed 24 exact two-stage candidates in 3.945 s. Three shortlisted symbolic orders
+  each timed out at 60 s: better prefix scores have not yielded new completions.
+  Conditional AM–GM certificates are a further proposal for proved bounded domains; global
+  support screening found no new small-source candidate. All interior threshold sheets remain required.
   The latest tracked fast suite passed 633 tests, with zero failures and two expensive tests ignored.
 
   #block(breakable: false)[
