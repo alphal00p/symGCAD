@@ -8,7 +8,9 @@ All 28 unresolved problems timed out in their first one-hour slow campaign. The 
 
 The subsequent [positive Gluza33 continuation](reference/GLUZA33_AFFINE_ORDER_CONTINUATION.md) also timed out at two hours with a 50 GiB allowance and 3.81 GiB reported peak RSS. Its ground-truth decomposition remains unresolved.
 
-Later affine preconditioning and configurable root certificates passed two discriminant bottlenecks. The latest [interval-certificate continuation](reference/INTERVAL_SOURCE_BUDGET_PRODUCTION.md) saved 6,422 further exact operations before its ten-minute timeout on a new factorization; Gluza33 remains incomplete. The tracked fast suite passes 633 tests, with two expensive tests ignored.
+Later affine preconditioning and configurable root certificates passed two discriminant bottlenecks. The latest [interval-certificate continuation](reference/INTERVAL_SOURCE_BUDGET_PRODUCTION.md) saved 6,422 further exact operations before its ten-minute timeout on a new factorization; Gluza33 remains incomplete. The tracked fast suite passes 642 tests, with two expensive tests ignored.
+
+The [Gluza33 factor profile](reference/GLUZA33_FACTOR_PROFILE.md) identifies modular reconstruction as the current cost and a concrete evaluation-point experiment. The [SubTropica review](reference/TROPICAL_SUBTROPICA_RESEARCH.md) led to joint scale/order probes and proposed conditional positivity certificates; neither has yet added a verified original case.
 
 The [final checkpoint](reference/FINAL_CHECKPOINT.md) separates verified original results, tested improvements and remaining research. No timeout or conditional chamber is counted as an original completion.
 
@@ -85,7 +87,7 @@ With `positivity = true`, the experimental `weighted_square_positivity = true` a
 
 The separate opt-in `quadratic_component_positivity = true` extends this portfolio to exact positive-semidefinite quadratic components with a strictly positive residual. Its checker replays rational square identities; a nonnegative expression with an interior zero is insufficient. See the [certificate scope](reference/QUADRATIC_COMPONENT_PRODUCTION.md) and the [quadratic-ladder example](examples/quadratic_ladder.toml).
 
-The experimental solver option `affine_factorization = true` preconditions eligible projection factorizations with an invertible integer translation. It detects degree loss at simple evaluation points, tests a finite shift menu, and checks the full signed factor product after mapping back. Projection and fresh verification use the same opt-in policy; original coordinates, domains and boundaries remain unchanged. This option is disabled by default and does not affect the separate negative-linear square-witness proposal.
+The experimental solver option `affine_factorization = true` preconditions eligible projection factorizations with invertible integer translations or pairwise shears. Translations address degree loss at simple evaluation points; a bounded shear search looks for a monomial leading coefficient without increasing the term count. Both paths check the inverse map and full signed factor product, including units and multiplicities. Projection and fresh verification use the same opt-in policy, preserving original coordinates, domains and interior boundaries. See the [shear measurements](reference/SHEAR_FACTORIZATION.md). This option is disabled by default.
 
 With `local_descartes_witnesses = true`, the optional `local_descartes_witness_max_terms = 8192` raises the source-term budget for exact positive-root separator certificates. The default remains 4096, the ceiling is 65536, and discovery, reuse and verification share the explicit limit. All coefficient and separator guards remain mandatory, and the lifetime stock stays at two templates per polynomial. Larger inputs can still make the subsequent projection expensive; see [usage and limits](docs/USAGE.md).
 

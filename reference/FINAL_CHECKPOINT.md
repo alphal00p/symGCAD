@@ -59,9 +59,25 @@ of the original source or a completed Gluza33 decomposition.
 Matched automatic, univariate and bivariate Symbolica starts each timed out
 at 60 seconds on that operand; no simple strategy switch was successful.
 
+The [factor profile and leading-coefficient preflight](GLUZA33_FACTOR_PROFILE.md)
+identify modular reconstruction as the current cost. A bounded exact probe
+finds a suitable candidate for the necessary Wang image gates; full assignment
+and source reconstruction remain unproved. A separate truncated search of
+4,096 cached factor proposals found no divisor. Neither experiment solves Gluza33.
+
+The new [exact shear preconditioner](SHEAR_FACTORIZATION.md) extends the existing
+default-off affine option without changing any original zero set. Its automatic
+policy factors a captured C470 obstruction in 0.087845 seconds, including exact
+internal reconstruction. The original symbolic C470 continuation then saves
+56,671 additional operations before its 300.028-second timeout, using 136.5 MiB.
+A separate warm continuation saves 1,205 more before timing out at 600.061 seconds,
+using 221.7 MiB. It remains incomplete. The [local-refinement control](LOCAL_REFINEMENT_PROFILE.md)
+separately identifies successful-child obligation discovery as the main source
+of refinement in a measured B471 prefix; cache hits alone establish no speedup.
+
 ## Validation and performance evidence
 
-The latest complete production fast suite passed **633 tracked tests**, with
+The latest complete production fast suite passed **642 tracked tests**, with
 zero failures and two deliberately expensive tests ignored. A separate
 workstream's uncommitted alternate-mass test was excluded from this run,
 the tracked count and the original corpus. The

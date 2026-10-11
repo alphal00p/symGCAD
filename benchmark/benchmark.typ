@@ -107,7 +107,8 @@ with three fresh repetitions and identical orders. *±* means two separate sign-
   An exact interval cover constructed and factored 49 guards in *9.271 s / 32 MiB*.
   The integrated interval option passed that discriminant and saved 6422 further operations
   in a *600.055 s / 364 MiB* warm debug trial, ending on a new factorization.
-  Exact image probes suggest a small factor, but have not reconstructed it.
+  Profiling now locates the factor cost in modular reconstruction; a cheap leading-coefficient
+  factorization supplies a candidate evaluation point, but no full source factorization yet.
   These incomplete probes add no original coverage or solved-time ratio.
 
   Measurements prefer verified three-repeat controls, otherwise the fastest accepted original-problem
@@ -149,8 +150,9 @@ with three fresh repetitions and identical orders. *±* means two separate sign-
   resultants and rational root work. Canonical factors, deterministic algorithms and bounded caches
   avoid repeated work. Certified sum-variable preprocessing and primitive parameter-linear factors
   address measured algebra bottlenecks.
-  Optional affine factor preconditioning detects evaluation-fiber degree drops and exactly
-  reconstructs the signed factors after translation; it changes no original coordinates.
+  Optional affine factor preconditioning detects evaluation-fiber degree drops or searches
+  bounded pairwise shears for simpler leading coefficients. Exact inverse maps and signed
+  product reconstruction preserve all original coordinates and zero sheets.
 
   *Smaller valid decompositions.* Positive-domain certificates, homogeneous charts, conditional
   quadratic monotone reduction and strict linear/bilinear identities can avoid irrelevant projection
@@ -214,9 +216,13 @@ with three fresh repetitions and identical orders. *±* means two separate sign-
   proof obligations and are not a solver-speedup comparison. A SubTropica-inspired anchor/order
   probe completed 24 exact two-stage candidates in 3.945 s. Three shortlisted symbolic orders
   each timed out at 60 s: better prefix scores have not yielded new completions.
+  Automatic shear preconditioning factors the captured C470 obstruction in 0.088 s, with
+  exact signed reconstruction. Warm original continuations timed out at 300.028 s (136 MiB)
+  and 600.061 s (222 MiB), retaining 56,671 then 1,205 new operations. Neither supplies
+  a completed-solve speedup ratio.
   Conditional AM–GM certificates are a further proposal for proved bounded domains; global
   support screening found no new small-source candidate. All interior threshold sheets remain required.
-  The latest tracked fast suite passed 633 tests, with zero failures and two expensive tests ignored.
+  The latest tracked fast suite passed 642 tests, with zero failures and two expensive tests ignored.
 
   #block(breakable: false)[
   == Reproduce and inspect
