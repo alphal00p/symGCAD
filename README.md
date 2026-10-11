@@ -83,6 +83,8 @@ With `positivity = true`, the experimental `weighted_square_positivity = true` a
 
 The separate opt-in `quadratic_component_positivity = true` extends this portfolio to exact positive-semidefinite quadratic components with a strictly positive residual. Its checker replays rational square identities; a nonnegative expression with an interior zero is insufficient. See the [certificate scope](reference/QUADRATIC_COMPONENT_PRODUCTION.md) and the [quadratic-ladder example](examples/quadratic_ladder.toml).
 
+The experimental solver option `affine_factorization = true` preconditions eligible projection factorizations with an invertible integer translation. It detects degree loss at simple evaluation points, tests a finite shift menu, and checks the full signed factor product after mapping back. Projection and fresh verification use the same opt-in policy; original coordinates, domains and boundaries remain unchanged. This option is disabled by default and does not affect the separate negative-linear square-witness proposal.
+
 A `complete_generic` result covers full-dimensional open cells outside its recorded algebraic exceptional set. Lower-dimensional sections are excluded. The verifier reconstructs exact projection/reduction identities, root bounds and exhaustive coverage; an incomplete result cannot pass. Exceptional parameter specializations require a new solve after substitution.
 
 Exact boundary evidence retains ordinary `F=0` sheets, repeated roots and same-sign interior seams. A sign-based reduction requires an exact strict-nonvanishing certificate on the relevant domain; nonnegativity or sampled signs alone are insufficient.

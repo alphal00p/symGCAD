@@ -21,10 +21,7 @@ use sha2::{Digest, Sha256};
 use symbolica::{domains::InternalOrdering, prelude::*};
 
 use crate::{
-    algebra::{
-        Algebra, MAX_DEGREE, Poly, canonical, factor_polynomial, factors_checked,
-        primitive_linear_variable,
-    },
+    algebra::{Algebra, MAX_DEGREE, Poly, canonical, primitive_linear_variable},
     domain::{
         CertificateOptions, DomainCertificate, certify_nonzero, derive_domain, verify_certificate,
     },
@@ -750,7 +747,9 @@ impl<'a> ProjectionCache<'a> {
                         self.capture_operation(&request, None)?;
                         let started = Instant::now();
                         let mut factorization = HashMap::<Poly, usize>::new();
-                        for (factor, multiplicity) in factor_polynomial(&polynomial, false)? {
+                        for (factor, multiplicity) in
+                            self.algebra.factor_polynomial(&polynomial, false)?
+                        {
                             if !factor.is_constant() {
                                 *factorization.entry(canonical(&factor)).or_default() +=
                                     multiplicity;
@@ -1679,7 +1678,7 @@ pub fn replay_certified_projection_with_operations(
             steps: vec![],
         });
     }
-    let mut initial = factors_checked(&all)?;
+    let mut initial = algebra.factors_checked(&all)?;
     let mut removed = HashSet::new();
     for certificate in initial_removals {
         let polynomial = algebra.parse(&certificate.polynomial)?;
@@ -1760,7 +1759,7 @@ pub fn replay_certified_projection_with_operations(
             .into_iter()
             .filter(|p| !removed_operations.contains(p))
             .collect::<Vec<_>>();
-        let mut generated = factors_checked(&retained_raw)?;
+        let mut generated = algebra.factors_checked(&retained_raw)?;
         generated.extend(
             protected
                 .iter()

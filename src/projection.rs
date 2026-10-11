@@ -323,17 +323,17 @@ pub fn project_one(polynomials: &[Poly], variable: usize) -> Result<Vec<Poly>> {
 }
 
 pub fn project(algebra: &Algebra, polynomials: &[Poly]) -> Result<Projection> {
-    project_with_factorizer(algebra, polynomials, factors)
+    project_with_factorizer(algebra, polynomials, |p| algebra.factors(p))
 }
 
 pub fn project_checked(algebra: &Algebra, polynomials: &[Poly]) -> Result<Projection> {
-    project_with_factorizer(algebra, polynomials, crate::algebra::factors_checked)
+    project_with_factorizer(algebra, polynomials, |p| algebra.factors_checked(p))
 }
 
 fn project_with_factorizer(
     algebra: &Algebra,
     polynomials: &[Poly],
-    factorize: fn(&[Poly]) -> Result<Vec<Poly>>,
+    factorize: impl Fn(&[Poly]) -> Result<Vec<Poly>>,
 ) -> Result<Projection> {
     ensure!(
         polynomials

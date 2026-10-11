@@ -5,6 +5,7 @@ use std::{collections::HashSet, sync::Arc};
 use anyhow::{Result, anyhow, bail, ensure};
 use symbolica::{domains::InternalOrdering, poly::factor::Factorize, prelude::*};
 
+mod affine_factorization;
 pub(crate) mod prefix_value;
 mod sum_factorization;
 
@@ -18,6 +19,7 @@ const CACHED_SPECIALIZATION_POWER: usize = 64;
 pub struct Algebra {
     pub names: Vec<String>,
     pub variables: Arc<Vec<PolyVariable>>,
+    affine_factorization: bool,
 }
 
 impl Algebra {
@@ -44,7 +46,43 @@ impl Algebra {
         Ok(Self {
             names: names.to_vec(),
             variables: Arc::new(variables),
+            affine_factorization: false,
         })
+    }
+
+    /// Opt-in algebra-only preconditioning for projection and its independent
+    /// replay. This immutable setting never changes coordinates or domains.
+    pub fn with_affine_factorization(mut self, enabled: bool) -> Self {
+        self.affine_factorization = enabled;
+        self
+    }
+
+    pub fn factors(&self, polynomials: &[Poly]) -> Result<Vec<Poly>> {
+        self.factor_basis(polynomials, false)
+    }
+
+    pub fn factors_checked(&self, polynomials: &[Poly]) -> Result<Vec<Poly>> {
+        self.factor_basis(polynomials, true)
+    }
+
+    fn factor_basis(&self, polynomials: &[Poly], check: bool) -> Result<Vec<Poly>> {
+        ensure!(
+            polynomials.iter().all(|p| p.variables() == &self.variables),
+            "factor input has a different variable map"
+        );
+        factor_basis_with_policy(polynomials, check, self.affine_factorization)
+    }
+
+    pub(crate) fn factor_polynomial(
+        &self,
+        polynomial: &Poly,
+        check: bool,
+    ) -> Result<Vec<(Poly, usize)>> {
+        ensure!(
+            polynomial.variables() == &self.variables,
+            "factor input has a different variable map"
+        );
+        factor_polynomial_with_policy(polynomial, check, self.affine_factorization)
     }
 
     /// Parse polynomial syntax with exact rational coefficients. Unknown symbols,
@@ -277,13 +315,13 @@ pub fn canonical(polynomial: &Poly) -> Poly {
 /// The original GCAD SFRP: unique primitive irreducible factors, with no
 /// multiplicities or constants. Sorting makes ordering/cache behavior stable.
 pub fn factors(polynomials: &[Poly]) -> Result<Vec<Poly>> {
-    factor_basis(polynomials, false)
+    factor_basis_with_policy(polynomials, false, false)
 }
 
 /// Verification additionally reconstructs every input including scalar content
 /// and multiplicities before discarding them from the projection zero sets.
 pub fn factors_checked(polynomials: &[Poly]) -> Result<Vec<Poly>> {
-    factor_basis(polynomials, true)
+    factor_basis_with_policy(polynomials, true, false)
 }
 
 /// A primitive polynomial A*y+B of degree one in y is irreducible over the
@@ -343,6 +381,14 @@ pub(crate) fn primitive_linear_variable(polynomial: &Poly) -> Option<usize> {
 /// before the same Symbolica factorization. Unsupported cases use the original
 /// polynomial and complete factorization algorithm.
 pub(crate) fn factor_polynomial(polynomial: &Poly, check: bool) -> Result<Vec<(Poly, usize)>> {
+    factor_polynomial_with_policy(polynomial, check, false)
+}
+
+fn factor_polynomial_with_policy(
+    polynomial: &Poly,
+    check: bool,
+    affine: bool,
+) -> Result<Vec<(Poly, usize)>> {
     ensure!(
         !polynomial.is_zero(),
         "zero has no finite irreducible factorization"
@@ -350,6 +396,8 @@ pub(crate) fn factor_polynomial(polynomial: &Poly, check: bool) -> Result<Vec<(P
     let factorization = if primitive_linear_variable(polynomial).is_some() {
         vec![(polynomial.clone(), 1)]
     } else if let Some(factors) = sum_factorization::try_factor(polynomial) {
+        factors
+    } else if affine && let Some(factors) = affine_factorization::try_factor(polynomial)? {
         factors
     } else {
         polynomial.factor()
@@ -364,13 +412,13 @@ pub(crate) fn factor_polynomial(polynomial: &Poly, check: bool) -> Result<Vec<(P
     Ok(factorization)
 }
 
-fn factor_basis(polynomials: &[Poly], check: bool) -> Result<Vec<Poly>> {
+fn factor_basis_with_policy(polynomials: &[Poly], check: bool, affine: bool) -> Result<Vec<Poly>> {
     let mut unique = HashSet::new();
     for polynomial in polynomials {
         if polynomial.is_constant() {
             continue;
         }
-        let factorization = factor_polynomial(polynomial, check)?;
+        let factorization = factor_polynomial_with_policy(polynomial, check, affine)?;
         for (factor, _) in factorization {
             if !factor.is_constant() {
                 unique.insert(canonical(&factor));

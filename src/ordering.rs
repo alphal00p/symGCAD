@@ -3,8 +3,8 @@
 //! Public orders are in lifting order. Projection removes variables in reverse.
 //! Heuristics only choose an order; they never delete solution regions.
 
-use crate::algebra::{Algebra, Poly, factors};
-use crate::projection::project_one;
+use crate::algebra::{Algebra, Poly};
+use crate::projection::projection_polynomials;
 use anyhow::{Result, bail, ensure};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
@@ -79,7 +79,13 @@ pub fn choose_order(
     groups: &[Vec<usize>],
     method: OrderingMethod,
 ) -> Result<OrderingResult> {
-    choose_order_from_basis(algebra, factors(positives)?, groups, method, project_one)
+    choose_order_from_basis(
+        algebra,
+        algebra.factors(positives)?,
+        groups,
+        method,
+        |basis, axis| algebra.factors(&projection_polynomials(basis, axis)?),
+    )
 }
 
 /// Apply the same conventions with a caller-owned projection cache. The basis

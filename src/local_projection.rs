@@ -40,7 +40,7 @@
 //! cannot refine that base, and no pair resultants or discriminants are needed.
 use crate::{
     Problem,
-    algebra::{Algebra, Poly, canonical, factors_checked},
+    algebra::{Algebra, Poly, canonical},
     domain::{Domain, DomainCertificate, certify_nonzero, derive_domain, verify_certificate},
     optimized_projection::{CacheMetrics, OptimizedProjectionOptions, ProjectionCache},
     output::{Axis, Cell, RootBound, SolveResult, Statistics, Status},
@@ -3074,7 +3074,7 @@ impl Checker<'_> {
     fn guard_basis(&self, raw: &[Poly]) -> Result<BTreeSet<usize>> {
         let mut result = BTreeSet::new();
         if self.base_basis.sources.is_empty() {
-            for q in factors_checked(raw)? {
+            for q in self.normalized.algebra.factors_checked(raw)? {
                 result.insert(
                     *self
                         .ids
@@ -3089,7 +3089,11 @@ impl Checker<'_> {
                 result.extend(ids);
                 continue;
             }
-            for q in factors_checked(std::slice::from_ref(p))? {
+            for q in self
+                .normalized
+                .algebra
+                .factors_checked(std::slice::from_ref(p))?
+            {
                 result.insert(
                     *self
                         .ids
@@ -3533,7 +3537,10 @@ pub fn verify_local_parts(
         );
         if !base_basis.typed.contains(&id) || protected.contains(&id) {
             ensure!(
-                factors_checked(std::slice::from_ref(p))? == vec![p.clone()],
+                normalized
+                    .algebra
+                    .factors_checked(std::slice::from_ref(p))?
+                    == vec![p.clone()],
                 "local cut is not a primitive irreducible factor"
             );
         }
@@ -3548,7 +3555,9 @@ pub fn verify_local_parts(
         .chain(&normalized.split)
         .zip(input_factors)
     {
-        let expected = factors_checked(std::slice::from_ref(p))?
+        let expected = normalized
+            .algebra
+            .factors_checked(std::slice::from_ref(p))?
             .into_iter()
             .map(|q| {
                 ids.get(&q)

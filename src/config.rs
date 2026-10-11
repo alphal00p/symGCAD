@@ -42,6 +42,10 @@ pub struct SolverOptions {
     /// declines retain the ordinary exact backend.
     #[serde(skip_serializing_if = "is_false")]
     pub binary_resultants: bool,
+    /// Experimental exact affine preconditioning of projection factorizations
+    /// and their independent verification. Coordinate maps remain unchanged.
+    #[serde(skip_serializing_if = "is_false")]
+    pub affine_factorization: bool,
     pub positivity: bool,
     pub input_positivity: bool,
     pub prune_operations: bool,
@@ -149,6 +153,7 @@ impl Default for SolverOptions {
             checkpoint_dir: None,
             cache_memory_mib: 128,
             binary_resultants: false,
+            affine_factorization: false,
             positivity: false,
             input_positivity: false,
             prune_operations: false,

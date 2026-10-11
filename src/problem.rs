@@ -47,7 +47,8 @@ pub fn normalize(problem: &Problem, order: &[String]) -> Result<NormalizedProble
                 == problem.variables.iter().collect::<BTreeSet<_>>(),
         "normalization order must be a permutation of all declared variables"
     );
-    let algebra = Algebra::new(order)?;
+    let algebra =
+        Algebra::new(order)?.with_affine_factorization(problem.solver.affine_factorization);
     let mut positives = Vec::new();
     for constraint in &problem.constraints {
         let text = substitute(constraint, &problem.parameters)?;
