@@ -103,6 +103,8 @@ Current physics-guided research studies [CFF-informed kinematic chambers](refere
 
 The latest investigations identify [affine factorization preconditioning and exact root certificates for Gluza33](reference/GLUZA33_NEXT_INVESTIGATION.md), [graph-based coordinates with jointly quadratic insertion blocks](reference/CFF_PROJECTION_NEXT_INVESTIGATION.md), and [weighted Hermite queries for selected real roots](reference/PARAMETRIC_PROJECTION_NEXT_RESEARCH.md). These are bounded algebra experiments and proposed solver improvements; they add no original-problem completions or benchmark speedups.
 
+The [SubTropica follow-up](reference/TROPICAL_SUBTROPICA_RESEARCH.md) proposes joint scale-variable and linear-prefix ordering searches, distinguishing tropical subtraction from tropical sampling. The [quadratic-face experiment](reference/QUADRATIC_BLOCK_FACE_DIAGNOSTIC.md) measures exact stationary identities alongside ordinary block projection. Both retain coefficient-dependent thresholds and all interior zero boundaries; neither supplies a new complete GCAD algorithm.
+
 A [supplemental seeded sanity check](reference/SUPPLEMENTAL_SANITY.md) sampled two fresh interior points in each fixed A446 cell: all 8 cells, 16 exact F evaluations and 112 original-constraint checks passed. This check recomputes boundaries at each new prefix and is excluded from benchmark timings; it does not replace the coverage proof.
 
 - [Benchmark document](benchmark/benchmark.pdf) and [Typst source](benchmark/benchmark.typ): per-problem comparison and methodology.
