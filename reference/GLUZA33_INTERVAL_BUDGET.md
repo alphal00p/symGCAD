@@ -29,11 +29,12 @@ source cap alone cannot help this polynomial. The report is retained under
 ## Exact interval proof and measured guards
 
 `examples/profile_interval_descartes.rs` now accepts a research-only
-`--max-terms` between 1 and 65,536, defaulting to 4,096. Production limits and
-algorithms are unchanged. The helper preserves the full variable map and
+`--max-terms` between 1 and 65,536, defaulting to 4,096. This measurement preceded
+the separate [production source-budget option](INTERVAL_SOURCE_BUDGET_PRODUCTION.md).
+The helper preserves the full variable map and
 reconstructs every transformed coefficient, the leading coefficient, the
 coordinate endpoint and all finite seams using exact Symbolica arithmetic.
-It separately reports exact witness applicability and current production
+It separately reports exact witness applicability and default production
 resource eligibility; factorization is enabled only when all production limits
 other than source admission pass.
 
@@ -57,7 +58,7 @@ They do not discard an `F=0` sheet or use a physical threshold to erase a root.
 Their use throughout a parameter cell remains conditional on proving all
 listed guard signs constant and nonzero there.
 
-| Quantity | Measured | Current production bound |
+| Quantity | Measured | Default production bound |
 |---|---:|---:|
 | Source terms | 19,942 | 4,096 (fails) |
 | Elimination degree | 24 | 3–32 |
@@ -114,11 +115,12 @@ All seven helper tests pass, including a generic 5,445-term primitive source,
 invalid source budgets and maps, exact symbolic transformation identities,
 full-cover gap/overlap rejection, and rejection of repeated positive roots.
 
-The next justified production experiment is a general, explicit interval-source
-admission budget, independent of the existing downstream guard budgets. Its
-default should remain 4,096, with the same explicit budget in discovery,
-template reuse and independent verification. Permanent template quotas and
-all degree, endpoint, seam and transformed-coefficient obligations must remain
-unchanged. A warm original solve would then determine whether the much larger
-two-parameter guard problem actually improves completion time. No fixture-name
-dispatch or automatic cap increase is justified by this operand measurement.
+The ensuing [production change](INTERVAL_SOURCE_BUDGET_PRODUCTION.md) implements
+a general, explicit interval-source admission budget, independent of existing
+downstream guard budgets. Its default remains 4,096, with the same explicit
+budget in discovery, template reuse and independent verification. Permanent
+template quotas and all degree, endpoint, seam and transformed-coefficient
+obligations are unchanged. The original-problem continuation is separate from
+these operand measurements; it must finish and verify before any solved-time
+claim. No fixture-name dispatch or automatic cap increase follows from this
+operand measurement.

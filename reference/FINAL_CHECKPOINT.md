@@ -43,18 +43,22 @@ new 19,942-term degree-24 discriminant. A separate exact probe found two
 positive roots against four Descartes variations there; merely increasing
 the same budget cannot certify that next fiber. A separate
 [interval proof](GLUZA33_INTERVAL_BUDGET.md) constructed and factored 49 guards
-in 9.271 seconds, all within current non-source resource limits. Its remaining
-guard projection and original completion are unmeasured.
+in 9.271 seconds, all within current non-source resource limits. The ensuing
+[interval-source production option](INTERVAL_SOURCE_BUDGET_PRODUCTION.md)
+passed that discriminant and saved **6,422** additional exact operations in
+a warm original continuation. It timed out at **600.055 seconds / 364.2 MiB**
+on a new 2,410-term factorization, with no result or verification. Both
+discriminant improvements therefore establish progress, not completion.
 
 ## Validation and performance evidence
 
-The latest complete production fast suite passed **627 tracked tests**, with
+The latest complete production fast suite passed **633 tracked tests**, with
 zero failures and two deliberately expensive tests ignored. A separate
 workstream's uncommitted alternate-mass test was excluded from this run,
 the tracked count and the original corpus. The
 [validation record](COMBINED_FAST_VALIDATION.md) binds the exact source and logs.
 This includes the opt-in affine factorization policy's module and solve/verify
-regressions and the configurable witness-budget checks. Research helpers
+regressions and both configurable witness-source budgets. Research helpers
 retain their own focused checks.
 
 All **66 release solve-and-verify trials** for the quadratic-certificate
@@ -96,6 +100,12 @@ threshold boundaries; no GCAD performance gain is claimed from that review.
 The [tropical follow-up](TROPICAL_FOLLOWUP_RESEARCH.md) proposes sparse exact
 AM–GM certificates and graph-cut coefficient allocation. Strict coefficient
 margins, not support geometry alone, would justify nonvanishing removal.
+The first [captured-guard support screen](TROPICAL_CIRCUIT_SCREEN.md) found
+only three factors within its proposed 128-term cap, all already
+coefficient-positive. Its eighteen mixed-sign factors have opposite-sign
+exposed vertices in parsed metadata; whole-orthant positivity is therefore
+an unpromising target for that snapshot. No new Symbolica certificate was
+constructed. Further candidates need independently justified subdomains.
 
 The [Taylor-shift experiments](FAST_TAYLOR_SHIFT_RESEARCH.md) and
 [positive-axis isolation investigation](POSITIVE_AXIS_ISOLATION_RESEARCH.md)

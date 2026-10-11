@@ -8,7 +8,7 @@ All 28 unresolved problems timed out in their first one-hour slow campaign. The 
 
 The subsequent [positive Gluza33 continuation](reference/GLUZA33_AFFINE_ORDER_CONTINUATION.md) also timed out at two hours with a 50 GiB allowance and 3.81 GiB reported peak RSS. Its ground-truth decomposition remains unresolved.
 
-Later affine preconditioning passed the captured factor obstruction; the [configurable positive-root witness budget](reference/DESCARTES_SOURCE_BUDGET_PRODUCTION.md) then passed a degree-16 discriminant and saved 4,554 additional exact operations. The next degree-24 obstruction remains unresolved. The latest tracked fast suite passes 627 tests, with two expensive tests ignored.
+Later affine preconditioning and configurable root certificates passed two discriminant bottlenecks. The latest [interval-certificate continuation](reference/INTERVAL_SOURCE_BUDGET_PRODUCTION.md) saved 6,422 further exact operations before its ten-minute timeout on a new factorization; Gluza33 remains incomplete. The tracked fast suite passes 633 tests, with two expensive tests ignored.
 
 The [final checkpoint](reference/FINAL_CHECKPOINT.md) separates verified original results, tested improvements and remaining research. No timeout or conditional chamber is counted as an original completion.
 
@@ -109,7 +109,7 @@ Current physics-guided research studies [CFF-informed kinematic chambers](refere
 
 The latest investigations identify [affine factorization preconditioning and exact root certificates for Gluza33](reference/GLUZA33_NEXT_INVESTIGATION.md), [graph-based coordinates with jointly quadratic insertion blocks](reference/CFF_PROJECTION_NEXT_INVESTIGATION.md), and [weighted Hermite queries for selected real roots](reference/PARAMETRIC_PROJECTION_NEXT_RESEARCH.md). These are bounded algebra experiments and proposed solver improvements; they add no original-problem completions or benchmark speedups.
 
-The [SubTropica follow-up](reference/TROPICAL_SUBTROPICA_RESEARCH.md) proposes joint scale-variable and linear-prefix ordering searches, distinguishing tropical subtraction from tropical sampling. The [quadratic-face experiment](reference/QUADRATIC_BLOCK_FACE_DIAGNOSTIC.md) measures exact stationary identities alongside ordinary block projection. Both retain coefficient-dependent thresholds and all interior zero boundaries; neither supplies a new complete GCAD algorithm.
+The [SubTropica review](reference/TROPICAL_SUBTROPICA_RESEARCH.md) proposes joint scale-variable and linear-prefix ordering searches. Its [sparse AM–GM follow-up](reference/TROPICAL_FOLLOWUP_RESEARCH.md) suggests exact positivity certificates, but the first [Gluza33 guard screen](reference/TROPICAL_CIRCUIT_SCREEN.md) found no new candidate within the proposed small-source budget. These remain research directions, preserving all interior zero boundaries.
 
 A [supplemental seeded sanity check](reference/SUPPLEMENTAL_SANITY.md) sampled two fresh interior points in each fixed A446 cell: all 8 cells, 16 exact F evaluations and 112 original-constraint checks passed. This check recomputes boundaries at each new prefix and is excluded from benchmark timings; it does not replace the coverage proof.
 

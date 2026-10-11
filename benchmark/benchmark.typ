@@ -104,8 +104,10 @@ with three fresh repetitions and identical orders. *±* means two separate sign-
   The integrated 8192-term witness option then passed that discriminant and saved 4554 further
   operations in a *300.058 s / 403 MiB* warm debug continuation. Its new degree-24 discriminant
   has two positive roots but four Descartes variations: a larger source cap alone is insufficient.
-  A separate exact interval cover constructed and factored 49 guards in *9.271 s / 32 MiB*;
-  its remaining projection is unmeasured. These probes add no original coverage.
+  An exact interval cover constructed and factored 49 guards in *9.271 s / 32 MiB*.
+  The integrated interval option passed that discriminant and saved 6422 further operations
+  in a *600.055 s / 364 MiB* warm debug trial, ending on a new factorization.
+  These incomplete probes add no original coverage or solved-time ratio.
 
   Measurements prefer verified three-repeat controls, otherwise the fastest accepted original-problem
   run. Builds are labelled. Cache tags mean cold (C), shared and possibly warm (S), or unrecorded (?).
@@ -210,8 +212,9 @@ with three fresh repetitions and identical orders. *±* means two separate sign-
   stages in 8.643 s; its 27 stationary-face identities replayed in 0.446 s. These have different
   proof obligations and are not a solver-speedup comparison. SubTropica suggests joint positive-scale
   and linear-prefix ordering proposals; a follow-up proposes exact sparse AM–GM certificates.
+  A first 21-factor Gluza33 support screen found no new candidate within its small-source budget.
   Neither tropical support nor stationary-face guards alone remove interior threshold sheets.
-  The latest tracked fast suite passed 627 tests, with zero failures and two expensive tests ignored.
+  The latest tracked fast suite passed 633 tests, with zero failures and two expensive tests ignored.
 
   #block(breakable: false)[
   == Reproduce and inspect
