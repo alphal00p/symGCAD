@@ -355,3 +355,52 @@ to propose a verified quadratic chart and legal order, retain all original
 kinematic chambers, and reduce the cost of identified projection obligations
 through exact algebra. Threshold information can prioritize charts or
 ordering trials; it cannot replace the root-ordering guards this note retains.
+
+## Executed final-axis applicability audit
+
+A subsequent bounded standalone Rust audit regenerates the authenticated
+graph chart's first two block levels and all final-alpha obligations. Exact
+mapped-polynomial comparison confirms the same **71 checked factors / 41,150
+terms** as the earlier experiment. The raw inventory matches the earlier
+**75-polynomial / 109,635-term** counts and both largest-output hashes; the
+complete earlier raw array was not saved for polynomial-by-polynomial replay.
+It uses cached ordinary Symbolica libraries; the earlier helper used a
+separate patched backend. This is an exact comparison, not a matched timing
+comparison between those builds.
+
+Three actual final-axis pairs admit smaller identities after exact
+parent-to-single-factor/content reconstruction:
+
+| Obligation | Original resultant terms | Smaller resultant terms | Complete factor-union replay |
+| --- | ---: | ---: | --- |
+| Endpoint 0 / discriminant | 728 | 87 | passes |
+| Endpoint 1 / discriminant | 708 | 88 | passes |
+| Opposite endpoints | 142 | 79 | passes |
+
+Every check retains signed operand ordering, content and actual-degree
+leading-coefficient powers, and independently compares the complete proposed
+projection basis against all 71 original factors. Negative powers are
+cross-multiplied. No unmatched pair or interior zero sheet is omitted.
+
+The sole worker times out at **60.024372 s / 95,104 KiB**, within its one-CPU,
+2-GiB limit, before classifying later families and the largest-output pairs.
+Repeated full-basis factor audits cost 6.743, 7.116 and 11.279 seconds for
+the three accepted candidates. These are validation costs, not optimized
+projection times. The 231 recorded resultant calls total 1.979 seconds;
+the largest 10,810- and 9,916-term outputs individually take 0.154, 0.139
+and 0.065 seconds. Large support alone does not identify the dominant time.
+The final factorization timer was not persisted before interruption and
+remains unavailable.
+
+Thus applicability extends to the final block axis, but the complete
+applicability scan, production dispatcher and original-coordinate restoration
+remain unfinished. No new decomposition or measured solver speedup follows.
+No further worker was launched. Evidence is retained under
+`artifacts/research/quadratic-final-axis-audit-01/`:
+
+| Record | SHA-256 |
+| --- | --- |
+| Report | `ac9e36c506f7f5d45fc2527007a627868f48860f1ecfd8420829fde64f5b7fe1` |
+| Process record | `62857af0c55eea78b6a507d35c4e583819d8db003be37fcab245ce483f0d728d` |
+| Complete operation inventory | `a41916201c4ea23a3efa03e77f0ad6a206a32c937d0be0fb1e64d4713ec352b2` |
+| Three exact replacement checks | `30d3ceb102e749db69cdadb2475c0df9cdff16a66ea9367498e296add2de69ae` |

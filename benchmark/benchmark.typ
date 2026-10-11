@@ -98,25 +98,21 @@ with three fresh repetitions and identical orders. *±* means two separate sign-
   an earlier 1650 MiB peak. Nine hash-bound continuation records are retained in the JSON.
   Interrupted algebra experiments and restricted-domain successes add no original coverage.
 
-  Further Gluza33 continuations use exact factor preconditioning and positive-ray certificates,
-  preserving every interior zero sheet. An isolated Wang-preflight patch factors a 2410-term
-  obstruction in *1.039 s*, versus a matched disabled-control timeout at *60.034 s*; the signed
-  product is exact. A broader pilot found no additional speedup, so this backend remains optional.
-  Production interval coalescence constructs a four-root cover with 97 guards / 109,726 terms
-  in *1.604 s*, with exact replay in *1.538 s*. An explicit 131,072-term allowance admits it;
-  the default remains 65,536. The subsequent warm original release trial still times out at
-  *600.126 s / 860 MiB*, at a different recorded prefix. There, a fresh global Descartes
-  certificate preserves three positive roots with 27 required guards / 22,436 terms,
-  including every original coefficient. Construction takes *0.060 s*, exact replay *0.026 s*.
-  It requires the existing source allowance to rise from 8192 to 32,768; finite template
-  stocks and proof obligations stay unchanged. The final original configuration trial still
-  times out: *300.101 s total / 638 MiB* (299.434 s worker), at the recorded quarter prefix.
-  A later exact source trace confirms both saved interval covers fail there and the
-  permanent two-template quota prevents new discovery. Four slots bypass this obstruction
-  and retain 1,094 new operations. The next continuation retains another 2,397, reaching
-  27,897 audited records, but times out at *600.096 s / 616 MiB* in a different factor call.
-  Gluza33 remains incomplete; partial algebra and certificate timings add no coverage
-  or solved-time ratio.
+  Further Gluza33 work preserves every interior zero sheet. Interval coalescence constructs
+  a four-root cover with 97 guards / 109,726 terms in *1.604 s*, with exact replay in *1.538 s*.
+  A source-specific trace identifies exhausted template stocks; four slots bypass that
+  obstruction. Subsequent bounded continuations retain 27,897 exact operations but remain incomplete.
+
+  The final factor experiment finds a parity obstruction to the chosen leading-coefficient
+  image test. A general, bounded lowest-degree-axis policy instead factors the captured
+  1731-term component in *0.280 s*, and its full 2867-term source in *1.951 s*; both signed
+  products reconstruct exactly. Same-binary default-axis and second-leading controls time
+  out at *30.033 s* and *60.021 s*. These are individual diagnostic observations, not median
+  solve ratios. All optional Wang images reject; the changed axis lets ordinary fallback
+  succeed. Generic admitted-policy regressions retain units, multiplicities and inactive
+  coordinates. The patch is optional and leaves the production dependency unchanged.
+  The final original campaign starts from the audited cache with 50 GiB and a shared
+  two-hour solve/verification budget. Its terminal outcome is recorded after completion.
 
   Measurements prefer verified three-repeat controls, otherwise the fastest accepted original-problem
   run. Builds are labelled. Cache tags mean cold (C), shared and possibly warm (S), or unrecorded (?).
@@ -216,8 +212,9 @@ with three fresh repetitions and identical orders. *±* means two separate sign-
   #text(font: "Libertinus Mono")[reference/POSITIVE_AXIS_ISOLATION_RESEARCH.md].
 
   *Projection research.* A graph-derived quadratic block completed three ordinary elimination
-  stages in 8.643 s; its 27 stationary-face identities replayed in 0.446 s. These have different
-  proof obligations and are not a solver-speedup comparison. A SubTropica-inspired anchor/order
+  stages in 8.643 s; its 27 stationary-face identities replayed in 0.446 s. A later final-axis
+  audit verifies three smaller-resultant identities preserving all 71 projection factors;
+  its full applicability scan times out at 60 s. No solver speedup is established. A SubTropica-inspired anchor/order
   probe completed 24 exact two-stage candidates in 3.945 s. Three shortlisted symbolic orders
   each timed out at 60 s: better prefix scores have not yielded new completions.
   A further eight candidates complete three linear stages in 2.638 s, producing 11 factors /

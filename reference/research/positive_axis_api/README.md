@@ -27,15 +27,23 @@ production patches for this experiment. Then, from the repository root:
 bash reference/research/positive_axis_api/setup.sh /absolute/new/replay
 ```
 
-The destination must not exist, and the symGCAD checkout must be clean. Setup
-uses local `git archive` at the checked-out symGCAD `HEAD` and Symbolica
-`75f8350094b90254ee71dc2a391fde0d14b0204a`, including Symbolica's pinned
-Numerica/Graphica sources. It requires a pristine active backend and checks
-the packaged hashes plus frozen Cargo manifest/lock and shared root/sign source
-hashes, then applies only these
-two research patches in the new tree, and records `REPLAY_PROVENANCE.txt`.
-It records the actual symGCAD revision, so no unpublished development commit
-is needed. There is no fetch, build, license printing, or mutation of the active checkout.
+The destination must not exist. Setup archives historical public symGCAD commit
+`2d1b630a1170e05d3fb276bd8bc8dd0464bda4ca`, whose exact source tree is
+`1e1cae62b867d7f84da47f3322309629811144f3`, and Symbolica
+`75f8350094b90254ee71dc2a391fde0d14b0204a`, including the pinned
+Numerica/Graphica sources. Its equivalent original local commit is accepted
+only with the same exact tree. A shallow clone missing both must first fetch
+the public commit from origin; setup itself does not fetch.
+
+This retains the historical Cargo manifest and lockfile, including their local
+backend paths. The current standalone public-Cargo packaging is deliberately
+not substituted into the old measurement. Setup checks the packaged hashes and
+the four unchanged frozen dependency/source hashes against that historical
+tree, requires a pristine active Symbolica checkout, then applies only the two
+research patches in the new tree. `REPLAY_PROVENANCE.txt` records the replay
+revision/tree and current packaging revision/hashes separately. Unrelated work
+in the active symGCAD checkout is never archived or changed. There is no build,
+license printing, or mutation of the active checkout.
 The helper imports the archived `src/roots/integer_sign.rs` directly and records
 its hash; no integer-sign implementation is duplicated.
 

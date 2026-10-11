@@ -959,8 +959,8 @@ fn main() -> Result<()> {
         "parallel must be in 1..=4"
     );
     ensure!(
-        args.campaign_secs.is_finite() && args.campaign_secs > 0.0 && args.campaign_secs <= 3600.0,
-        "campaign duration must be in (0,3600]"
+        args.campaign_secs.is_finite() && args.campaign_secs > 0.0 && args.campaign_secs <= 7200.0,
+        "campaign duration must be in (0,7200]"
     );
     ensure!(
         args.initial_secs.is_finite()

@@ -63,6 +63,11 @@ normal dependency checkout unchanged. These experimental APIs do not change
 production cell boundaries or the published corpus completion count; see the
 [measurement record](../reference/POSITIVE_AXIS_ISOLATION_RESEARCH.md).
 
+The separate [factorization main-axis experiment](../reference/GLUZA33_FINAL_FACTOR_PUSH.md#reproducing-the-optional-backend)
+also provides a replayable, default-off backend patch and isolated worktree
+commands. It retains the ordinary Symbolica checkout and is not required for
+production setup or the published baseline benchmarks.
+
 ## Optional graph input from FastSecDec
 
 ```sh

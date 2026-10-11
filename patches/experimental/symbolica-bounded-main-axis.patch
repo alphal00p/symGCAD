@@ -1,0 +1,261 @@
+--- a/src/poly/factor.rs
++++ b/src/poly/factor.rs
+@@ -29,6 +29,10 @@
+     tensors::matrix::Vector,
+ };
+ 
++#[cfg(feature = "research_small_lcoeff_wang")]
++#[path = "research_main_axis.rs"]
++mod research_main_axis;
++
+ use super::{
+     LexOrder, PositiveExponent,
+     gcd::{MAX_RNG_PREFACTOR, POW_CACHE_SIZE, PolynomialGCD},
+@@ -4804,7 +4808,30 @@
+ 
+                     let mut order: Vec<_> = order.into_iter().map(|(v, _)| v).collect();
+                     let bivariate_fallback_order = order.clone();
+-                    let reordered_for_sparse_univariate =
++                    // Optional research policy changes only this heuristic.
++                    // All existing primitive/content, degree, square-free,
++                    // leading-assignment and exact factor checks remain below.
++                    #[cfg(feature = "research_small_lcoeff_wang")]
++                    let research_reordered = std::env::var("SYMBOLICA_RESEARCH_FACTOR_MAIN_AXIS")
++                        .ok()
++                        .is_some_and(|policy| {
++                            let original = order.clone();
++                            let changed = research_main_axis::select(
++                                &policy,
++                                f.nterms(),
++                                &degrees,
++                                &lcoeff_length,
++                                f.coefficients.iter().map(|c| c.significant_bits()).max().unwrap_or(0),
++                                &mut order,
++                            );
++                            if changed && std::env::var_os("SYMBOLICA_RESEARCH_WANG_TRACE").is_some() {
++                                eprintln!("research-main-axis policy={policy} source_terms={} degrees={degrees:?} leading_terms={lcoeff_length:?} original={original:?} selected={order:?}", f.nterms());
++                            }
++                            changed
++                        });
++                    #[cfg(not(feature = "research_small_lcoeff_wang"))]
++                    let research_reordered = false;
++                    let reordered_for_sparse_univariate = !research_reordered &&
+                         reorder_integer_factor_variables_for_sparse_univariate(
+                             integer_factor_start_mode() == IntegerFactorStart::Auto,
+                             f.nterms(),
+--- /dev/null
++++ b/src/poly/research_main_axis.rs
+@@ -0,0 +1,213 @@
++//! Optional research-only bounded main-axis selection. This changes a heuristic,
++//! never factorization hypotheses, source coordinates or a returned factor.
++
++pub(crate) fn select(
++    policy: &str,
++    terms: usize,
++    degrees: &[usize],
++    leading_terms: &[usize],
++    coefficient_bits: u64,
++    order: &mut [usize],
++) -> bool {
++    if !matches!(policy, "lowest-degree" | "second-leading")
++        || !(256..=8192).contains(&terms)
++        || degrees.len() != leading_terms.len()
++        || degrees.len() > 64
++        || coefficient_bits > 8192
++        || order.len() != 3
++        || degrees.iter().filter(|&&degree| degree > 0).count() != order.len()
++        || order.iter().enumerate().any(|(i, &axis)| {
++            axis >= degrees.len()
++                || !(3..=32).contains(&degrees[axis])
++                || order[..i].contains(&axis)
++                || leading_terms[axis] == 0
++        })
++    {
++        return false;
++    }
++    let mut candidates = order.to_vec();
++    let chosen = if policy == "lowest-degree" {
++        candidates.sort_by_key(|&axis| (degrees[axis], leading_terms[axis], axis));
++        candidates[0]
++    } else {
++        candidates
++            .sort_by_key(|&axis| (leading_terms[axis], std::cmp::Reverse(degrees[axis]), axis));
++        candidates[1]
++    };
++    let position = order.iter().position(|&axis| axis == chosen).unwrap();
++    if position == 0 {
++        return false;
++    }
++    // Keep every axis once, and preserve the relative order of the other axes.
++    order[..=position].rotate_right(1);
++    true
++}
++
++#[cfg(test)]
++mod tests {
++    use super::select;
++
++    #[test]
++    fn policies_are_generic_and_preserve_full_map_indices() {
++        let degrees = [0, 15, 0, 9, 6, 0];
++        let leading = [0, 4, 0, 12, 40, 0];
++        let mut order = [1, 3, 4];
++        assert!(select(
++            "lowest-degree",
++            900,
++            &degrees,
++            &leading,
++            50,
++            &mut order
++        ));
++        assert_eq!(order, [4, 1, 3]);
++        order = [1, 3, 4];
++        assert!(select(
++            "second-leading",
++            900,
++            &degrees,
++            &leading,
++            50,
++            &mut order
++        ));
++        assert_eq!(order, [3, 1, 4]);
++    }
++
++    #[test]
++    fn admission_declines_without_changing_order() {
++        for (policy, terms, degrees, leading, bits, initial) in [
++            (
++                "unset",
++                900,
++                vec![15, 9, 6],
++                vec![4, 12, 40],
++                50,
++                vec![0, 1, 2],
++            ),
++            (
++                "lowest-degree",
++                255,
++                vec![15, 9, 6],
++                vec![4, 12, 40],
++                50,
++                vec![0, 1, 2],
++            ),
++            (
++                "lowest-degree",
++                8193,
++                vec![15, 9, 6],
++                vec![4, 12, 40],
++                50,
++                vec![0, 1, 2],
++            ),
++            (
++                "lowest-degree",
++                900,
++                vec![33, 9, 6],
++                vec![4, 12, 40],
++                50,
++                vec![0, 1, 2],
++            ),
++            (
++                "lowest-degree",
++                900,
++                vec![15, 2, 6],
++                vec![4, 12, 40],
++                50,
++                vec![0, 1, 2],
++            ),
++            (
++                "lowest-degree",
++                900,
++                vec![15, 9, 6],
++                vec![4, 12, 40],
++                8193,
++                vec![0, 1, 2],
++            ),
++            (
++                "lowest-degree",
++                900,
++                vec![15, 9, 6],
++                vec![4, 12],
++                50,
++                vec![0, 1, 2],
++            ),
++            (
++                "lowest-degree",
++                900,
++                vec![15, 9, 6],
++                vec![4, 12, 40],
++                50,
++                vec![0, 1, 1],
++            ),
++            (
++                "lowest-degree",
++                900,
++                vec![15, 9, 6],
++                vec![4, 12, 40],
++                50,
++                vec![0, 1, 3],
++            ),
++            (
++                "lowest-degree",
++                900,
++                vec![15, 9, 6],
++                vec![4, 12, 40],
++                50,
++                vec![0, 1],
++            ),
++            (
++                "lowest-degree",
++                900,
++                vec![15, 9, 6, 3],
++                vec![4, 12, 40, 3],
++                50,
++                vec![0, 1, 2],
++            ),
++            (
++                "lowest-degree",
++                900,
++                vec![15, 9, 6],
++                vec![4, 12, 0],
++                50,
++                vec![0, 1, 2],
++            ),
++        ] {
++            let mut order = initial.clone();
++            assert!(!select(policy, terms, &degrees, &leading, bits, &mut order));
++            assert_eq!(order, initial);
++        }
++    }
++
++    #[test]
++    fn ties_and_already_selected_axis_are_stable() {
++        let mut order = [0, 1, 2];
++        assert!(!select(
++            "lowest-degree",
++            256,
++            &[6, 6, 6],
++            &[4, 4, 4],
++            8192,
++            &mut order
++        ));
++        assert_eq!(order, [0, 1, 2]);
++        assert!(select(
++            "second-leading",
++            8192,
++            &[6, 6, 6],
++            &[4, 4, 4],
++            8192,
++            &mut order
++        ));
++        assert_eq!(order, [1, 0, 2]);
++        assert!(!select(
++            "second-leading",
++            8192,
++            &[6, 6, 6],
++            &[4, 4, 4],
++            8192,
++            &mut order
++        ));
++        assert_eq!(order, [1, 0, 2]);
++    }
++}

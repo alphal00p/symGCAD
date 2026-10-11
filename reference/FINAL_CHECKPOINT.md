@@ -4,6 +4,31 @@ This records the requested handoff, not completion of the all-cases objective.
 The reproducible solver, original-corpus measurements and research diagnostics
 have different scopes.
 
+The exhaustive [root handoff](../HANDOFF.md) brings together the implementation,
+full investigation history, counterexamples, reproduction instructions and
+remaining research directions, including CFF, tropical methods and SOFIA.
+
+## Implemented and usable
+
+- Rust library and TOML CLI for normalization, projection, solving, ordering,
+  verification and benchmark campaigns, using Symbolica exact algebra.
+- Baseline generic projection/lifting, rational samples, algebraic root
+  boundaries, explicit exceptional sets and replayable coverage evidence.
+- Exact algebra/checkpoint reuse, certified positivity and homogeneity
+  reductions, conditional linear/quadratic reductions, and experimental local
+  projection. Interior zero sheets remain required, including same-sign seams.
+- Bounded heuristic and MCTS ordering, process-enforced resource limits,
+  restart records, and separate fast/slow test execution.
+- Pinned Nix/dependency setup, native-GCAD comparison adapter, per-problem
+  Typst/PDF benchmarks, and independent supplemental interior-point checks.
+- FastSecDec graph-bundle interoperability with native U/F and an explicit
+  edge-to-parameter map. Numerical integration and the full no-deformation
+  pipeline are not implemented.
+
+Experimental options and optional dependency patches remain explicitly
+identified. The baseline phase-time comparison, isolated algebra experiments
+and full original-problem completions are not interchangeable measurements.
+
 ## Verified original problems
 
 | Corpus | Verified | Unresolved |
@@ -161,7 +186,18 @@ audited records. It still produces no complete result or verification and
 stops during a different factorization. The earlier pending factor completes
 in 0.076 seconds on resumption, illustrating why a deadline capture alone
 does not identify a slow algebra operation. The newest captured source has
-2,867 terms and three active variables; further factorization work remains.
+2,867 terms and three active variables.
+
+The [final main-axis experiment](GLUZA33_FINAL_FACTOR_PUSH.md) clears that
+captured factorization. A general bounded lowest-degree-axis heuristic factors
+its 1,731-term square-free component in **0.280 seconds**, and the complete
+2,867-term source in **1.951 seconds**, with independent signed reconstruction.
+A same-binary default-axis component control times out at 30.033 seconds;
+the second-leading alternative times out at 60.021 seconds. These are single
+diagnostic observations. All optional Wang candidates reject; the successful
+route is the changed axis and ordinary native fallback. Generic admitted
+controls preserve rational units, multiplicities and inactive map entries.
+The separately replayable patch remains optional, leaving production unchanged.
 
 ## Validation and performance evidence
 
@@ -218,7 +254,11 @@ prefix decomposition, boundary ordering and original-coordinate restoration
 are unresolved. The [ordered quadratic identities](QUADRATIC_FLAG_IDENTITIES_RESEARCH.md)
 give a counterexample to stationary-face sufficiency and a narrower exact
 route through smaller resultants; eighteen Symbolica identity checks pass,
-but the production dispatcher is unimplemented. The [SubTropica review](TROPICAL_SUBTROPICA_RESEARCH.md)
+but the production dispatcher is unimplemented. A final-axis audit additionally
+replays three applicable smaller-resultant identities, retaining the exact
+71-factor projection basis. Its full applicability scan times out at 60 seconds;
+the remaining largest pairs are inconclusive and no solver speedup is measured.
+The [SubTropica review](TROPICAL_SUBTROPICA_RESEARCH.md)
 recommends joint scale-variable and short linear-prefix ordering proposals.
 The [implemented diagnostic](LINEAR_PREFIX_RESEARCH.md) completed all 24
 two-stage candidates across three symbolic families in 3.945 seconds. It

@@ -98,9 +98,12 @@ it separately from the algorithm patch when proposing an upstream change.
 
 Both patches apply to Symbolica
 `75f8350094b90254ee71dc2a391fde0d14b0204a`, without optional root-isolation
-patches. Apply them only to an isolated checkout. Point an isolated copy of the
-symGCAD manifest at it, retain the pinned local `numerica`/`graphica` patches,
-and add Symbolica feature `research_small_lcoeff_wang`. Use a separate Cargo
+patches. Apply them only to an isolated checkout. Select it with
+[`scripts/use-local-symbolica.sh`](../scripts/use-local-symbolica.sh), passing
+the isolated symGCAD manifest and backend directory. Run `cargo metadata
+--format-version 1` in that isolated copy to refresh its lockfile and confirm
+all three backend package paths; applying patches alone does not redirect
+the default public Cargo pins. Add Symbolica feature `research_small_lcoeff_wang`. Use a separate Cargo
 target directory. The algorithm also requires environment flag
 `SYMBOLICA_RESEARCH_SMALL_LC_WANG=1`; leaving it absent selects the control.
 `SYMBOLICA_RESEARCH_WANG_TRACE=1` enables diagnostic stage events.

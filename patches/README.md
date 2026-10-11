@@ -1,5 +1,11 @@
 # Symbolica patches for escalation
 
+The separate [main-axis experiment](../reference/GLUZA33_FINAL_FACTOR_PUSH.md)
+adds `experimental/symbolica-bounded-main-axis.patch` after the bounded-Wang
+patch. It changes the factorization variable heuristic for bounded sparse
+three-variable inputs, retaining exact backend acceptance checks. The note
+provides isolated setup, signed reconstruction controls and default-off flags.
+
 The separate [bounded Wang experiment](../reference/GLUZA33_WANG_PREFLIGHT.md)
 provides two optional patches under `experimental/`: a factorization policy and
 an unrelated test-feature fix. They are **not** applied by bootstrap or enabled
