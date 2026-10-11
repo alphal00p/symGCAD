@@ -26,7 +26,17 @@ scripts/bootstrap-deps.sh --check --apply-patches
 
 Application is idempotent. Already-applied fixes are recognized and the complete source diff must match those fixes exactly. The direct linear-resultant identities in the solver and research helper work with both pristine and patched dependencies; they do not apply an extra correction to a backend result. The bootstrap never removes applied patches; preserve a separate pristine checkout for reproducing historical measurements. [Patch descriptions and regression commands](../patches/README.md) identify the exact changes. Check the current source state without changing it with `scripts/bootstrap-deps.sh --check`.
 
-Bootstrap fetches detached checkouts from `PROVENANCE.toml` and rejects a different revision or unrelated changes without resetting them. Applying patches there does **not** alter the default Cargo build. Run the patch regressions in that checkout as documented, or use a separate symGCAD working copy whose three root patch entries explicitly point to `DO_NOT_PUSH_REFERENCES/symbolica`, `DO_NOT_PUSH_REFERENCES/symbolica/lib/numerica` and `DO_NOT_PUSH_REFERENCES/symbolica/lib/graphica`. Retain the original public pins and lockfile for unmodified standalone builds.
+Bootstrap fetches detached checkouts from `PROVENANCE.toml` and rejects a different revision or unrelated changes without resetting them. Applying patches there does **not** alter the default Cargo build. Run the patch regressions in that checkout as documented, or select it explicitly in an isolated symGCAD working copy:
+
+```sh
+# Run inside the isolated copy after bootstrapping/applying the desired patches.
+scripts/use-local-symbolica.sh "$PWD/Cargo.toml" "$PWD/DO_NOT_PUSH_REFERENCES/symbolica"
+cargo metadata --format-version 1 > local-backend-metadata.json
+cargo tree -i symbolica
+cargo build --release --locked
+```
+
+The selector changes only the three root patch entries. Inspect metadata to confirm that Symbolica, Numerica and Graphica all resolve to the chosen checkout. Metadata refreshes the isolated lockfile while retaining the existing dependency versions; use `--offline` when all packages are cached. Avoid `cargo update` for this step because it can reselect transitive versions. Retain the normal public pins and lockfile for unmodified standalone builds. Historical replay packages retain their own authenticated source revisions and setup commands.
 
 ## Independent upstream GCAD comparison
 

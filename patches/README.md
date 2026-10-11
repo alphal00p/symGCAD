@@ -18,6 +18,10 @@ Fetch the pinned dependencies and apply both fixes with
 changing files. The default bootstrap leaves sources pristine, matching the
 recorded release benchmarks. Numerica lives in the pinned Symbolica monorepo.
 See [setup instructions](../docs/SETUP.md) for exact revisions and prerequisites.
+Cargo's ordinary public pins do not use these optional checkouts. For a modified
+symGCAD build, select all three local packages in an isolated working copy with
+[`scripts/use-local-symbolica.sh`](../scripts/use-local-symbolica.sh), then
+refresh its lock through `cargo metadata` as described in setup.
 
 `symbolica-linear-resultant-sign.patch` targets the local Symbolica revision
 `75f8350094b90254ee71dc2a391fde0d14b0204a` (`symbolica-v3.0.1-1-g75f83500`).
