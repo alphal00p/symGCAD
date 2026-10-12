@@ -1,0 +1,26 @@
+{
+ "comment": "Operand selection of the reported campaign (scripts/build_manifest.py). Large capture paths are relative to --captures-root (default: the repository root; they live in the ignored artifacts/ tree of the original checkout). Harvest problems refer to harvest/inputs/<problem>.toml.",
+ "large": [
+  {"id": "g33-disc2", "capture": "artifacts/research/claude-2026-10-12/critique/exp/disc2_capture.json", "description": "Gluza33 critique disc2 (1 parameter)"},
+  {"id": "g33-disc1", "capture": "artifacts/research/claude-2026-10-12/flint-bench/captures/critique-disc1.json", "description": "Gluza33 critique disc1 (2 parameters)"},
+  {"id": "g33-disc3", "capture": "artifacts/research/claude-2026-10-12/flint-bench/captures/critique-disc3.json", "description": "Gluza33 critique disc3 (1 parameter)"},
+  {"id": "g33-disc4", "capture": "artifacts/research/claude-2026-10-12/flint-bench/captures/critique-disc4.json", "description": "Gluza33 critique disc4 (1 parameter, interpolation declines)"},
+  {"id": "g33-final-stalled", "capture": "artifacts/research/gluza33-final-main-axis-campaign-01/campaign/initial-x0-0/capture/active-3939377.json", "description": "Gluza33 final main-axis campaign: resultant in progress at the deadline"},
+  {"id": "a317-pair", "capture": "artifacts/research/symbolic-witnesses-05/a317/capture/active-100421.json", "description": "symbolic A317 pair resultant"},
+  {"id": "a318-pair", "capture": "artifacts/research/symbolic-witnesses-05/a318/capture/active-100420.json", "description": "symbolic A318 pair resultant"}
+ ],
+ "large_glob": {"pattern": "artifacts/slow-suite-second-wave-diagnostic-01/a377-captures/*.json", "id_prefix": "a377-", "description": "symbolic A377 pair resultant in x0 (s,t remain)"},
+ "large_after_glob": [
+  {"id": "a377-ac6f3048ce62", "capture": "artifacts/research/a377-segmentation-warm-hour-01/ac6f3048ce62-capture-v2.json", "description": "symbolic A377 pair resultant (largest, 3041.8 s historical ordinary backend)"}
+ ],
+ "a377_full_alternatives": ["a377-7b0a2b721fd6", "a377-cc41b49c69bd", "a377-2084c3ad850e", "a377-87adaef31346"],
+ "harvest": {
+  "g33D": {"description": "Gluza33 base {d>0}, optimized engine", "timeout_seconds": 900, "quotas": {"resultant": 5, "discriminant": 3, "factor": 5}},
+  "g30base": {"description": "positive Gluza30 two-fiber ladder base", "timeout_seconds": 900, "quotas": {"resultant": 6, "discriminant": 4, "factor": 6}},
+  "fixedA377": {"description": "fixed ZZ finiteA_6_377 (mt2=1,mz2=5/18,s=10,t=-3)", "timeout_seconds": 900, "quotas": {"resultant": 6, "discriminant": 4, "factor": 6}},
+  "symA5_31": {"description": "symbolic ZZ finiteA_5_31 (s,t symbolic)", "timeout_seconds": 1200, "quotas": {"resultant": 6, "discriminant": 4, "factor": 6}},
+  "g33S2": {"description": "Gluza33 base S2 {a<0,d>0; split b,c}", "timeout_seconds": 1500, "quotas": {"resultant": 20, "discriminant": 8, "factor": 14}},
+  "symA317": {"description": "symbolic ZZ finiteA_6_317 (s,t symbolic)", "timeout_seconds": 900, "quotas": {"resultant": 10, "discriminant": 5, "factor": 5}}
+ },
+ "gcd_from_largest_factors": 24
+}

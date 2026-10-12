@@ -1,0 +1,32 @@
+{
+ "comment": "Reproduction subset (scripts/reproduce_subset.sh): every operation kind and every size class the campaign measured, plus one interpolation image and two small parametric (symbolic s,t) operands that the campaign snapshot had not reached. 'ids' are timed; 'derive_only' are parents materialized only to regenerate a derived operand. Expected wall time with two workers: about 15 minutes.",
+ "ids": [
+  "g33D-res-01-1715cd542f",
+  "g30base-res-05-e62c63f5e6",
+  "fixedA377-res-00-c3f6f2e500",
+  "g33S2-res-02-41f64e7684",
+  "g30base-dis-07-c740dd2c56",
+  "g33D-dis-06-ded86df791",
+  "fixedA377-dis-06-0b154e382f",
+  "g33S2-dis-25-cc11b6eb47",
+  "g33S2-dis-24-398386d3e8",
+  "g30base-fac-14-45bf0db98e",
+  "g33D-fac-11-d2c3440e52",
+  "fixedA377-fac-12-09df769d8f",
+  "g33S2-fac-38-fd912ec349",
+  "g33S2-fac-41-a2d1fd70cf",
+  "g33S2-fac-35-b4319ee36c",
+  "g33S2-fac-28-3a75cafd52",
+  "g33D-fac-11-d2c3440e52-gcd",
+  "g33S2-fac-41-a2d1fd70cf-gcd",
+  "g33S2-fac-38-fd912ec349-gcd",
+  "g33S2-fac-35-b4319ee36c-gcd",
+  "g33S2-fac-28-3a75cafd52-gcd",
+  "g33S2-dis-24-398386d3e8-segenc",
+  "g33S2-res-02-41f64e7684-segenc",
+  "g33-disc2-interpimg",
+  "symA5_31-res-05-134dc9324f",
+  "symA5_31-dis-09-fc30170f80"
+ ],
+ "derive_only": ["g33-disc2"]
+}

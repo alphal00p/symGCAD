@@ -1,0 +1,36 @@
+{
+ "requested": 26,
+ "counts": {
+  "decompressed": 19,
+  "derived": 8
+ },
+ "status": {
+  "g33D-res-01-1715cd542f": "decompressed",
+  "g30base-res-05-e62c63f5e6": "decompressed",
+  "fixedA377-res-00-c3f6f2e500": "decompressed",
+  "g33S2-res-02-41f64e7684": "decompressed",
+  "g30base-dis-07-c740dd2c56": "decompressed",
+  "g33D-dis-06-ded86df791": "decompressed",
+  "fixedA377-dis-06-0b154e382f": "decompressed",
+  "g33S2-dis-25-cc11b6eb47": "decompressed",
+  "g33S2-dis-24-398386d3e8": "decompressed",
+  "g30base-fac-14-45bf0db98e": "decompressed",
+  "g33D-fac-11-d2c3440e52": "decompressed",
+  "fixedA377-fac-12-09df769d8f": "decompressed",
+  "g33S2-fac-38-fd912ec349": "decompressed",
+  "g33S2-fac-41-a2d1fd70cf": "decompressed",
+  "g33S2-fac-35-b4319ee36c": "decompressed",
+  "g33S2-fac-28-3a75cafd52": "decompressed",
+  "g33D-fac-11-d2c3440e52-gcd": "derived",
+  "g33S2-fac-41-a2d1fd70cf-gcd": "derived",
+  "g33S2-fac-38-fd912ec349-gcd": "derived",
+  "g33S2-fac-35-b4319ee36c-gcd": "derived",
+  "g33S2-fac-28-3a75cafd52-gcd": "derived",
+  "g33S2-dis-24-398386d3e8-segenc": "derived",
+  "g33S2-res-02-41f64e7684-segenc": "derived",
+  "g33-disc2": "decompressed",
+  "g33-disc2-interpimg": "derived",
+  "symA5_31-res-05-134dc9324f": "decompressed",
+  "symA5_31-dis-09-fc30170f80": "decompressed"
+ }
+}
