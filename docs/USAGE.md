@@ -192,3 +192,13 @@ The exact chosen options are serialized with each `DomainCertificate` and
 checked again by `verify_certificate`. Verification can perform the same costly
 exact arithmetic; lowering a stored allowance can make replay fail. A bounded
 discovery miss remains inconclusive and is never a sign or zero certificate.
+
+## Explicit long-running solves
+
+A caller may explicitly set `limits.wall_time_secs` to any finite positive value
+up to 18,000 seconds (five hours). The default remains 3,600 seconds. The same
+ceiling bounds campaign solve and verification allowances; existing memory,
+worker and cell limits are unchanged. A separate caller-owned hard deadline
+should leave time for saving and verifying a result. Increasing the admission
+ceiling does not make eager native algebra cooperatively interruptible or turn
+a partial result into a complete verified decomposition.
