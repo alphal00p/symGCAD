@@ -337,9 +337,29 @@ Effects and limits of these changes:
   needs 308,993 nodes in 13.5 s (616,404 nodes in 24.4 s before), against
   249,574 nodes in 11.4 s when the budget does not bind; stable samples alone
   are incomplete after 60 s.
+* The early break is a trade-off, not a dominant policy. On 200 problems with
+  randomized discovery options (batch, subtree reuse, witnesses) and the same
+  tiny budget, finishing every round despite refusals needed 180,591 nodes on
+  the 184 seeds all variants complete versus 297,736 with the early break
+  (190 versus 185 completions within 20 s; stable alone 450,799), but it was
+  2.07x slower on B6_469. Falling back to the batch thresholds even when
+  `local_batch_siblings = false` gave 217,307 there and matched the early
+  break elsewhere. The committed rule (after a refusal behave exactly like the
+  configured non-retaining discovery) keeps retention within 1.10x of stable
+  samples on every measured seed; budgets at realistic sizes were only
+  observed to bind on B6_469 and the Gluza33 pieces.
+* Gluza33 region pieces (plain options plus stable samples, 30 min each,
+  final budget, one core; inputs `Ppm`/`Ppp` in the research directory):
+  retention does not change the outcome, neither completes. `Ppm`: stable
+  samples alone 12,798,020 nodes, with retention 1,381,853 nodes, 322,104
+  reuses and a binding budget (peak 524,288, 4,161 refusals, 1.11 GB RSS);
+  both are still at the same `x7` sample 1/1835008 with about 1,670 base
+  cuts. `Ppp`: stable samples alone 5,804,029 nodes reached `x7 = 3/2`;
+  with retention 774,046 nodes by 202 s, then the remaining time in one
+  projection at `x7 = 2/3, x2 = 257`.
 
-Remaining root cause for the Gluza33 region pieces: with retention the plain
-`R+-` piece leaves its first `x7` sector, but the level-1 (`x2`) stacks hold
+Remaining root cause for the Gluza33 region pieces: with unbudgeted retention the plain
+`R+-` piece left its first `x7` sector, but the level-1 (`x2`) stacks hold
 263-355 cuts (777 with Descartes witnesses/intervals), one level-1 projection
 returned 2,580 new base cuts, and single level-1 discriminants of bivariate
 cuts of degree about 40 in `x2` (about 1,000 terms) run for more than 25 min.

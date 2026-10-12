@@ -74,7 +74,8 @@ pub struct ThrashReport {
     pub guard_stop_additions_by_origin: BTreeMap<String, usize>,
     /// Distinct registry cuts by their origin label at their first addition.
     pub distinct_additions_by_origin: BTreeMap<String, usize>,
-    /// Completed children discarded by a restart, with their cell counts.
+    /// Completed children of restarted rounds that were not kept for reuse
+    /// (retention off, or declined by the pool), with their cell counts.
     pub discarded_completed_children: usize,
     pub discarded_completed_cells: usize,
     /// Of restarted-round samples: identical to an earlier round's sample at
