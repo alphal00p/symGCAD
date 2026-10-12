@@ -19,8 +19,19 @@ fn colleague_a381_point_has_complete_verified_coverage_for_both_signs() {
     assert_eq!(result.order, problem.solver.order);
     assert_eq!(result.problem.parameters, parameters);
     assert_eq!(result.cells.len(), 836);
-    assert!(result.cells.iter().any(|cell| cell.signs == [-1]));
-    assert!(result.cells.iter().any(|cell| cell.signs == [1]));
+    // The documented split: 158 cells with F<0 and 678 with F>0.
+    assert_eq!(
+        result
+            .cells
+            .iter()
+            .filter(|cell| cell.signs == [-1])
+            .count(),
+        158
+    );
+    assert_eq!(
+        result.cells.iter().filter(|cell| cell.signs == [1]).count(),
+        678
+    );
     assert_eq!(result.statistics.search_seconds, 0.0);
 
     let reduced = &result.homogeneous.as_ref().unwrap().reduced;
