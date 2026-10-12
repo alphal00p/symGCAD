@@ -17,8 +17,15 @@
 //!   gives lower/u_lower <= upper/u_upper, hence lower>0 => upper>0 and
 //!   upper<0 => lower<0.
 //! * `GlobalSign`: a whole-box strict sign certificate for one atom.
-//! * The separator G: Delta = m*G^2 with m>0 (so Delta>0 wherever G!=0), or
-//!   G = Delta itself.
+//! * The separator G: Delta = m*G^2 with m>0 (so Delta>0 wherever G!=0),
+//!   Delta = -m*G^2 with m>0 (Delta<0 wherever G!=0), or G = Delta itself.
+//!
+//! An identically zero b, c or d has no zero set inside the open quadrant to
+//! respect, and its term never changes sign there: for y>0, a*y+0 has the sign
+//! of a, c*y+0 that of c, and 0*y+d that of d. The fiber table therefore uses
+//! the strict sign of that partner atom for the zero coefficient. Zero atoms
+//! carry no premise, condition or split. An identically zero a or Delta is
+//! declined.
 //!
 //! The verifier never trusts the planner. It checks, by a truth table over all
 //! strict sign vectors of the five atoms that are consistent with the replayed
@@ -26,6 +33,9 @@
 //! every piece leaf determines the fiber table, and that every empty claim is
 //! contradictory or has an all-negative coefficient pattern (empty fiber).
 //! Atom zero sets are retained as exceptional seams.
+//!
+//! The planner objective only selects among valid plans: the verifier accepts
+//! every plan that passes the checks above, whichever objective produced it.
 use crate::{
     Problem,
     algebra::{Poly, rational},
@@ -110,8 +120,21 @@ pub enum SignPremise {
 pub enum Separator {
     /// b*c - a*d == multiplier*square^2 with multiplier > 0, G = square.
     Square { multiplier: String, square: String },
+    /// b*c - a*d == -multiplier*square^2 with multiplier > 0, G = square.
+    NegativeSquare { multiplier: String, square: String },
     /// G = b*c - a*d itself.
     Delta { polynomial: String },
+}
+
+impl Separator {
+    /// The sign of Delta wherever G != 0, or 0 when G is Delta itself.
+    fn delta_sign(&self) -> i8 {
+        match self {
+            Separator::Square { .. } => 1,
+            Separator::NegativeSquare { .. } => -1,
+            Separator::Delta { .. } => 0,
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -153,6 +176,41 @@ pub struct BilinearGeneralEvidence {
     pub plan: BilinearGeneralPlan,
     /// One complete base result per piece, in plan order.
     pub bases: Vec<SolveResult>,
+}
+
+/// How the pieces of a result were executed (see [`PieceTimings`]).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Execution {
+    /// Planning, every piece solve and assembly ran in this process, one
+    /// after another: `Statistics::total_seconds` is their elapsed wall time.
+    #[default]
+    Sequential,
+    /// The pieces were solved by other processes, possibly concurrently.
+    /// `Statistics::total_seconds` and the phase timings then cover only the
+    /// assembling process; no end-to-end elapsed time is known.
+    SeparateProcesses,
+}
+
+/// Wall-time report of a bilinear_general result. Like every timing it is a
+/// report, not evidence, and it is not verified. Planning, piece solves and
+/// assembly stay distinct (HANDOFF failure mode 10).
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PieceTimings {
+    pub execution: Execution,
+    /// Planning wall time as recorded by the planning process.
+    pub planning_seconds: f64,
+    /// Each returned piece result's own `total_seconds`, in plan order.
+    pub piece_seconds: Vec<f64>,
+    /// Sum of `piece_seconds`: the sequential-equivalent piece time. This is
+    /// not elapsed time when the pieces ran concurrently.
+    pub piece_seconds_sum: f64,
+    /// Largest entry of `piece_seconds`.
+    pub piece_seconds_max: f64,
+    /// Plan replay, piece-problem re-derivation, restoration and merging in
+    /// the assembling process.
+    pub assembly_seconds: f64,
 }
 
 fn positive_axis(p: &Poly) -> Option<usize> {
@@ -210,11 +268,21 @@ fn polynomial_cap(p: &Poly) -> Result<()> {
     Ok(())
 }
 
-fn product_cap(pairs: &[(&Poly, &Poly)]) -> Result<()> {
+/// Term-product budget of one exact product step.
+const PRODUCT_CAP: usize = 4_000_000;
+
+fn within_product_cap(pairs: &[(&Poly, &Poly)], cap: usize) -> bool {
     let total = pairs.iter().fold(0usize, |acc, (p, q)| {
         acc.saturating_add(p.nterms().saturating_mul(q.nterms()))
     });
-    ensure!(total <= 4_000_000, "bilinear general product cap exceeded");
+    total <= cap
+}
+
+fn product_cap(pairs: &[(&Poly, &Poly)]) -> Result<()> {
+    ensure!(
+        within_product_cap(pairs, PRODUCT_CAP),
+        "bilinear general product cap exceeded"
+    );
     Ok(())
 }
 
@@ -271,12 +339,10 @@ fn input(problem: &Problem) -> Result<Input> {
         !a.is_zero(),
         "identically zero x*y coefficient a is outside the bilinear general rule"
     );
-    ensure!(
-        !b.is_zero() && !c.is_zero() && !d.is_zero(),
-        "identically zero b, c, or d is outside the bilinear general rule"
-    );
     product_cap(&[(&b, &c), (&a, &d)])?;
     let delta = &(&b * &c) - &(&a * &d);
+    // Also excludes c and d vanishing together (F=x*(a*y+b)) and b, d
+    // vanishing together (F=y*(a*x+c)), so every zero alias is nonzero.
     ensure!(
         !delta.is_zero(),
         "identically zero Delta=b*c-a*d is outside the bilinear general rule"
@@ -333,19 +399,42 @@ fn check_time(problem: &Problem, started: Option<Instant>) -> Result<()> {
 
 type Facts = [i8; 5];
 
+/// The partner whose strict sign an identically zero coefficient takes on the
+/// open quadrant y>0: a*y+0 has the sign of a, c*y+0 that of c and 0*y+d that
+/// of d. `input` declines a=0 and Delta=0, so no partner is itself zero.
+fn zero_aliases(coefficients: &[Poly; 4]) -> [Option<usize>; 5] {
+    let mut alias = [None; 5];
+    for (i, partner) in [(1, 0), (2, 3), (3, 2)] {
+        if coefficients[i].is_zero() {
+            alias[i] = Some(partner);
+        }
+    }
+    alias
+}
+
 /// Strict-sign propositional logic over the five atoms. This is not algebra:
 /// every relation is backed by a replayed exact identity or certificate.
+/// Facts of an identically zero coefficient are its fiber-table sign (see
+/// [`zero_aliases`]); they are only ever copied from the partner atom.
 #[derive(Clone, Debug)]
 struct Logic {
     global: Facts,
     /// (lower, upper): lower>0 => upper>0 and upper<0 => lower<0.
     relations: Vec<(usize, usize)>,
-    /// Separator kind: true means Delta>0 wherever G != 0.
-    square: bool,
+    alias: [Option<usize>; 5],
+    /// Sign of Delta wherever G != 0 (square separators), or 0 (G = Delta).
+    separator_sign: i8,
 }
 
 fn both_roots(f: &Facts) -> bool {
     f[0] * f[1] < 0 && f[2] * f[3] < 0
+}
+
+/// Every coefficient sign is fixed and, when both breakpoints are positive,
+/// so is the sign of G (also for square separators: the breakpoints meet on
+/// G=0, so G must be a boundary there).
+fn decided(f: &Facts) -> bool {
+    f[..4].iter().all(|s| *s != 0) && (!both_roots(f) || f[4] != 0)
 }
 
 impl Logic {
@@ -382,14 +471,22 @@ impl Logic {
                     }
                 }
             }
+            for (i, partner) in self.alias.iter().enumerate() {
+                let Some(j) = *partner else { continue };
+                match (facts[i], facts[j]) {
+                    (_, 0) => {}
+                    (0, s) => {
+                        facts[i] = s;
+                        changed = true;
+                    }
+                    (s, t) if s != t => return None,
+                    _ => {}
+                }
+            }
             if !changed {
                 return Some(facts);
             }
         }
-    }
-
-    fn decided(&self, f: &Facts) -> bool {
-        f[..4].iter().all(|s| *s != 0) && (!both_roots(f) || f[4] != 0)
     }
 
     fn consistent(&self, v: &Facts) -> bool {
@@ -398,10 +495,19 @@ impl Logic {
                 .relations
                 .iter()
                 .all(|&(lower, upper)| !(v[lower] == 1 && v[upper] == -1))
+            && self
+                .alias
+                .iter()
+                .enumerate()
+                .all(|(i, j)| j.is_none_or(|j| v[i] == v[j]))
     }
 
     fn delta_sign(&self, f: &Facts) -> i8 {
-        if self.square { 1 } else { f[4] }
+        if self.separator_sign != 0 {
+            self.separator_sign
+        } else {
+            f[4]
+        }
     }
 }
 
@@ -501,7 +607,7 @@ fn build(logic: &Logic, facts: Facts, order: &[usize]) -> Node {
     let Some(f) = logic.close(facts) else {
         return Node::Infeasible;
     };
-    if logic.decided(&f) {
+    if decided(&f) {
         return if all_negative(&f) {
             Node::Empty
         } else {
@@ -587,11 +693,34 @@ fn consistent_vectors(logic: &Logic) -> Vec<Facts> {
         .collect()
 }
 
-/// Distinct atom polynomials per piece, weighted by the number of
-/// premise-consistent strict sign vectors (sign regions) the piece covers,
-/// and the unweighted total. The weighted count is the primary objective: a
-/// piece projects all of its atoms over its whole region, so an atom such as
-/// d should not be projected where another sign already implies d>0.
+/// Planner objective, `solver.bilinear_general_plan_objective`. It selects
+/// among valid plans only; the verifier accepts any valid plan.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Objective {
+    /// `region_weighted` (default): atom polynomials per piece, each weighted
+    /// by the premise-consistent strict sign vectors (sign regions) the piece
+    /// covers. A piece carries all of its atoms over its whole region, so this
+    /// prefers not to carry an atom such as d over a region where another sign
+    /// already implies d>0, at the price of more pieces. On Gluza33 it gives
+    /// the four region pieces {b,c sign quadrants} of the structure analysis.
+    RegionWeighted,
+    /// `atoms`: the plain total of atom polynomials over all pieces, with the
+    /// region-weighted count as the first tie break. On Gluza33 it merges the
+    /// {b<0,c>0} and {b<0,c<0,d>0} pieces into {b<0,d>0} split c (3 pieces).
+    Atoms,
+}
+
+impl Objective {
+    pub fn parse(text: &str) -> Result<Self> {
+        match text {
+            "region_weighted" => Ok(Objective::RegionWeighted),
+            "atoms" => Ok(Objective::Atoms),
+            _ => bail!("bilinear_general_plan_objective must be region_weighted or atoms"),
+        }
+    }
+}
+
+/// Region-weighted and plain atom occurrences in pieces (see [`Objective`]).
 fn plan_cost(logic: &Logic, pieces: &[PieceSpec]) -> (usize, usize) {
     let vectors = consistent_vectors(logic);
     let mut weighted = 0;
@@ -609,14 +738,19 @@ fn plan_cost(logic: &Logic, pieces: &[PieceSpec]) -> (usize, usize) {
 }
 
 /// Enumerate branching orders over the free atoms and keep the plan with the
-/// fewest region-weighted atom occurrences in pieces; ties prefer fewer
-/// pieces, fewer empty claims, fewer unweighted atom occurrences, then the
+/// smallest objective. `region_weighted` ties prefer fewer pieces, fewer empty
+/// claims, fewer plain atom occurrences; `atoms` ties prefer fewer weighted
+/// occurrences, fewer pieces, fewer empty claims. The last tie break is the
 /// lexicographically first branching order.
-fn plan_pieces(logic: &Logic) -> (Vec<PieceSpec>, Vec<EmptyClaim>) {
+fn plan_pieces(logic: &Logic, objective: Objective) -> (Vec<PieceSpec>, Vec<EmptyClaim>) {
     let Some(root) = logic.close([0; 5]) else {
         return (vec![], vec![]);
     };
-    let free: Vec<usize> = (0..5).filter(|&i| root[i] == 0).collect();
+    // Identically zero coefficients are never branched on: their fiber sign
+    // follows their partner atom.
+    let free: Vec<usize> = (0..5)
+        .filter(|&i| root[i] == 0 && logic.alias[i].is_none())
+        .collect();
     type Key = (usize, usize, usize, usize, Vec<usize>);
     let mut best: Option<(Key, Vec<PieceSpec>, Vec<EmptyClaim>)> = None;
     for order in permutations(&free) {
@@ -625,7 +759,10 @@ fn plan_pieces(logic: &Logic) -> (Vec<PieceSpec>, Vec<EmptyClaim>) {
         let mut empty = Vec::new();
         collect(&tree, &mut vec![], &mut pieces, &mut empty);
         let (weighted, total) = plan_cost(logic, &pieces);
-        let key = (weighted, pieces.len(), empty.len(), total, order);
+        let key = match objective {
+            Objective::RegionWeighted => (weighted, pieces.len(), empty.len(), total, order),
+            Objective::Atoms => (total, weighted, pieces.len(), empty.len(), order),
+        };
         if best.as_ref().is_none_or(|(k, _, _)| key < *k) {
             best = Some((key, pieces, empty));
         }
@@ -712,6 +849,13 @@ fn replay_plan(problem: &Problem, plan: &BilinearGeneralPlan) -> Result<Replayed
             check_positive_square_identity(&input.delta, &multiplier, &square)?;
             square
         }
+        Separator::NegativeSquare { multiplier, square } => {
+            let multiplier = rational(multiplier)?;
+            let square = algebra.parse(square)?;
+            ensure!(fiber_free(&square), "separator depends on a fiber axis");
+            check_positive_square_identity(&-input.delta.clone(), &multiplier, &square)?;
+            square
+        }
         Separator::Delta { polynomial } => {
             let p = algebra.parse(polynomial)?;
             ensure!(p == input.delta, "separator is not Delta");
@@ -720,9 +864,10 @@ fn replay_plan(problem: &Problem, plan: &BilinearGeneralPlan) -> Result<Replayed
     };
     let [a, b, c, d] = input.coefficients.clone();
     let atoms = [a, b, c, d, separator];
+    let alias = zero_aliases(&input.coefficients);
     let mut global = [0i8; 5];
     for (i, p) in atoms.iter().enumerate() {
-        if p.is_constant() {
+        if p.is_constant() && alias[i].is_none() {
             global[i] = sign(&p.get_constant());
             ensure!(global[i] != 0, "zero atom");
         }
@@ -740,6 +885,12 @@ fn replay_plan(problem: &Problem, plan: &BilinearGeneralPlan) -> Result<Replayed
                 ensure!(
                     lower != upper && *lower != Atom::G && *upper != Atom::G,
                     "ratio orders compare distinct coefficients"
+                );
+                // A ratio order speaks about true signs; a zero coefficient's
+                // fact is only its fiber-table alias.
+                ensure!(
+                    alias[lower.index()].is_none() && alias[upper.index()].is_none(),
+                    "ratio orders cannot involve an identically zero coefficient"
                 );
                 let corners = input
                     .corners
@@ -768,6 +919,10 @@ fn replay_plan(problem: &Problem, plan: &BilinearGeneralPlan) -> Result<Replayed
             }
             SignPremise::GlobalSign { atom, certificate } => {
                 let i = atom.index();
+                ensure!(
+                    alias[i].is_none(),
+                    "an identically zero coefficient has no strict global sign"
+                );
                 verify_certificate(
                     algebra,
                     &atoms[i],
@@ -786,7 +941,8 @@ fn replay_plan(problem: &Problem, plan: &BilinearGeneralPlan) -> Result<Replayed
     let logic = Logic {
         global,
         relations,
-        square: matches!(plan.separator, Separator::Square { .. }),
+        alias,
+        separator_sign: plan.separator.delta_sign(),
     };
     check_partition(&logic, &atoms, plan)?;
     Ok(Replayed {
@@ -860,7 +1016,7 @@ fn check_partition(logic: &Logic, atoms: &[Poly; 5], plan: &BilinearGeneralPlan)
                 .close(facts)
                 .ok_or_else(|| anyhow!("consistent sign vector closes to a contradiction"))?;
             ensure!(
-                logic.decided(&closed),
+                decided(&closed),
                 "piece leaf {v:?} does not determine the fiber table"
             );
         }
@@ -878,6 +1034,48 @@ fn check_partition(logic: &Logic, atoms: &[Poly; 5], plan: &BilinearGeneralPlan)
 }
 
 // ------------------------------------------------------------- discovery
+
+/// Propose the ratio order between coefficients i<j from their certified
+/// guide corners: atoms[j]*u_i - atoms[i]*u_j = m*s^2 (i below j) or its
+/// negative (j below i). A pair over the product cap or without a square
+/// witness is only a missing premise, never an error.
+fn ratio_premise(
+    algebra: &crate::algebra::Algebra,
+    domain: &crate::domain::Domain,
+    options: &CertificateOptions,
+    (i, j): (usize, usize),
+    [(atom_i, corner_i), (atom_j, corner_j)]: [(&Poly, &Poly); 2],
+    cap: usize,
+    check_time: impl Fn() -> Result<()>,
+) -> Result<Option<SignPremise>> {
+    if !within_product_cap(&[(atom_j, corner_i), (atom_i, corner_j)], cap) {
+        return Ok(None);
+    }
+    let residual = &(atom_j * corner_i) - &(atom_i * corner_j);
+    let found = match positive_square_witness(&residual) {
+        Some(w) => Some((i, j, w)),
+        None => {
+            check_time()?;
+            positive_square_witness(&-residual.clone()).map(|w| (j, i, w))
+        }
+    };
+    let Some((lower, upper, (multiplier, square))) = found else {
+        return Ok(None);
+    };
+    check_time()?;
+    let strict = if square.is_constant() {
+        None
+    } else {
+        certify_nonzero(algebra, &square, domain, options)?
+    };
+    Ok(Some(SignPremise::RatioOrder {
+        lower: ATOMS[lower],
+        upper: ATOMS[upper],
+        multiplier: multiplier.to_string(),
+        square: algebra.format(&square),
+        strict,
+    }))
+}
 
 fn discover(
     problem: &Problem,
@@ -907,56 +1105,54 @@ fn discover(
             }
         }
     }
-    let separator = match positive_square_witness(&input.delta) {
-        Some((multiplier, square)) => Separator::Square {
-            multiplier: multiplier.to_string(),
-            square: algebra.format(&square),
-        },
-        None => Separator::Delta {
-            polynomial: algebra.format(&input.delta),
-        },
-    };
+    check_time(problem, started)?;
+    let mut separator = positive_square_witness(&input.delta).map(|(m, s)| Separator::Square {
+        multiplier: m.to_string(),
+        square: algebra.format(&s),
+    });
+    if separator.is_none() {
+        check_time(problem, started)?;
+        separator = positive_square_witness(&-input.delta.clone()).map(|(m, s)| {
+            Separator::NegativeSquare {
+                multiplier: m.to_string(),
+                square: algebra.format(&s),
+            }
+        });
+    }
+    let separator = separator.unwrap_or_else(|| Separator::Delta {
+        polynomial: algebra.format(&input.delta),
+    });
     let g = match &separator {
-        Separator::Square { square, .. } => algebra.parse(square)?,
+        Separator::Square { square, .. } | Separator::NegativeSquare { square, .. } => {
+            algebra.parse(square)?
+        }
         Separator::Delta { .. } => input.delta.clone(),
     };
     let [a, b, c, d] = input.coefficients.clone();
     let atoms = [a, b, c, d, g];
+    let alias = zero_aliases(&input.coefficients);
     let mut premises = Vec::new();
     if let Some(corners) = &input.corners {
         for i in 0..4 {
             for j in i + 1..4 {
                 check_time(problem, started)?;
-                if !(certified[i] && certified[j]) {
+                if !(certified[i] && certified[j]) || alias[i].is_some() || alias[j].is_some() {
                     continue;
                 }
-                product_cap(&[(&atoms[j], &corners[i]), (&atoms[i], &corners[j])])?;
-                // lower=i, upper=j: atoms[j]*u_i - atoms[i]*u_j.
-                let residual = &(&atoms[j] * &corners[i]) - &(&atoms[i] * &corners[j]);
-                let found = positive_square_witness(&residual)
-                    .map(|w| (i, j, w))
-                    .or_else(|| positive_square_witness(&-residual.clone()).map(|w| (j, i, w)));
-                let Some((lower, upper, (multiplier, square))) = found else {
-                    continue;
-                };
-                let strict = if square.is_constant() {
-                    None
-                } else {
-                    certify_nonzero(algebra, &square, &domain, &options)?
-                };
-                premises.push(SignPremise::RatioOrder {
-                    lower: ATOMS[lower],
-                    upper: ATOMS[upper],
-                    multiplier: multiplier.to_string(),
-                    square: algebra.format(&square),
-                    strict,
-                });
+                let check = || check_time(problem, started);
+                let pair = [(&atoms[i], &corners[i]), (&atoms[j], &corners[j])];
+                if let Some(premise) =
+                    ratio_premise(algebra, &domain, &options, (i, j), pair, PRODUCT_CAP, check)?
+                {
+                    premises.push(premise);
+                }
             }
         }
     }
     for (i, p) in atoms.iter().enumerate() {
         check_time(problem, started)?;
         if p.is_constant() {
+            // Nonzero constants are global facts; zero coefficients alias.
             continue;
         }
         if let Some(certificate) = certify_nonzero(algebra, p, &domain, &options)? {
@@ -986,7 +1182,7 @@ fn discover(
     let premise_logic = {
         let mut global = [0i8; 5];
         for (i, p) in atoms.iter().enumerate() {
-            if p.is_constant() {
+            if p.is_constant() && alias[i].is_none() {
                 global[i] = sign(&p.get_constant());
             }
         }
@@ -1004,10 +1200,12 @@ fn discover(
         Logic {
             global,
             relations,
-            square: matches!(plan.separator, Separator::Square { .. }),
+            alias,
+            separator_sign: plan.separator.delta_sign(),
         }
     };
-    let (pieces, empty) = plan_pieces(&premise_logic);
+    let objective = Objective::parse(&problem.solver.bilinear_general_plan_objective)?;
+    let (pieces, empty) = plan_pieces(&premise_logic, objective);
     plan.pieces = pieces;
     plan.empty = empty;
     check_time(problem, started)?;
@@ -1077,21 +1275,45 @@ fn piece_problem(
     base.solver.order = base.variables.clone();
     base.solver.bilinear_general_guide = None;
     base.solver.bilinear_general_base_anchor = None;
+    base.solver.bilinear_general_base_block.clear();
     base.solver.bilinear_general_base_engine = "optimized".into();
+    base.solver.bilinear_general_plan_objective = "region_weighted".into();
     base.solver.bilinear_positive_guide = None;
     base.solver.negative_linear_guide = None;
     base.solver.local_strict_bezout_hints.clear();
     base.solver.merge = "none".into();
     match &problem.solver.bilinear_general_base_anchor {
         Some(anchor) => {
+            // The default scale block is every base variable. A declared block
+            // keeps kinematic parameters outside it.
+            let declared = &problem.solver.bilinear_general_base_block;
+            let position = |v: &String| base.variables.iter().position(|w| w == v);
             ensure!(
-                base.variables.first() == Some(anchor),
-                "the inner homogeneous anchor must be the first base variable"
+                declared.iter().all(|v| position(v).is_some()),
+                "the inner homogeneous block may contain base variables only"
+            );
+            let mut block: Vec<String> = if declared.is_empty() {
+                base.variables.clone()
+            } else {
+                declared.clone()
+            };
+            block.sort_by_key(|v| position(v));
+            ensure!(
+                block.contains(anchor),
+                "the inner homogeneous anchor must be a base variable in its block"
+            );
+            ensure!(
+                block.iter().all(|v| position(v) >= position(anchor)),
+                "the inner homogeneous anchor must precede every other block variable in the base order"
             );
             base.solver.homogeneous_anchor = Some(anchor.clone());
-            base.solver.homogeneous_block = base.variables.clone();
+            base.solver.homogeneous_block = block;
         }
         None => {
+            ensure!(
+                problem.solver.bilinear_general_base_block.is_empty(),
+                "bilinear_general_base_block requires bilinear_general_base_anchor"
+            );
             base.solver.homogeneous_anchor = None;
             base.solver.homogeneous_block.clear();
         }
@@ -1242,11 +1464,15 @@ fn reconstruct(
                 .close(facts)
                 .ok_or_else(|| anyhow!("piece cell premises are contradictory"))?;
             ensure!(
-                logic.decided(&facts),
+                decided(&facts),
                 "piece cell does not determine the fiber table"
             );
+            // An identically zero coefficient keeps its partner's fiber sign.
             ensure!(
-                (0..4).all(|i| signs[i] == facts[i]),
+                (0..4).all(|i| match logic.alias[i] {
+                    Some(_) => signs[i] == 0,
+                    None => signs[i] == facts[i],
+                }),
                 "piece cell sample contradicts its derived coefficient signs"
             );
             let delta = logic.delta_sign(&facts);
@@ -1353,9 +1579,11 @@ pub struct PlannedPieces {
 
 /// Discover premises and pieces without solving them. Each returned problem
 /// is an ordinary symGCAD input that can be solved by a separate process.
+/// Discovery honours `limits.wall_time_secs` between its exact steps; the CLI
+/// additionally runs it in a deadline-bounded worker process.
 pub fn plan(problem: &Problem) -> Result<PlannedPieces> {
     let started = Instant::now();
-    let (plan, replayed) = discover(problem, None)?;
+    let (plan, replayed) = discover(problem, Some(started))?;
     let problems = (0..plan.pieces.len())
         .map(|i| piece_problem(problem, &replayed, &plan, i))
         .collect::<Result<Vec<_>>>()?;
@@ -1417,33 +1645,60 @@ pub fn order_piece_results(
     Ok(slots.into_iter().map(Option::unwrap).collect())
 }
 
-fn aggregate(bases: &[SolveResult]) -> Statistics {
+/// Phase timings of this process. Piece phases belong to it only when the
+/// pieces ran inside it; work counters are always summed over pieces.
+fn aggregate(bases: &[SolveResult], execution: Execution, planning_seconds: f64) -> Statistics {
     let mut statistics = Statistics::default();
     for base in bases {
         let s = &base.statistics;
-        statistics.ordering_seconds += s.ordering_seconds;
-        statistics.search_seconds += s.search_seconds;
-        statistics.projection_seconds += s.projection_seconds;
-        statistics.lifting_seconds += s.lifting_seconds;
-        statistics.merging_seconds += s.merging_seconds;
         statistics.visited_stacks += s.visited_stacks;
         statistics.rejected_branches += s.rejected_branches;
+        if execution == Execution::Sequential {
+            statistics.ordering_seconds += s.ordering_seconds;
+            statistics.search_seconds += s.search_seconds;
+            statistics.projection_seconds += s.projection_seconds;
+            statistics.lifting_seconds += s.lifting_seconds;
+            statistics.merging_seconds += s.merging_seconds;
+        }
+    }
+    if execution == Execution::Sequential {
+        // As in the other composite engines, planning is pre-solve ordering.
+        statistics.ordering_seconds += planning_seconds;
     }
     statistics
 }
 
+fn piece_timings(
+    bases: &[SolveResult],
+    execution: Execution,
+    planning_seconds: f64,
+    assembly_seconds: f64,
+) -> PieceTimings {
+    let piece_seconds: Vec<f64> = bases.iter().map(|b| b.statistics.total_seconds).collect();
+    PieceTimings {
+        execution,
+        planning_seconds,
+        piece_seconds_sum: piece_seconds.iter().sum(),
+        piece_seconds_max: piece_seconds.iter().copied().fold(0.0, f64::max),
+        piece_seconds,
+        assembly_seconds,
+    }
+}
+
+/// `started` is the start of this process's work: the whole sequential
+/// solve, or the assembly of separately solved pieces.
 fn finish(
     problem: &Problem,
     replayed: Replayed,
     plan: BilinearGeneralPlan,
     bases: Vec<SolveResult>,
     started: Instant,
-    prior_seconds: f64,
+    execution: Execution,
     planning_seconds: f64,
 ) -> Result<SolveResult> {
+    let finishing = Instant::now();
     let input = &replayed.input;
-    let mut statistics = aggregate(&bases);
-    statistics.ordering_seconds += planning_seconds;
+    let mut statistics = aggregate(&bases, execution, planning_seconds);
     let failed = bases
         .iter()
         .enumerate()
@@ -1512,12 +1767,31 @@ fn finish(
         result.status = Status::Incomplete;
         result.diagnostic = Some(e.to_string());
     }
-    result.statistics.total_seconds = prior_seconds + started.elapsed().as_secs_f64();
+    let elapsed = started.elapsed().as_secs_f64();
+    let assembly_seconds = match execution {
+        Execution::Sequential => finishing.elapsed().as_secs_f64(),
+        Execution::SeparateProcesses => elapsed,
+    };
+    let evidence = result
+        .bilinear_general
+        .as_ref()
+        .expect("evidence attached above");
+    result.statistics.bilinear_general_pieces = Some(piece_timings(
+        &evidence.bases,
+        execution,
+        planning_seconds,
+        assembly_seconds,
+    ));
+    // Elapsed wall time of this process only, never a sum over processes.
+    result.statistics.total_seconds = elapsed;
     Ok(result)
 }
 
 /// Assemble separately solved piece results (in plan order, see
-/// [`order_piece_results`]) into one original-coordinate result.
+/// [`order_piece_results`]) into one original-coordinate result. The pieces
+/// may have run concurrently, so the result's `total_seconds` and phase
+/// timings cover this assembly only; `statistics.bilinear_general_pieces`
+/// reports the recorded planning time and every piece's own total.
 pub fn assemble(
     problem: &Problem,
     plan: BilinearGeneralPlan,
@@ -1525,6 +1799,10 @@ pub fn assemble(
     planning_seconds: f64,
 ) -> Result<SolveResult> {
     let started = Instant::now();
+    ensure!(
+        planning_seconds.is_finite() && planning_seconds >= 0.0,
+        "recorded planning time must be a finite nonnegative number"
+    );
     let replayed = replay_plan(problem, &plan)?;
     ensure!(
         bases.len() == plan.pieces.len(),
@@ -1537,18 +1815,13 @@ pub fn assemble(
             "piece result {i} does not solve its exact piece problem"
         );
     }
-    let prior = planning_seconds
-        + bases
-            .iter()
-            .map(|b| b.statistics.total_seconds)
-            .sum::<f64>();
     finish(
         problem,
         replayed,
         plan,
         bases,
         started,
-        prior,
+        Execution::SeparateProcesses,
         planning_seconds,
     )
 }
@@ -1586,7 +1859,15 @@ pub fn solve(problem: &Problem) -> Result<SolveResult> {
             break;
         }
     }
-    finish(problem, replayed, plan, bases, started, 0., planning)
+    finish(
+        problem,
+        replayed,
+        plan,
+        bases,
+        started,
+        Execution::Sequential,
+        planning,
+    )
 }
 
 pub fn verify(result: &SolveResult, evidence: &BilinearGeneralEvidence) -> Result<Verification> {
@@ -1698,12 +1979,10 @@ mod table_tests {
 
     fn member(rows: &[FiberRow], k: [Rational; 4], y: &Rational, x: &Rational) -> Option<bool> {
         let [a, b, c, d] = k;
-        let ra = -b.clone() / &a;
-        let rb = -d.clone() / &c;
         let value = |e: YEnd| match e {
             YEnd::Zero => Some(Rational::zero()),
-            YEnd::RootA => Some(ra.clone()),
-            YEnd::RootB => Some(rb.clone()),
+            YEnd::RootA => Some(-b.clone() / &a),
+            YEnd::RootB => Some(-d.clone() / &c),
             YEnd::Infinity => None,
         };
         for row in rows {
@@ -1778,9 +2057,10 @@ mod table_tests {
         let logic = Logic {
             global: [0; 5],
             relations: vec![(0, 1), (0, 2), (1, 3), (2, 3)],
-            square: true,
+            alias: [None; 5],
+            separator_sign: 1,
         };
-        let (pieces, empty) = plan_pieces(&logic);
+        let (pieces, empty) = plan_pieces(&logic, Objective::RegionWeighted);
         let c = |atom, sign| Condition { atom, sign };
         assert_eq!(
             pieces,
@@ -1812,5 +2092,173 @@ mod table_tests {
         assert_eq!(logic.close([1, 0, 0, 0, 0]), Some([1, 1, 1, 1, 0]));
         assert_eq!(logic.close([0, 0, 0, -1, 0]), Some([-1, -1, -1, -1, 0]));
         assert_eq!(logic.close([1, 0, 0, -1, 0]), None);
+        assert_eq!(
+            plan_cost(&logic, &pieces),
+            (28, 11),
+            "region-weighted and plain costs of the four-piece plan"
+        );
+
+        // The plain atom count merges {b<0,c>0} and {b<0,c<0,d>0} into
+        // {b<0,d>0} split c: three pieces of plain cost 9 (weighted 30).
+        let (atoms, atoms_empty) = plan_pieces(&logic, Objective::Atoms);
+        assert_eq!(
+            atoms,
+            vec![
+                PieceSpec {
+                    conditions: vec![c(Atom::B, 1), c(Atom::C, 1)],
+                    split: vec![Atom::A]
+                },
+                PieceSpec {
+                    conditions: vec![c(Atom::B, 1), c(Atom::C, -1)],
+                    split: vec![Atom::G]
+                },
+                PieceSpec {
+                    conditions: vec![c(Atom::B, -1), c(Atom::D, 1)],
+                    split: vec![Atom::C]
+                },
+            ]
+        );
+        assert_eq!(plan_cost(&logic, &atoms), (30, 9));
+        assert_eq!(
+            atoms_empty,
+            vec![EmptyClaim {
+                conditions: vec![c(Atom::B, -1), c(Atom::D, -1)]
+            }]
+        );
+        // Both plans pass the verifier's independent partition check.
+        let atoms_polys: [Poly; 5] = {
+            let algebra = crate::algebra::Algebra::new(&["t".into()]).unwrap();
+            std::array::from_fn(|_| algebra.parse("t").unwrap())
+        };
+        for (pieces, empty) in [(pieces, empty), (atoms, atoms_empty)] {
+            let plan = BilinearGeneralPlan {
+                schema_version: 1,
+                target_constraint: 0,
+                order: vec![],
+                coefficients: vec![],
+                guide: None,
+                guide_positivity: vec![],
+                premises: vec![],
+                separator: Separator::Delta {
+                    polynomial: "t".into(),
+                },
+                pieces,
+                empty,
+            };
+            check_partition(&logic, &atoms_polys, &plan).unwrap();
+        }
+    }
+
+    #[test]
+    fn over_cap_ratio_pairs_are_skipped_not_fatal() {
+        let algebra = crate::algebra::Algebra::new(&["t".into()]).unwrap();
+        let positives = vec![algebra.parse("t").unwrap()];
+        let domain = derive_domain(&algebra, &positives, &[]).unwrap();
+        let options = CertificateOptions::default();
+        let a = algebra.parse("t-3").unwrap();
+        let b = algebra.parse("t-1").unwrap();
+        let one = algebra.parse("1").unwrap();
+        let pair = [(&a, &one), (&b, &one)];
+        let ok = || -> Result<()> { Ok(()) };
+        assert!(
+            ratio_premise(&algebra, &domain, &options, (0, 1), pair, 1, ok)
+                .unwrap()
+                .is_none()
+        );
+        // b*1 - a*1 = 2 = 2*1^2: a lies below b.
+        let premise = ratio_premise(&algebra, &domain, &options, (0, 1), pair, PRODUCT_CAP, ok)
+            .unwrap()
+            .unwrap();
+        assert!(matches!(
+            premise,
+            SignPremise::RatioOrder {
+                lower: Atom::A,
+                upper: Atom::B,
+                strict: None,
+                ..
+            }
+        ));
+        // A time check failure still stops discovery.
+        let late = || -> Result<()> { bail!("stopped") };
+        let c = algebra.parse("t^2+1").unwrap();
+        assert!(
+            ratio_premise(
+                &algebra,
+                &domain,
+                &options,
+                (0, 1),
+                [(&a, &one), (&c, &one)],
+                PRODUCT_CAP,
+                late
+            )
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn zero_coefficient_aliases_match_exact_membership() {
+        // b, c or d identically zero (alone, or b and c together): the fiber
+        // table with the aliased partner sign is exact on the open quadrant.
+        let mut checked = 0;
+        for zero_mask in [0b0010u32, 0b0100, 0b1000, 0b0110] {
+            for mask in 0..16u32 {
+                let s: [i64; 4] = std::array::from_fn(|i| if mask >> i & 1 == 1 { 1 } else { -1 });
+                let magnitudes = [2i64, 3, 5, 7];
+                let k: [Rational; 4] = std::array::from_fn(|i| {
+                    if zero_mask >> i & 1 == 1 {
+                        Rational::zero()
+                    } else {
+                        Rational::from(s[i] * magnitudes[i])
+                    }
+                });
+                let polys: [Poly; 4] = {
+                    let algebra = crate::algebra::Algebra::new(&["t".into()]).unwrap();
+                    std::array::from_fn(|i| algebra.parse(&k[i].to_string()).unwrap())
+                };
+                let alias = zero_aliases(&polys);
+                let mut facts: Facts = [0; 5];
+                for i in 0..4 {
+                    if alias[i].is_none() {
+                        facts[i] = sign(&k[i]);
+                    }
+                }
+                let logic = Logic {
+                    global: [0; 5],
+                    relations: vec![],
+                    alias,
+                    separator_sign: 0,
+                };
+                let f = logic.close(facts).unwrap();
+                assert!(decided(&f), "{zero_mask:b} {k:?}");
+                assert!(!both_roots(&f));
+                let rows = fiber_rows([f[0], f[1], f[2], f[3]], 0).unwrap();
+                assert_eq!(rows.is_empty(), all_negative(&f));
+                for yn in 1..25i64 {
+                    for xn in 1..25i64 {
+                        let y = Rational::from(yn) / Rational::from(7);
+                        let x = Rational::from(xn) / Rational::from(5);
+                        let value = &k[0] * &x * &y + &k[1] * &x + &k[2] * &y + &k[3];
+                        if value.is_zero() {
+                            continue;
+                        }
+                        if let Some(inside) = member(&rows, k.clone(), &y, &x) {
+                            assert_eq!(inside, value > Rational::zero(), "{k:?} {y} {x}");
+                            checked += 1;
+                        }
+                    }
+                }
+            }
+        }
+        assert!(checked > 30_000);
+        // A zero coefficient never receives a fact that contradicts its partner.
+        let logic = Logic {
+            global: [0; 5],
+            relations: vec![],
+            alias: [None, Some(0), None, None, None],
+            separator_sign: 0,
+        };
+        assert_eq!(logic.close([1, -1, 0, 0, 0]), None);
+        assert!(!logic.consistent(&[1, -1, 1, 1, 1]));
+        assert!(logic.consistent(&[-1, -1, 1, 1, 1]));
     }
 }

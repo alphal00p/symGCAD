@@ -82,12 +82,15 @@ enum Command {
 #[derive(Subcommand)]
 enum PiecesCommand {
     /// Write deterministic piece inputs (piece_NNN.toml) and plan.json.
+    /// Planning runs in a worker bounded by the input's limits; stale
+    /// piece_NNN.toml files of an earlier plan in OUT_DIR are removed.
     Plan {
         input: PathBuf,
         #[arg(long)]
         out_dir: PathBuf,
     },
-    /// Assemble separately solved piece results into one original result.
+    /// Assemble separately solved piece results into one original result,
+    /// in a worker bounded by the input's limits.
     Assemble {
         input: PathBuf,
         #[arg(long)]
@@ -99,14 +102,90 @@ enum PiecesCommand {
     },
 }
 
+/// Run a planning or assembly step in a deadline- and memory-bounded worker,
+/// like `solve`: native algebra can block, so the supervisor enforces the
+/// problem's own limits. No output file means no claim.
+fn bounded_pieces_worker(
+    operation: &str,
+    request: &Value,
+    limits: &symgcad::Limits,
+) -> Result<(ProcessOutcome, PathBuf)> {
+    let input = temporary("pieces-input")?;
+    let output = temporary("pieces-output")?;
+    fs::write(&input, serde_json::to_vec(request)?)?;
+    let mut command = ProcessCommand::new(std::env::current_exe()?);
+    command
+        .arg("_worker")
+        .arg(operation)
+        .arg(&input)
+        .arg("--output")
+        .arg(&output)
+        .env("RAYON_NUM_THREADS", "1")
+        .env("OMP_NUM_THREADS", "1");
+    let outcome = benchmark::run_bounded(&mut command, limits);
+    let _ = fs::remove_file(&input);
+    let outcome = outcome?;
+    if outcome.status != "completed" || outcome.exit_code != Some(0) || outcome.output_truncated {
+        let _ = fs::remove_file(&output);
+        anyhow::bail!(
+            "{operation} worker {} after {:.3} s: {}",
+            outcome.status,
+            outcome.wall_time_secs,
+            outcome.stderr.trim()
+        );
+    }
+    Ok((outcome, output))
+}
+
+/// `piece_NNN.toml` as written by `pieces plan`.
+fn is_piece_file(name: &str) -> bool {
+    name.strip_prefix("piece_")
+        .and_then(|rest| rest.strip_suffix(".toml"))
+        .is_some_and(|digits| digits.len() >= 3 && digits.bytes().all(|b| b.is_ascii_digit()))
+}
+
+/// Read a `pieces plan` document: the recorded plan and its planning time.
+fn read_plan_document(
+    path: &Path,
+) -> Result<(symgcad::bilinear_general::BilinearGeneralPlan, f64)> {
+    let document: Value = serde_json::from_slice(&fs::read(path)?)?;
+    anyhow::ensure!(
+        document["schema_version"] == 1,
+        "unsupported bilinear general plan file"
+    );
+    let plan = serde_json::from_value(document["plan"].clone())?;
+    let planning_seconds = document["planning_seconds"]
+        .as_f64()
+        .filter(|s| s.is_finite() && *s >= 0.0)
+        .ok_or_else(|| anyhow::anyhow!("plan file lacks a finite nonnegative planning_seconds"))?;
+    Ok((plan, planning_seconds))
+}
+
 fn pieces(command: PiecesCommand) -> Result<()> {
     match command {
         PiecesCommand::Plan { input, out_dir } => {
             let problem = Problem::from_toml(&fs::read_to_string(&input)?)?;
-            let planned = symgcad::bilinear_general::plan(&problem)?;
+            let (outcome, output) = bounded_pieces_worker(
+                "pieces_plan",
+                &serde_json::to_value(&problem)?,
+                &problem.limits,
+            )?;
+            let planned: Value = serde_json::from_slice(&fs::read(&output)?)?;
+            fs::remove_file(&output)?;
+            let plan: symgcad::bilinear_general::BilinearGeneralPlan =
+                serde_json::from_value(planned["plan"].clone())?;
+            let problems: Vec<Problem> = serde_json::from_value(planned["problems"].clone())?;
+            let planning_seconds = planned["planning_seconds"]
+                .as_f64()
+                .ok_or_else(|| anyhow::anyhow!("planning worker returned no planning time"))?;
+            anyhow::ensure!(
+                problems.len() == plan.pieces.len(),
+                "planning worker returned an inconsistent piece inventory"
+            );
             fs::create_dir_all(&out_dir)?;
             let mut files = Vec::new();
-            for (i, piece) in planned.problems.iter().enumerate() {
+            let mut written = Vec::new();
+            for (i, piece) in problems.iter().enumerate() {
                 let name = format!("piece_{i:03}.toml");
                 let text = toml::to_string(piece)?;
                 // The piece file is the exact problem the verifier re-derives.
@@ -116,20 +195,37 @@ fn pieces(command: PiecesCommand) -> Result<()> {
                     "piece TOML does not round-trip exactly"
                 );
                 fs::write(out_dir.join(&name), text)?;
-                let spec = &planned.plan.pieces[i];
+                let spec = &plan.pieces[i];
                 files.push(
                     json!({"index":i,"input":name,"conditions":spec.conditions,"split":spec.split}),
                 );
+                written.push(name);
             }
+            // A reused directory must not offer piece inputs of an older plan.
+            let mut removed = Vec::new();
+            for entry in fs::read_dir(&out_dir)? {
+                let name = entry?.file_name().to_string_lossy().into_owned();
+                if is_piece_file(&name) && !written.contains(&name) {
+                    fs::remove_file(out_dir.join(&name))?;
+                    removed.push(name);
+                }
+            }
+            removed.sort();
             let document = json!({
                 "schema_version": 1,
-                "plan": planned.plan,
-                "planning_seconds": planned.planning_seconds,
+                "plan": plan,
+                "planning_seconds": planning_seconds,
+                "planning_worker": {
+                    "wall_seconds": outcome.wall_time_secs,
+                    "user_cpu_seconds": outcome.user_cpu_secs,
+                    "system_cpu_seconds": outcome.system_cpu_secs,
+                    "peak_rss_kib": outcome.peak_rss_kib,
+                },
                 "pieces": files,
             });
             emit(&document, Some(&out_dir.join("plan.json")))?;
             emit(
-                &json!({"pieces":files,"empty_claims":planned.plan.empty.len(),"planning_seconds":planned.planning_seconds,"plan":out_dir.join("plan.json")}),
+                &json!({"pieces":files,"empty_claims":plan.empty.len(),"planning_seconds":planning_seconds,"removed_stale":removed,"plan":out_dir.join("plan.json")}),
                 None,
             )
         }
@@ -140,15 +236,47 @@ fn pieces(command: PiecesCommand) -> Result<()> {
             output,
         } => {
             let problem = Problem::from_toml(&fs::read_to_string(&input)?)?;
-            let document: Value = serde_json::from_slice(&fs::read(&plan)?)?;
-            anyhow::ensure!(
-                document["schema_version"] == 1,
-                "unsupported bilinear general plan file"
-            );
-            let recorded: symgcad::bilinear_general::BilinearGeneralPlan =
-                serde_json::from_value(document["plan"].clone())?;
-            let planning_seconds = document["planning_seconds"].as_f64().unwrap_or(0.0);
-            let bases = results
+            let request = json!({
+                "problem": problem,
+                "plan": fs::canonicalize(&plan)?,
+                "results": results
+                    .iter()
+                    .map(fs::canonicalize)
+                    .collect::<io::Result<Vec<_>>>()?,
+            });
+            let (outcome, assembled) =
+                bounded_pieces_worker("pieces_assemble", &request, &problem.limits)?;
+            if let Some(parent) = output.parent() {
+                fs::create_dir_all(parent)?;
+            }
+            fs::copy(&assembled, &output)?;
+            fs::remove_file(&assembled)?;
+            print!("{}", outcome.stdout);
+            Ok(())
+        }
+    }
+}
+
+/// Worker side of `pieces plan` and `pieces assemble`.
+fn pieces_worker(operation: &str, input: &Path, output: &Path) -> Result<()> {
+    match operation {
+        "pieces_plan" => {
+            let problem: Problem = serde_json::from_slice(&fs::read(input)?)?;
+            problem.validate()?;
+            let planned = symgcad::bilinear_general::plan(&problem)?;
+            emit(
+                &json!({"plan":planned.plan,"problems":planned.problems,"planning_seconds":planned.planning_seconds}),
+                Some(output),
+            )
+        }
+        "pieces_assemble" => {
+            let request: Value = serde_json::from_slice(&fs::read(input)?)?;
+            let problem: Problem = serde_json::from_value(request["problem"].clone())?;
+            problem.validate()?;
+            let plan_path: PathBuf = serde_json::from_value(request["plan"].clone())?;
+            let paths: Vec<PathBuf> = serde_json::from_value(request["results"].clone())?;
+            let (recorded, planning_seconds) = read_plan_document(&plan_path)?;
+            let bases = paths
                 .iter()
                 .map(|path| -> Result<SolveResult> {
                     Ok(serde_json::from_reader(io::BufReader::new(
@@ -159,12 +287,13 @@ fn pieces(command: PiecesCommand) -> Result<()> {
             let bases = symgcad::bilinear_general::order_piece_results(&problem, &recorded, bases)?;
             let result =
                 symgcad::bilinear_general::assemble(&problem, recorded, bases, planning_seconds)?;
-            emit(&result, Some(&output))?;
+            emit(&result, Some(output))?;
             emit(
-                &json!({"status":result.status,"cells":result.cells.len(),"diagnostic":result.diagnostic}),
+                &json!({"status":result.status,"cells":result.cells.len(),"diagnostic":result.diagnostic,"timings":result.statistics.bilinear_general_pieces}),
                 None,
             )
         }
+        _ => anyhow::bail!("unknown pieces worker operation"),
     }
 }
 
@@ -581,6 +710,9 @@ fn attach_search(result: &mut SolveResult, report: Value) {
 }
 
 fn worker(operation: &str, input: &Path, output: &Path) -> Result<()> {
+    if operation.starts_with("pieces_") {
+        return pieces_worker(operation, input, output);
+    }
     if operation == "verify" {
         // Large lifting traces can exceed a gigabyte. Stream their JSON so the
         // verifier does not retain a second, complete copy of the serialized

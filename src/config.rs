@@ -154,10 +154,18 @@ pub struct SolverOptions {
     /// Engine for every lower-dimensional bilinear general piece.
     #[serde(skip_serializing_if = "is_optimized")]
     pub bilinear_general_base_engine: String,
-    /// Optional positive-scale anchor applied inside every piece. It must be
-    /// the first base variable; the scale block is every base variable.
+    /// Optional positive-scale anchor applied inside every piece. It must
+    /// precede every other variable of the scale block in the base order.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub bilinear_general_base_anchor: Option<String>,
+    /// Scale block of the inner anchor (base variables only). Empty means
+    /// every base variable; kinematic parameters stay outside a declared block.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub bilinear_general_base_block: Vec<String>,
+    /// Piece-planner objective: `region_weighted` (default) or `atoms`. It
+    /// selects among valid plans only; the verifier accepts any valid plan.
+    #[serde(skip_serializing_if = "is_region_weighted")]
+    pub bilinear_general_plan_objective: String,
     /// Batch tentative sibling discoveries in the experimental local engine.
     /// Omit the default to keep ordinary inputs readable by older workers.
     #[serde(skip_serializing_if = "is_true")]
@@ -268,6 +276,8 @@ impl Default for SolverOptions {
             bilinear_general_guide: None,
             bilinear_general_base_engine: "optimized".into(),
             bilinear_general_base_anchor: None,
+            bilinear_general_base_block: vec![],
+            bilinear_general_plan_objective: "region_weighted".into(),
             local_batch_siblings: true,
             local_reuse_subtrees: true,
             local_reuse_learned_cuts: true,
@@ -334,6 +344,9 @@ fn is_two(value: &usize) -> bool {
 }
 fn is_optimized(value: &str) -> bool {
     value == "optimized"
+}
+fn is_region_weighted(value: &str) -> bool {
+    value == "region_weighted"
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -483,6 +496,30 @@ impl Problem {
                 .as_ref()
                 .is_none_or(|a| names.contains(a)),
             "bilinear_general_base_anchor must be a declared variable"
+        );
+        let general_block = self
+            .solver
+            .bilinear_general_base_block
+            .iter()
+            .collect::<BTreeSet<_>>();
+        ensure!(
+            general_block.len() == self.solver.bilinear_general_base_block.len()
+                && general_block.is_subset(&names),
+            "bilinear_general_base_block must contain distinct declared variables"
+        );
+        ensure!(
+            general_block.is_empty()
+                || self
+                    .solver
+                    .bilinear_general_base_anchor
+                    .as_ref()
+                    .is_some_and(|a| general_block.contains(a)),
+            "bilinear_general_base_block requires bilinear_general_base_anchor inside it"
+        );
+        ensure!(
+            ["region_weighted", "atoms"]
+                .contains(&self.solver.bilinear_general_plan_objective.as_str()),
+            "bilinear_general_plan_objective must be region_weighted or atoms"
         );
         ensure!(
             ["none", "aggressive"].contains(&self.solver.merge.as_str()),
