@@ -98,6 +98,9 @@ pub struct CacheMetrics {
     pub discriminant_disk_hits: usize,
     pub invalid_operation_checkpoints: usize,
     pub written_operation_checkpoints: usize,
+    /// Validated records read under the pre-v2 domain-keyed name and migrated
+    /// to the domain-free namespace. Included in the per-operation disk hits.
+    pub legacy_operation_disk_hits: usize,
     pub oversized_captures: usize,
     pub prefix_memory_hits: usize,
     pub prefix_disk_hits: usize,
@@ -230,7 +233,7 @@ pub enum AlgebraOperation {
     Discriminant,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 struct OperationFile {
     schema_version: u32,
     algorithm: String,
@@ -248,10 +251,24 @@ struct OperationFile {
     elapsed_seconds: f64,
 }
 
+/// Operation records are pure algebra: a canonical factorization, resultant or
+/// discriminant of canonical inputs, computed before any domain certificate,
+/// pair omission or positivity filter is applied. Their identity is therefore
+/// the full variable map, backend/algorithm version, operation, eliminated
+/// axis and exact input, not the domain. Records of this namespace store this
+/// constant in place of a domain fingerprint.
+const OPERATION_NAMESPACE: &str = "algebra-operation-v2-domain-free";
+const OPERATION_DOMAIN: &str = "domain-free-pure-algebra";
+
+#[derive(Clone)]
 struct OperationRequest {
     operation: AlgebraOperation,
     variable: Option<usize>,
     key: String,
+    /// Pre-v2 records were keyed by the caller's domain fingerprint as well.
+    /// They are still read, validated under their original header, and
+    /// re-saved under the domain-free key.
+    legacy_key: String,
     input_hash: String,
     input: Vec<String>,
 }
@@ -436,6 +453,18 @@ impl<'a> ProjectionCache<'a> {
         let key = digest(&(
             CACHE_SCHEMA,
             ALGORITHM,
+            OPERATION_NAMESPACE,
+            operation,
+            variable,
+            LicenseManager::get_version(),
+            "Q",
+            "symgcad",
+            &self.algebra.names,
+            &input_hash,
+        ))?;
+        let legacy_key = digest(&(
+            CACHE_SCHEMA,
+            ALGORITHM,
             "algebra-operation-v1",
             operation,
             variable,
@@ -450,6 +479,7 @@ impl<'a> ProjectionCache<'a> {
             operation,
             variable,
             key,
+            legacy_key,
             input_hash,
             input,
         }))
@@ -463,10 +493,37 @@ impl<'a> ProjectionCache<'a> {
         let (Some(directory), Some(request)) = (&self.options.checkpoint_dir, request) else {
             return Ok(None);
         };
-        let path = directory
-            .join("operations")
-            .join(format!("{}.json", request.key));
-        let metadata = match fs::metadata(&path) {
+        let directory = directory.join("operations");
+        let current = directory.join(format!("{}.json", request.key));
+        if let Some(output) =
+            self.load_operation_file(&current, request, &request.key, OPERATION_DOMAIN, inputs)?
+        {
+            return Ok(Some(output.0));
+        }
+        let legacy = directory.join(format!("{}.json", request.legacy_key));
+        let domain = self.options.domain_fingerprint.clone();
+        let Some((output, multiplicities, elapsed)) =
+            self.load_operation_file(&legacy, request, &request.legacy_key, &domain, inputs)?
+        else {
+            return Ok(None);
+        };
+        self.report.cache.legacy_operation_disk_hits += 1;
+        // Migrate the validated pure-algebra record to the shared namespace.
+        self.save_operation(&Some(request.clone()), &output, multiplicities, elapsed)?;
+        Ok(Some(output))
+    }
+
+    /// Validate one record under its own key and header. Missing or invalid
+    /// files return None; an invalid file is counted and never trusted.
+    fn load_operation_file(
+        &mut self,
+        path: &Path,
+        request: &OperationRequest,
+        key: &str,
+        domain_fingerprint: &str,
+        inputs: &[&Poly],
+    ) -> Result<Option<(Vec<Poly>, Option<Vec<usize>>, f64)>> {
+        let metadata = match fs::metadata(path) {
             Ok(metadata) => metadata,
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
             Err(_) => {
@@ -474,13 +531,13 @@ impl<'a> ProjectionCache<'a> {
                 return Ok(None);
             }
         };
-        let loaded = (|| -> Result<Vec<Poly>> {
+        let loaded = (|| -> Result<(Vec<Poly>, Option<Vec<usize>>, f64)> {
             ensure!(
                 metadata.len() <= self.options.max_checkpoint_bytes as u64,
                 "oversized operation checkpoint"
             );
             let saved: OperationFile =
-                serde_json::from_slice(&read_bounded(&path, self.options.max_checkpoint_bytes)?)?;
+                serde_json::from_slice(&read_bounded(path, self.options.max_checkpoint_bytes)?)?;
             ensure!(
                 saved.schema_version == CACHE_SCHEMA && saved.algorithm == ALGORITHM,
                 "operation schema/algorithm mismatch"
@@ -492,13 +549,13 @@ impl<'a> ProjectionCache<'a> {
             );
             ensure!(
                 saved.variable_names == self.algebra.names
-                    && saved.domain_fingerprint == self.options.domain_fingerprint,
+                    && saved.domain_fingerprint == domain_fingerprint,
                 "operation variable/domain mismatch"
             );
             ensure!(
                 saved.operation == request.operation
                     && saved.variable == request.variable
-                    && saved.key == request.key
+                    && saved.key == key
                     && saved.input_hash == request.input_hash,
                 "operation input key mismatch"
             );
@@ -580,7 +637,7 @@ impl<'a> ProjectionCache<'a> {
                     );
                 }
             }
-            Ok(output)
+            Ok((output, saved.multiplicities, saved.elapsed_seconds))
         })();
         match loaded {
             Ok(output) => {
@@ -627,7 +684,7 @@ impl<'a> ProjectionCache<'a> {
             backend_version: LicenseManager::get_version().into(),
             coefficient_domain: "Q".into(),
             variable_names: self.algebra.names.clone(),
-            domain_fingerprint: self.options.domain_fingerprint.clone(),
+            domain_fingerprint: OPERATION_DOMAIN.into(),
             operation: request.operation,
             variable: request.variable,
             key: request.key.clone(),
@@ -2071,6 +2128,141 @@ mod operation_tests {
         assert!(!path.exists());
         let old_metrics: CacheMetrics = serde_json::from_str("{}").unwrap();
         assert_eq!(old_metrics.resultant_disk_hits, 0);
+    }
+
+    fn keyed_options(directory: &Directory, fingerprint: &str) -> OptimizedProjectionOptions {
+        OptimizedProjectionOptions {
+            checkpoint_dir: Some(directory.0.clone()),
+            memory_cache_bytes: 0,
+            domain_fingerprint: fingerprint.into(),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn pure_algebra_records_are_shared_across_domains_but_not_variable_maps() {
+        let directory = Directory::new();
+        let algebra = algebra();
+        let texts = ["z^3+x*z+y", "z^2+y*z+x+1"];
+        let operands = |a: &Algebra| -> (Poly, Poly, Poly) {
+            let p = a.parse(texts[0]).unwrap();
+            let q = a.parse(texts[1]).unwrap();
+            let product = &p * &q;
+            (p, q, product)
+        };
+        let (p, q, product) = operands(&algebra);
+        let mut first = ProjectionCache::new(&algebra, &keyed_options(&directory, "S1|order-a"));
+        let resultant = first.resultant(&p, &q, 2).unwrap();
+        let discriminant = first.discriminant(&p, 2).unwrap();
+        let factors = first
+            .factor_basis(std::slice::from_ref(&product))
+            .unwrap();
+        assert_eq!(first.report.cache.written_operation_checkpoints, 3);
+        // Another constraint set, split and order fingerprint: pure algebra
+        // in the same variable map is reused from disk without recomputation.
+        let mut second = ProjectionCache::new(&algebra, &keyed_options(&directory, "S2|order-b"));
+        assert_eq!(second.resultant(&p, &q, 2).unwrap(), resultant);
+        assert_eq!(second.discriminant(&p, 2).unwrap(), discriminant);
+        assert_eq!(
+            second
+                .factor_basis(std::slice::from_ref(&product))
+                .unwrap(),
+            factors
+        );
+        assert_eq!(second.report.cache.resultant_disk_hits, 1);
+        assert_eq!(second.report.cache.discriminant_disk_hits, 1);
+        assert_eq!(second.report.cache.factor_disk_hits, 1);
+        assert_eq!(
+            second.report.cache.resultant_misses
+                + second.report.cache.discriminant_misses
+                + second.report.cache.factor_misses,
+            0
+        );
+        // A different eliminated axis is a different operation.
+        second.resultant(&p, &q, 1).unwrap();
+        assert_eq!(second.report.cache.resultant_misses, 1);
+        // Renamed or permuted variable maps never reuse these records, even
+        // for textually identical operands.
+        for names in [["x", "y", "w"], ["y", "x", "z"]] {
+            let other = Algebra::new(&names.map(String::from)).unwrap();
+            let texts = texts.map(|t| if names[2] == "w" { t.replace('z', "w") } else { t.into() });
+            let p = other.parse(&texts[0]).unwrap();
+            let q = other.parse(&texts[1]).unwrap();
+            let product = &p * &q;
+            let mut foreign = ProjectionCache::new(&other, &keyed_options(&directory, "S1|order-a"));
+            foreign.resultant(&p, &q, 2).unwrap();
+            foreign.discriminant(&p, 2).unwrap();
+            foreign
+                .factor_basis(std::slice::from_ref(&product))
+                .unwrap();
+            assert_eq!(
+                foreign.report.cache.resultant_disk_hits
+                    + foreign.report.cache.discriminant_disk_hits
+                    + foreign.report.cache.factor_disk_hits,
+                0,
+                "{names:?}"
+            );
+            assert_eq!(foreign.report.cache.resultant_misses, 1);
+            assert_eq!(foreign.report.cache.discriminant_misses, 1);
+            assert_eq!(foreign.report.cache.factor_misses, 1);
+        }
+    }
+
+    #[test]
+    fn legacy_domain_keyed_records_are_validated_then_migrated() {
+        let directory = Directory::new();
+        let algebra = algebra();
+        let p = algebra.parse("z^3+x*z+y").unwrap();
+        let q = algebra.parse("z^2+y*z+x+1").unwrap();
+        let mut original = ProjectionCache::new(&algebra, &keyed_options(&directory, "old"));
+        let expected = original.resultant(&p, &q, 2).unwrap();
+        // The cache orders resultant operands canonically before keying.
+        let (a, b) = if p.internal_cmp(&q).is_gt() {
+            (&q, &p)
+        } else {
+            (&p, &q)
+        };
+        let request = original
+            .operation_request(AlgebraOperation::Resultant, Some(2), &[a, b])
+            .unwrap()
+            .unwrap();
+        let operations = directory.0.join("operations");
+        let current = operations.join(format!("{}.json", request.key));
+        let legacy = operations.join(format!("{}.json", request.legacy_key));
+        // Rewrite the record exactly as the domain-keyed v1 layout stored it.
+        let mut saved: OperationFile = serde_json::from_slice(&fs::read(&current).unwrap()).unwrap();
+        assert_eq!(saved.domain_fingerprint, OPERATION_DOMAIN);
+        saved.key = request.legacy_key.clone();
+        saved.domain_fingerprint = "old".into();
+        fs::write(&legacy, serde_json::to_vec(&saved).unwrap()).unwrap();
+        fs::remove_file(&current).unwrap();
+        // A legacy record is only valid for its own domain fingerprint.
+        let mut other = ProjectionCache::new(&algebra, &keyed_options(&directory, "new"));
+        assert_eq!(other.resultant(&p, &q, 2).unwrap(), expected);
+        assert_eq!(other.report.cache.resultant_misses, 1);
+        assert_eq!(other.report.cache.legacy_operation_disk_hits, 0);
+        fs::remove_file(&current).unwrap();
+        // A forged header under the legacy name is rejected, not trusted.
+        let mut forged = saved.clone();
+        forged.domain_fingerprint = "different".into();
+        fs::write(&legacy, serde_json::to_vec(&forged).unwrap()).unwrap();
+        let mut rejected = ProjectionCache::new(&algebra, &keyed_options(&directory, "old"));
+        assert_eq!(rejected.resultant(&p, &q, 2).unwrap(), expected);
+        assert_eq!(rejected.report.cache.invalid_operation_checkpoints, 1);
+        assert_eq!(rejected.report.cache.resultant_misses, 1);
+        fs::remove_file(&current).unwrap();
+        // The genuine legacy record is read once and migrated.
+        fs::write(&legacy, serde_json::to_vec(&saved).unwrap()).unwrap();
+        let mut migrating = ProjectionCache::new(&algebra, &keyed_options(&directory, "old"));
+        assert_eq!(migrating.resultant(&p, &q, 2).unwrap(), expected);
+        assert_eq!(migrating.report.cache.legacy_operation_disk_hits, 1);
+        assert_eq!(migrating.report.cache.resultant_disk_hits, 1);
+        assert_eq!(migrating.report.cache.resultant_misses, 0);
+        assert!(current.exists());
+        let mut shared = ProjectionCache::new(&algebra, &keyed_options(&directory, "new"));
+        assert_eq!(shared.resultant(&p, &q, 2).unwrap(), expected);
+        assert_eq!(shared.report.cache.resultant_disk_hits, 1);
+        assert_eq!(shared.report.cache.legacy_operation_disk_hits, 0);
     }
 
     #[test]
