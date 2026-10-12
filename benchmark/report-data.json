@@ -1,7 +1,7 @@
 {
  "schema_version": 2,
  "title": "symGCAD corpus benchmark",
- "generated_utc": "2026-10-12T12:20:38+00:00",
+ "generated_utc": "2026-10-12T12:21:12+00:00",
  "generator": {
   "path": "benchmark/build_report.py",
   "sha256": "6567815d14772f1b1a18a3a237b352c6c05b656ec5eb2af17f14ac02325d45ad"
@@ -67,19 +67,19 @@
   "native": {
    "groups": {
     "complete": 271,
-    "timeout": 30,
+    "timeout": 31,
     "memory": 2,
-    "not run": 28
+    "not run": 27
    },
    "cases_total": 579,
-   "cases_recorded": 541,
+   "cases_recorded": 542,
    "cases_status": {
     "complete": 479,
-    "timeout": 60,
+    "timeout": 61,
     "memory": 2
    },
    "timeout_cap_s": 300,
-   "groups_timeout": 30
+   "groups_timeout": 31
   },
   "comparison": {
    "n": 271,
@@ -36531,18 +36531,20 @@
    "data_json_status": "unresolved",
    "symgcad": null,
    "native": {
-    "status": "not run",
+    "status": "timeout",
     "cases": 2,
-    "cases_recorded": 0,
+    "cases_recorded": 1,
     "cases_complete": 0,
-    "cases_timeout": 0,
+    "cases_timeout": 1,
     "wall_s": null,
     "internal_s": null,
     "raw_cells": null,
-    "peak_rss_mib": null,
+    "peak_rss_mib": 309.14453125,
     "orders": {},
-    "dates": null,
-    "timeout_cap_s": null
+    "dates": [
+     "2026-10-12T12:15:54.416+00:00"
+    ],
+    "timeout_cap_s": 300.0
    },
    "verified": false,
    "history": {
@@ -36595,7 +36597,7 @@
     "order_note": "order of the 2026-10-12 attempt",
     "order": "s t x7 x0 x1 x2 x4 x5 x6",
     "cells_mark": "",
-    "native": "not run",
+    "native": "timeout",
     "ratio": "—",
     "ratio_class": "none"
    }
