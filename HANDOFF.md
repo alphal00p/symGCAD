@@ -6,8 +6,11 @@ This is the long-form handoff for the implementation and investigations requeste
 
 This handoff is a requested stopping point. It does not declare that all valuable ideas have been exhausted, that Gluza33 is impossible, or that the original goal has been achieved. No continuation should silently turn a timed-out original, a solved specialization, or a solved kinematic chamber into an all-domain completion.
 
+**Update (October 12 continuation).** Positive Gluza33 now has a complete, independently verified decomposition **under the opt-in `projective_sections` contract extension**, which the user approved. Under the default strict contract the audited count is unchanged at **303/331**, and positive Gluza33 is still open there. See the [October 12 continuation](#october-12-continuation). The rest of this document is the October 11 handoff. It is kept as history, with corrections where statements became false.
+
 ## Contents
 
+- [October 12 continuation](#october-12-continuation)
 - [Objective, scope and execution constraints](#original-objective-scope-and-changing-execution-constraints)
 - [How to interpret the evidence](#how-to-read-the-evidence-without-overstating-it)
 - [Correctness invariants](#central-correctness-contract-and-non-negotiable-invariants)
@@ -17,6 +20,84 @@ This handoff is a requested stopping point. It does not declare that all valuabl
 - [Other algebra, root and proof-maintenance bottlenecks](#other-algebra-root-and-proof-maintenance-bottlenecks)
 - [Resumption priorities, reproduction and publication](#practical-resumption-publication-and-stopping-record)
 - [Complete reference-note index](#reference-index)
+
+## October 12 continuation
+
+This section covers the work of 2026-10-12. Integration point: `9baf91c`, on top of `81d9ac5`. Session evidence is machine-local under `artifacts/research/claude-2026-10-12/`; the committed notes below are the durable record. Each note separates what is proved, what is measured and what is open.
+
+### Status
+
+| Item | Status |
+|---|---|
+| Corpus, default strict contract | **303/331**, unchanged. 124/124 fixed ZZ, 97/124 symbolic ZZ, 82/83 core. |
+| Positive Gluza33, strict contract | Open. The strict `bilinear_general` plan (4 pieces) has not been solved; estimated at about 3·10⁶ cells. |
+| Positive Gluza33, opt-in `projective_sections = true` | **Complete**: 2,372 cells, solve 0.42 s, `symgcad verify` 0.55 s. Fresh-point sanity check: 4,744 points against the original TOML, 0 failures. Counting it gives 304/331, which must always carry the qualifier "under the opt-in projective-sections contract". |
+| Positive Gluza30, opt-in projective | 1 verified cell in 0.04 s, against the published strict 80,980 cells. Orders differ; single run; no sanity check recorded. |
+| 27 unresolved symbolic ZZ originals | None closes. The projective extension does not apply to them: they are sign-split problems with Minkowski kinematics, and no ratio premises are known for them (the related one-axis guide premise fails on all 39 linear axes). The kinematic portfolio does not close A317, A318 or C231. A 1-hour local-recipe campaign ran 24 of these cases and completed none of them; 3 symbolic cases were not re-run. See [UNRESOLVED_CAMPAIGN_2026_10_12.md](reference/UNRESOLVED_CAMPAIGN_2026_10_12.md). |
+| Fast suite at `9baf91c` | 753 passed, 0 failed, 2 ignored. 71 targets, `cargo test --locked --lib --bins --tests`. |
+| Upstream Symbolica PRs | Opened this session: [#75](https://github.com/symbolica-dev/symbolica/pull/75) (Integer left-shift overflow) and [#76](https://github.com/symbolica-dev/symbolica/pull/76) (Lazard–Ducos panic on a vanishing subresultant). Already open: [#69](https://github.com/symbolica-dev/symbolica/pull/69) (linear-operand resultant sign). |
+
+### What changed
+
+| Area | Change | Default | Commits | Note |
+|---|---|---|---|---|
+| Contract | `projective_sections`: upper sections may reach +∞ (`RootIndexDomain::PositiveOrInfinity`); one cell per base cell of `{d>0}` plus the empty claim `{d<0}` | off | `9baf91c` | [PROJECTIVE_SECTIONS.md](reference/PROJECTIVE_SECTIONS.md) |
+| Engine | `bilinear_general`: all 16 sign patterns of a bilinear target; typed ratio premises from the Symanzik guide; verified piece partition; `symgcad pieces plan/assemble` | opt-in engine | `6cabcf5`, `eb1cd8a`, `0d4e38c` | [BILINEAR_GENERAL.md](reference/BILINEAR_GENERAL.md) |
+| Ordering | `ordering = "kinematic_portfolio"`, with `portfolio_*` budgets | opt-in | `d04747a`, `b696002`, `74440c8` | [KINEMATIC_PORTFOLIO.md](reference/KINEMATIC_PORTFOLIO.md) |
+| Local engine | `local_retain_siblings`; `local_pair_witness_min_resultant_terms` and `local_pair_witness_axis_budget`; `SYMGCAD_LOCAL_THRASH_DIAG` | all opt-in (0 = historical policy) | `3988f53` … `493e6b3` | [LOCAL_ENGINE_THRASH.md](reference/LOCAL_ENGINE_THRASH.md) |
+| Kernels | Proved-degree interpolation admission with a zero-image guard and a second-route spot check | **default** | `f8d2500`, `716dd18` | [ALGEBRA_KERNELS_2026_10_12.md](reference/ALGEBRA_KERNELS_2026_10_12.md) |
+| Kernels | `binary_resultants` | **now `true`** (was false) | `f8d2500` | same |
+| Projection | `projection_strict_bezout_hints`: replayed `Res(p,q)` omission in certified global projection | opt-in | `da5575e` | same |
+| Cache | Pure-algebra operation keys no longer include the domain; old records are migrated | **default** | `dd524dd` | same |
+| CLI | `symgcad project` projects the anchor-reduced problem that `solve` lifts | **default** | `0e77b99` | same |
+| Backend | `patches/symbolica-ducos-zero-subresultant.patch`, optional, upstream #76 | not linked | `716dd18` | [patches/README.md](patches/README.md) |
+
+The other new structural analysis is [GLUZA33_STRUCTURE_2026_10_12.md](reference/GLUZA33_STRUCTURE_2026_10_12.md). It covers:
+
+* the graph and the convexity of `F/U`;
+* the Dodgson chain identities;
+* the region pieces;
+* full versus relevance-restricted projection sizes;
+* why the October 11 campaign stalled: an unfavourable elimination pair, pair-witness cut inflation, and a resultant storm inside one stack.
+
+### How to reproduce
+
+**Positive Gluza33 under the projective contract.**
+
+* Build with `nix develop -c cargo build --release --locked`.
+* Run `symgcad solve` and `symgcad verify` on the input in [PROJECTIVE_SECTIONS.md](reference/PROJECTIVE_SECTIONS.md#reproduce). That input is the original constraints plus `engine = "bilinear_general"`, the U guide, `projective_sections = true`, base engine `optimized`, base anchor `x4`, and order `[x4,x7,x2,x1,x0,x6,x3,x5]`.
+* Then run `cargo run --example sanity_sample` with seed `20261010`, two points per cell.
+
+**Strict pieces.** Run `symgcad pieces plan` on the same input with `projective_sections = false`, solve each `piece_NNN.toml` separately, then run `symgcad pieces assemble` and `symgcad verify`. See [docs/USAGE.md](docs/USAGE.md).
+
+**Parametric ordering.** Set `ordering = "kinematic_portfolio"` on a symbolic ZZ input with `variable_groups = [[s,t],[Feynman block]]` and a `homogeneous_block`.
+
+**Unresolved-case campaign.** The scripts `run_lanes.sh` and `run_all.sh`, and the recipe inputs, are under `artifacts/research/claude-2026-10-12/unresolved/`, described in [UNRESOLVED_CAMPAIGN_2026_10_12.md](reference/UNRESOLVED_CAMPAIGN_2026_10_12.md). Give each concurrent solve **one** CPU. The solve supervisor pins its worker to the first CPU of the inherited mask.
+
+**Benchmarks.** The rewritten benchmark report and the FLINT-versus-Symbolica algebra campaign are described in [BENCHMARKS.md](BENCHMARKS.md#october-12-continuation-benchmark-report) and [FLINT_vs_symbolica/](FLINT_vs_symbolica/).
+
+### Open problems and recommended next steps
+
+1. **Relevance-aware local engine.**
+   * **The problem:** splits and region atoms are projected over the whole orthant (`b, c` against `a, d` everywhere, not only in `{a<0, d>0}`), and siblings pick different rules for the same cut, inflating ancestor cut sets.
+   * **Next steps:**
+     * region-conditioned (lazy) splits;
+     * selected-root bounds with verifier rules;
+     * consistent rule selection that prefers guards already in the ancestor's cut set.
+   * **Prerequisite:** exposing Symbolica's subresultant chain is about a 40-line patch plus an upstream PR, if principal subresultant coefficients are needed.
+   * **Why it matters:** this is the route to strict Gluza33 and to the 2-loop symbolic cases. See [LOCAL_ENGINE_THRASH.md](reference/LOCAL_ENGINE_THRASH.md) and [GLUZA33_STRUCTURE_2026_10_12.md](reference/GLUZA33_STRUCTURE_2026_10_12.md).
+2. **Projective-style simplification for sign-split problems.**
+   * **The problem:** the symbolic ZZ inputs request both signs of F. A projective plan would need typed *empty-fiber sectors*, and sections reaching +∞ as *lower* bounds (or a `−∞`-type selector).
+   * **Next step:** a further explicit contract extension with verifier rules, analogous to `projective_sections`.
+   * **Caveat:** the premises would also have to be found without Euclidean convexity, which fails for these kinematics.
+3. **Chamber-wise orders for parametric problems.**
+   * **The problem:** most kinematic-level CAD factors are spurious relative to the 2–3 positive Landau chambers (for example about 2,412 of 2,414 for A317).
+   * **Next step:** a chamber-wise order needs a per-chamber order, chamber constraints in the verifier, and a checked exhaustive cover. The positive Landau set serves as the completeness target, never as a replacement projection. See [KINEMATIC_PORTFOLIO.md](reference/KINEMATIC_PORTFOLIO.md).
+4. **Kinematic portfolio costs.** Reuse the default probe's projection in the final solve, which removes the Cx12_438 regression, and gate the tiny-case overhead.
+5. **Pair witnesses.** Keep them off in recipes unless a measurement shows a gain. Their sample-dependent separators have no termination proof, and they caused both measured thrash cases.
+6. **Verifier independence of the new kernels.** The verifier now replays one-parameter interpolation with the solver's kernel; a second-route spot check is the mitigation. No corpus case exercises these kernels yet.
+7. **Consumers of `positive_or_infinity`.** FastSecDec export and any integration code must understand `"+inf"` upper sections before using projective results.
+8. **Upstream.** Drop the local patches once #69, #75 and #76 are merged. Re-pin Symbolica and re-run the fast suite.
 
 ## Original objective, scope, and changing execution constraints
 
@@ -61,7 +142,7 @@ There are several different counts and timing scopes in this repository. They mu
 
 **Sign-expanded baseline cases.** The deterministic baseline study contains 579 sign-expanded solves across the groups. The native engine completed 483 under its frozen qualification protocol; symGCAD reproduced and verified all of them. The 96 native timeouts remain censored. Thus 483 successful baseline comparisons and 303 complete original groups are compatible counts, not contradictory totals.
 
-**Regression tests.** The last complete tracked fast gate is **662 passed, zero failed, two deliberately expensive tests ignored**, across 51 test targets. This is a source-regression count, not a corpus-completion count. Later optional backend controls and research helpers have their own focused records. An unrelated alternate-mass A381 test from another workstream is excluded from this task's recorded count and benchmark denominator.
+**Regression tests.** The last complete tracked fast gate of the October 11 handoff was **662 passed, zero failed, two deliberately expensive tests ignored**, across 51 test targets. At the October 12 integration point `9baf91c`, the same kind of run passes 753 with 2 ignored, across 71 targets. This is a source-regression count, not a corpus-completion count. Later optional backend controls and research helpers have their own focused records. An unrelated alternate-mass A381 test from another workstream is excluded from this task's recorded count and benchmark denominator.
 
 **Cold, warm and single-run measurements.** Fresh processes do not necessarily mean cold disk caches. Table tags disclose cold, shared/possibly warm, or unrecorded cache policy. A campaign may reuse completed exact operations from earlier failed attempts. Its time is valuable as a continuation measurement but is not the time to discover a result from scratch. Earlier order/anchor search is recorded separately unless it occurs inside the measured public solve.
 
@@ -103,17 +184,23 @@ This section describes the tracked production implementation and audited origina
 
 ### What the software implements
 
-symGCAD is a Rust library and supervised CLI over exact Symbolica polynomials. The public modules are exported from [src/lib.rs](src/lib.rs); [src/main.rs](src/main.rs) implements `solve`, `project`, `order`, `verify`, `bench`, `corpus`, and `import-fastsecdec`. The hidden `_worker` command is a process boundary for operations that may block inside native algebra. Library callers of `solver::solve` do not automatically acquire the CLI's hard process deadline.
+symGCAD is a Rust library and supervised CLI over exact Symbolica polynomials. The public modules are exported from [src/lib.rs](src/lib.rs); [src/main.rs](src/main.rs) implements `solve`, `project`, `order`, `verify`, `bench`, `corpus`, `import-fastsecdec` and, since October 12, `pieces plan` and `pieces assemble` for `bilinear_general`. The hidden `_worker` command is a process boundary for operations that may block inside native algebra. Library callers of `solver::solve` do not automatically acquire the CLI's hard process deadline.
 
 [config::Problem](src/config.rs) holds declared variables, strict constraints, sign-split expressions, exact string-valued parameter substitutions, variable groups, solver options and resource limits. It denies unknown TOML fields. [problem::normalize](src/problem.rs) binds an explicit complete variable permutation, substitutes exact parameter tokens, and turns strict inequalities into signed positive-polynomial conditions. In particular, rational content is cleared without reversing a sign, `false` and a strict zero constraint represent the empty set, and an identically zero *split annotation* is legitimate. These are different cases. Approximate kinematic values are not silently imported as exact rationals.
 
 [algebra::Algebra](src/algebra.rs) retains canonical sparse polynomial objects and full variable maps, including inactive variables. Production coefficient arithmetic, differentiation, substitution, GCDs, factorization, resultants and root algebra use Symbolica. Exponent overflow and unsupported expressions are rejected. The full map is part of algebraic context: a sparse polynomial whose active support happens to match another operand cannot be transported between different orderings merely by copying a cache entry. Signed input normalization is also distinct from canonicalization for a zero set.
 
-The faithful [projection implementation](src/projection.rs) factors and deduplicates first, eliminates variables from last to first using the required coefficients, discriminants and pairwise resultants, and factors each resulting level. Discriminants compose exact operations; direct low-degree identities are checked alternatives. The production general resultant path uses deterministic integer Ducos algebra, not an unchecked probabilistic CRT answer. [roots.rs](src/roots.rs) specializes fibers at rational prefixes, isolates real roots exactly, and resolves coincident roots by algebra and refinement. [solver.rs](src/solver.rs) lifts in the opposite direction through all required open intervals.
+The faithful [projection implementation](src/projection.rs) factors and deduplicates first, eliminates variables from last to first using the required coefficients, discriminants and pairwise resultants, and factors each resulting level. Discriminants compose exact operations; direct low-degree identities are checked alternatives. The production general resultant path is deterministic, never an unchecked probabilistic CRT answer:
+
+* integer Ducos algebra;
+* since October 12, also proved-degree interpolation from exact integer images for one-parameter operations, and binary segmentation, now on by default, for eligible two-parameter pairs;
+* every interpolated or segmented result is spot-checked through a second route.
+
+See [ALGEBRA_KERNELS_2026_10_12.md](reference/ALGEBRA_KERNELS_2026_10_12.md). [roots.rs](src/roots.rs) specializes fibers at rational prefixes, isolates real roots exactly, and resolves coincident roots by algebra and refinement. [solver.rs](src/solver.rs) lifts in the opposite direction through all required open intervals.
 
 The baseline remains available. The optimized engine adds canonical operation and projection-prefix reuse and certified domain reductions. The experimental local engine in [src/local_projection.rs](src/local_projection.rs) constructs conditional projection obligations around sampled stacks, learns missing ancestor cuts and rebuilds affected work. Its positive-root rules, adjacent-pair rules and support registries are explicit proof-producing alternatives with fallback, not blanket permission to ignore negative or complex collisions.
 
-Higher-level engines have separate evidence and replay paths: [homogeneity](src/homogeneity.rs), [monotone](src/monotone.rs), [sign filtering](src/sign_filter.rs), [linear-negative](src/linear_negative.rs), [bilinear-positive](src/bilinear_positive.rs), and [quadratic-ladder](src/quadratic_ladder.rs). They admit only their checked algebraic/domain structures and reconstruct bounds in the original variables. A successful lower-dimensional solve is not automatically a decomposition of the original problem; the corresponding transformation theorem and export reconstruction must also pass.
+Higher-level engines have separate evidence and replay paths: [homogeneity](src/homogeneity.rs), [monotone](src/monotone.rs), [sign filtering](src/sign_filter.rs), [linear-negative](src/linear_negative.rs), [bilinear-positive](src/bilinear_positive.rs), [bilinear-general](src/bilinear_general.rs) (October 12), and [quadratic-ladder](src/quadratic_ladder.rs). They admit only their checked algebraic/domain structures and reconstruct bounds in the original variables. A successful lower-dimensional solve is not automatically a decomposition of the original problem; the corresponding transformation theorem and export reconstruction must also pass.
 
 ### Mathematical contract and evidence
 
@@ -149,38 +236,38 @@ Fixed ZZ means exact `mt2=1`, `mz2=5/18`, `s=10`, `t=-3` substitutions **before 
 
 The following list was checked directly against rows with `verified=false` in [benchmark/data.json](benchmark/data.json). The JSON's `scope="symbolic_core"` combines symbolic ZZ and core; the identifier and input are needed to distinguish them. `last_status` alone is not a completion classifier because later unsuccessful attempts can coexist with an earlier verified result.
 
-| Unresolved original identifier | Kind |
-|---|---|
-| `finiteA_6_317_7_0__2_0_1_1_1_1_0_0_1/symbolic` | Symbolic ZZ |
-| `finiteA_6_318_7_0__0_2_1_1_1_1_0_0_1/symbolic` | Symbolic ZZ |
-| `finiteA_6_377_10_0__5_0_0_1_1_1_1_0_1/symbolic` | Symbolic ZZ |
-| `finiteA_6_414_10_0__0_5_1_1_1_0_0_1_1/symbolic` | Symbolic ZZ |
-| `finiteA_7_381_10_0__4_0_1_1_1_1_1_0_1/symbolic` | Symbolic ZZ |
-| `finiteA_7_446_11_0__0_5_1_1_1_1_0_1_1/symbolic` | Symbolic ZZ |
-| `finiteAx12_6_317_7_0__2_0_1_1_1_1_0_0_1/symbolic` | Symbolic ZZ |
-| `finiteAx12_6_318_7_0__0_2_1_1_1_1_0_0_1/symbolic` | Symbolic ZZ |
-| `finiteAx12_6_377_10_0__5_0_0_1_1_1_1_0_1/symbolic` | Symbolic ZZ |
-| `finiteAx12_6_414_10_0__0_5_1_1_1_0_0_1_1/symbolic` | Symbolic ZZ |
-| `finiteAx12_7_381_10_0__4_0_1_1_1_1_1_0_1/symbolic` | Symbolic ZZ |
-| `finiteAx12_7_446_11_0__0_5_1_1_1_1_0_1_1/symbolic` | Symbolic ZZ |
-| `finiteB_7_471_13_0__7_1_1_0_1_0_1_1_1/symbolic` | Symbolic ZZ |
-| `finiteBx12_7_471_13_0__7_1_1_0_1_0_1_1_1/symbolic` | Symbolic ZZ |
-| `finiteC_6_215_11_0__6_1_1_0_1_0_1_1_0/symbolic` | Symbolic ZZ |
-| `finiteC_6_231_7_0__2_1_1_0_0_1_1_1_0/symbolic` | Symbolic ZZ |
-| `finiteC_6_470_10_0__0_5_1_0_1_0_1_1_1/symbolic` | Symbolic ZZ |
-| `finiteC_6_476_10_0__0_0_5_1_1_0_1_1_1/symbolic` | Symbolic ZZ |
-| `finiteC_7_247_10_0__4_1_1_0_1_1_1_1_0/symbolic` | Symbolic ZZ |
-| `finiteC_7_478_10_0__0_4_1_1_1_0_1_1_1/symbolic` | Symbolic ZZ |
-| `finiteCx12_6_215_11_0__6_1_1_0_1_0_1_1_0/symbolic` | Symbolic ZZ |
-| `finiteCx12_6_231_7_0__2_1_1_0_0_1_1_1_0/symbolic` | Symbolic ZZ |
-| `finiteCx12_6_476_10_0__0_0_5_1_1_0_1_1_1/symbolic` | Symbolic ZZ |
-| `finiteCx12_7_247_10_0__4_1_1_0_1_1_1_1_0/symbolic` | Symbolic ZZ |
-| `finiteCx12_7_478_10_0__0_4_1_1_1_0_1_1_1/symbolic` | Symbolic ZZ |
-| `finiteD_7_251_12_0__6_1_0_1_1_1_1_1_0/symbolic` | Symbolic ZZ |
-| `finiteD_7_375_13_0__7_1_1_0_1_1_1_0_1/symbolic` | Symbolic ZZ |
-| `test_gluza_ex33/solve/3` | Positive Gluza33, fixed kinematics |
+| Unresolved original identifier | Kind | October 12 status |
+|---|---|---|
+| `finiteA_6_317_7_0__2_0_1_1_1_1_0_0_1/symbolic` | Symbolic ZZ | Incomplete at 3,600 s with the local recipe (pair witnesses off, sibling retention on); [campaign](reference/UNRESOLVED_CAMPAIGN_2026_10_12.md) |
+| `finiteA_6_318_7_0__0_2_1_1_1_1_0_0_1/symbolic` | Symbolic ZZ | Incomplete at 3,600 s with the local recipe (pair witnesses off, sibling retention on); [campaign](reference/UNRESOLVED_CAMPAIGN_2026_10_12.md) |
+| `finiteA_6_377_10_0__5_0_0_1_1_1_1_0_1/symbolic` | Symbolic ZZ | Incomplete at 3,600 s with the local recipe (pair witnesses off, sibling retention on); [campaign](reference/UNRESOLVED_CAMPAIGN_2026_10_12.md) |
+| `finiteA_6_414_10_0__0_5_1_1_1_0_0_1_1/symbolic` | Symbolic ZZ | Incomplete at 3,600 s with the local recipe (pair witnesses off, sibling retention on); [campaign](reference/UNRESOLVED_CAMPAIGN_2026_10_12.md) |
+| `finiteA_7_381_10_0__4_0_1_1_1_1_1_0_1/symbolic` | Symbolic ZZ | Incomplete at 3,600 s with the local recipe (pair witnesses off, sibling retention on); [campaign](reference/UNRESOLVED_CAMPAIGN_2026_10_12.md) |
+| `finiteA_7_446_11_0__0_5_1_1_1_1_0_1_1/symbolic` | Symbolic ZZ | Incomplete at 3,600 s with the local recipe (pair witnesses off, sibling retention on); [campaign](reference/UNRESOLVED_CAMPAIGN_2026_10_12.md) |
+| `finiteAx12_6_317_7_0__2_0_1_1_1_1_0_0_1/symbolic` | Symbolic ZZ | Incomplete at 3,600 s with the local recipe (pair witnesses off, sibling retention on); [campaign](reference/UNRESOLVED_CAMPAIGN_2026_10_12.md) |
+| `finiteAx12_6_318_7_0__0_2_1_1_1_1_0_0_1/symbolic` | Symbolic ZZ | Incomplete at 3,600 s with the local recipe (pair witnesses off, sibling retention on); [campaign](reference/UNRESOLVED_CAMPAIGN_2026_10_12.md) |
+| `finiteAx12_6_377_10_0__5_0_0_1_1_1_1_0_1/symbolic` | Symbolic ZZ | Incomplete at 3,600 s with the local recipe (pair witnesses off, sibling retention on); [campaign](reference/UNRESOLVED_CAMPAIGN_2026_10_12.md) |
+| `finiteAx12_6_414_10_0__0_5_1_1_1_0_0_1_1/symbolic` | Symbolic ZZ | Incomplete at 3,600 s with the local recipe (pair witnesses off, sibling retention on); [campaign](reference/UNRESOLVED_CAMPAIGN_2026_10_12.md) |
+| `finiteAx12_7_381_10_0__4_0_1_1_1_1_1_0_1/symbolic` | Symbolic ZZ | Incomplete at 3,600 s with the local recipe (pair witnesses off, sibling retention on); [campaign](reference/UNRESOLVED_CAMPAIGN_2026_10_12.md) |
+| `finiteAx12_7_446_11_0__0_5_1_1_1_1_0_1_1/symbolic` | Symbolic ZZ | Incomplete at 3,600 s with the local recipe (pair witnesses off, sibling retention on); [campaign](reference/UNRESOLVED_CAMPAIGN_2026_10_12.md) |
+| `finiteB_7_471_13_0__7_1_1_0_1_0_1_1_1/symbolic` | Symbolic ZZ | Incomplete at 3,600 s with the local recipe (pair witnesses off, sibling retention on); [campaign](reference/UNRESOLVED_CAMPAIGN_2026_10_12.md) |
+| `finiteBx12_7_471_13_0__7_1_1_0_1_0_1_1_1/symbolic` | Symbolic ZZ | Incomplete at 3,600 s with the local recipe (pair witnesses off, sibling retention on); [campaign](reference/UNRESOLVED_CAMPAIGN_2026_10_12.md) |
+| `finiteC_6_215_11_0__6_1_1_0_1_0_1_1_0/symbolic` | Symbolic ZZ | Incomplete at 3,600 s with the local recipe (pair witnesses off, sibling retention on); [campaign](reference/UNRESOLVED_CAMPAIGN_2026_10_12.md) |
+| `finiteC_6_231_7_0__2_1_1_0_0_1_1_1_0/symbolic` | Symbolic ZZ | Incomplete at 3,600 s with the local recipe (pair witnesses off, sibling retention on); [campaign](reference/UNRESOLVED_CAMPAIGN_2026_10_12.md) |
+| `finiteC_6_470_10_0__0_5_1_0_1_0_1_1_1/symbolic` | Symbolic ZZ | Incomplete at 3,600 s with the local recipe (pair witnesses off, sibling retention on); [campaign](reference/UNRESOLVED_CAMPAIGN_2026_10_12.md) |
+| `finiteC_6_476_10_0__0_0_5_1_1_0_1_1_1/symbolic` | Symbolic ZZ | Incomplete at 3,600 s with the local recipe (pair witnesses off, sibling retention on); [campaign](reference/UNRESOLVED_CAMPAIGN_2026_10_12.md) |
+| `finiteC_7_247_10_0__4_1_1_0_1_1_1_1_0/symbolic` | Symbolic ZZ | Incomplete at 3,600 s with the local recipe (pair witnesses off, sibling retention on); [campaign](reference/UNRESOLVED_CAMPAIGN_2026_10_12.md) |
+| `finiteC_7_478_10_0__0_4_1_1_1_0_1_1_1/symbolic` | Symbolic ZZ | Incomplete at 3,600 s with the local recipe (pair witnesses off, sibling retention on); [campaign](reference/UNRESOLVED_CAMPAIGN_2026_10_12.md) |
+| `finiteCx12_6_215_11_0__6_1_1_0_1_0_1_1_0/symbolic` | Symbolic ZZ | Incomplete at 3,600 s with the local recipe (pair witnesses off, sibling retention on); [campaign](reference/UNRESOLVED_CAMPAIGN_2026_10_12.md) |
+| `finiteCx12_6_231_7_0__2_1_1_0_0_1_1_1_0/symbolic` | Symbolic ZZ | Incomplete at 3,600 s with the local recipe (pair witnesses off, sibling retention on); [campaign](reference/UNRESOLVED_CAMPAIGN_2026_10_12.md) |
+| `finiteCx12_6_476_10_0__0_0_5_1_1_0_1_1_1/symbolic` | Symbolic ZZ | Incomplete at 3,600 s with the local recipe (pair witnesses off, sibling retention on); [campaign](reference/UNRESOLVED_CAMPAIGN_2026_10_12.md) |
+| `finiteCx12_7_247_10_0__4_1_1_0_1_1_1_1_0/symbolic` | Symbolic ZZ | Incomplete at 3,600 s with the local recipe (pair witnesses off, sibling retention on); [campaign](reference/UNRESOLVED_CAMPAIGN_2026_10_12.md) |
+| `finiteCx12_7_478_10_0__0_4_1_1_1_0_1_1_1/symbolic` | Symbolic ZZ | Not re-run (third campaign round skipped) |
+| `finiteD_7_251_12_0__6_1_0_1_1_1_1_1_0/symbolic` | Symbolic ZZ | Not re-run (third campaign round skipped) |
+| `finiteD_7_375_13_0__7_1_1_0_1_1_1_0_1/symbolic` | Symbolic ZZ | Not re-run (third campaign round skipped) |
+| `test_gluza_ex33/solve/3` | Positive Gluza33, fixed kinematics | **Complete under the opt-in `projective_sections` contract** (2,372 verified cells, [PROJECTIVE_SECTIONS.md](reference/PROJECTIVE_SECTIONS.md)); still open under the strict contract |
 
-All 28 exhausted the first one-hour slow campaign without completion. The later two-hour/50-GiB original Gluza33 attempt likewise supplied no ground-truth decomposition. Subsequent targeted progress belongs to separate campaign records, not retroactive completion credit. [SLOW_SUITE.md](reference/SLOW_SUITE.md), [tests/corpus_classification.json](tests/corpus_classification.json) and [tests/slow_options.json](tests/slow_options.json) retain these cases and recipes.
+All 28 exhausted the first one-hour slow campaign without completion. The later two-hour/50-GiB original Gluza33 attempt likewise supplied no ground-truth decomposition. The third column records the October 12 continuation. Only positive Gluza33 changed status, and only under the opt-in projective contract. Subsequent targeted progress belongs to separate campaign records, not retroactive completion credit. [SLOW_SUITE.md](reference/SLOW_SUITE.md), [tests/corpus_classification.json](tests/corpus_classification.json) and [tests/slow_options.json](tests/slow_options.json) retain these cases and recipes.
 
 ### Representative completed original results
 
@@ -204,7 +291,7 @@ The frozen baseline audit covers all 331 groups / 579 sign-expanded problems. Na
 
 New native comparisons use the user's adaptive ceiling `max(300 seconds, 3 * completed Rust median solve wall time)`, further bounded by configured/remaining campaign limits and the one-hour reference ceiling. Without a complete Rust measurement, the ceiling is 300 seconds. Reference qualification precedes Rust timing and freezes the cohort, so a later larger allowable measurement budget does not silently add formerly censored cases. Verification, truncated output and unsuccessful repetitions cannot supply the Rust median. [REFERENCE_BUDGETS.md](reference/REFERENCE_BUDGETS.md) documents this precisely.
 
-The final integrated fast gate passed **662 tests across 51 targets**, zero failed, two expensive tests ignored, with 74.80 seconds summed test-body time. A fresh public-dependency build took 17 minutes 49 seconds separately. [COMBINED_FAST_VALIDATION.md](reference/COMBINED_FAST_VALIDATION.md) is append-only, so earlier paragraphs report earlier counts. The final gate used a clean isolated integration worktree with no reference checkout or unrelated alternate-mass test; the preceding 659-test gate used explicit tracked targets. `scripts/test.sh fast --locked` runs ordinary library/binary/integration tests; `scripts/test.sh slow` invokes the bounded Rust slow-suite supervisor and does not turn unresolved cases into passes. Research examples also have focused tests outside the tracked fast count.
+The final integrated fast gate of the October 11 handoff passed **662 tests across 51 targets**, zero failed, two expensive tests ignored, with 74.80 seconds summed test-body time. The October 12 integration point `9baf91c` passes 753 tests with 2 ignored, across 71 targets. A fresh public-dependency build took 17 minutes 49 seconds separately. [COMBINED_FAST_VALIDATION.md](reference/COMBINED_FAST_VALIDATION.md) is append-only, so earlier paragraphs report earlier counts. The final gate used a clean isolated integration worktree with no reference checkout or unrelated alternate-mass test; the preceding 659-test gate used explicit tracked targets. `scripts/test.sh fast --locked` runs ordinary library/binary/integration tests; `scripts/test.sh slow` invokes the bounded Rust slow-suite supervisor and does not turn unresolved cases into passes. Research examples also have focused tests outside the tracked fast count.
 
 Tests exercise exact rationals and signs, false/zero constraints, repeated/shared/nearby roots, disconnected regions, inactive variables, degree drops and nullification, root-selector mutations, missing branches, same-sign seams, transformations, serialization and worker termination/checkpointing. Small mathematical comparisons and proof mutations establish stronger evidence than random samples alone.
 
@@ -244,7 +331,7 @@ Global saturated Descartes stock remains two templates per canonical source and 
 
 [Cargo.toml](Cargo.toml) requires Rust at least 1.96; [flake.lock](flake.lock) fixes the Nix environment with Rust 1.98.1, native build tools, GMP/MPFR and profiling tools. The separate reference shell supplies Python/Cython/FLINT dependencies. Symbolica default features are disabled; production enables integer-GMP, float-MPFR and tracing, without Python/native-code-generation benchmark dependencies. Root Cargo patches resolve Numerica and Graphica from the same pinned Symbolica monorepo.
 
-Normal setup is `nix develop`, then `cargo build --release --locked`. The final integration includes [PR #1](https://github.com/alphal00p/symGCAD/pull/1): Symbolica is a registry-facing dependency and all three standalone root patches select the same public, pinned Symbolica Git revision. A normal clone needs no `DO_NOT_PUSH_REFERENCES` directory. A downstream workspace owns its root patches and can share one compatible backend identity with symGCAD; arbitrary future backend compatibility is not promised. The optional bootstrap fetches public pinned research sources into ignored directories, checks revisions, and refuses unrelated modifications rather than resetting user work. `--reference` prepares native GCAD; `--fastsecdec` fetches the separate graph producer. `--apply-patches` installs the explicitly documented optional upstream linear-resultant-sign and primitive-integer-shift fixes idempotently in that research checkout; it does **not** redirect the default Cargo build to the patched sources. Select all three local root patches explicitly in an isolated worktree when testing a modified backend. Normal production already avoids those affected paths, and historical measured releases used pristine sources. License configuration belongs in the environment or ignored `.symgcad-env`, not in committed documentation. [docs/SETUP.md](docs/SETUP.md), [patches/README.md](patches/README.md) and [SETUP_VALIDATION.md](reference/SETUP_VALIDATION.md) give exact commands and tested scope.
+Normal setup is `nix develop`, then `cargo build --release --locked`. The final integration includes [PR #1](https://github.com/alphal00p/symGCAD/pull/1): Symbolica is a registry-facing dependency and all three standalone root patches select the same public, pinned Symbolica Git revision. A normal clone needs no `DO_NOT_PUSH_REFERENCES` directory. A downstream workspace owns its root patches and can share one compatible backend identity with symGCAD; arbitrary future backend compatibility is not promised. The optional bootstrap fetches public pinned research sources into ignored directories, checks revisions, and refuses unrelated modifications rather than resetting user work. `--reference` prepares native GCAD; `--fastsecdec` fetches the separate graph producer. `--apply-patches` installs three explicitly documented optional upstream fixes idempotently in that research checkout: the linear-resultant sign (upstream #69), the primitive integer shift (upstream #75) and, since October 12, the Ducos zero-subresultant fix (upstream #76); it does **not** redirect the default Cargo build to the patched sources. Select all three local root patches explicitly in an isolated worktree when testing a modified backend. Normal production already avoids those affected paths, and historical measured releases used pristine sources. License configuration belongs in the environment or ignored `.symgcad-env`, not in committed documentation. [docs/SETUP.md](docs/SETUP.md), [patches/README.md](patches/README.md) and [SETUP_VALIDATION.md](reference/SETUP_VALIDATION.md) give exact commands and tested scope.
 
 The final integration also includes [PR #2](https://github.com/alphal00p/symGCAD/pull/2), allowing explicit library certificate limits of 262,144 Bernstein coefficients and 1,000,000,000 work units. Defaults remain 4,096 and 1,000,000. The chosen limits are serialized, validated and replayed; larger allowances do not establish a sign, remove a seam or replace caller-owned time/memory supervision. A nine-variable strictly positive polynomial actually exercises a `4^9`-coefficient tensor, with old-cap and one-work-unit refusals, signed discovery, independent/serialized replay and reduced-limit rejection. That regression validates the larger work option without claiming it consumes more than the old ten-million work ceiling. Checked tensor-cardinality addition fixes that specific overflow path; it is not a blanket claim of 32-bit overflow safety throughout the library. These two PRs were authored by ValentinHirschi in separate workstreams and integrated at the user's explicit request; they were not generated by the final Gluza campaign.
 
@@ -264,6 +351,8 @@ Cache proposals and saved result metadata are untrusted until their identities a
 ## Gluza33 and exact algebra
 
 Prepared from the retained reference notes, source-bound diagnostic reports and final control ledger. These algebra investigations must be read alongside the final original campaign audit and overall corpus ledger. The original **positive** Gluza33 problem remains unresolved in the last completed checkpoint. The original **negative** problem is solved and independently verified. The final positive campaign has now timed out without an exported decomposition or verification. Its terminal record and retained work are described below.
+
+*October 12 update.* Under the opt-in `projective_sections` contract extension, positive Gluza33 completes with 2,372 verified cells. Under the strict contract it remains unresolved. The structural reasons the campaign below stalled are analysed in [GLUZA33_STRUCTURE_2026_10_12.md](reference/GLUZA33_STRUCTURE_2026_10_12.md). The statements below describe the strict contract.
 
 ### Mathematical target and non-negotiable correctness contract
 
@@ -289,9 +378,9 @@ The positive branch requires a different argument. The simple strict bilinear ru
 
 `exists x3,x5>0: F>0  iff  d>0`.
 
-This is a useful reduction, but the six-coordinate endpoint polynomial is mixed-sign. A generic two-fiber reconstruction would require a complete base decomposition for coefficient/root-order conditions. For `F=a xy+b x+c y+d`, the discriminant-like ordering quantity is `bc-ad=H^2`; the **H=0 seam remains essential**. A checked positive point has `(a,b,c,d)=(-110,200,-220,400)`, coincident fiber boundaries 20/11 and `F=270>0`. Deleting that same-sign seam would invalidate cylindrical cells.
+This is a useful reduction, but the six-coordinate endpoint polynomial is mixed-sign. A generic two-fiber reconstruction would require a complete base decomposition for coefficient/root-order conditions. For `F=a xy+b x+c y+d`, the discriminant-like ordering quantity is `bc-ad=H^2`. Under the strict cell contract the **H=0 seam remains essential**. The opt-in projective plan no longer needs it as a cut ([PROJECTIVE_SECTIONS.md](reference/PROJECTIVE_SECTIONS.md)). A checked positive point has `(a,b,c,d)=(-110,200,-220,400)`, coincident fiber boundaries 20/11 and `F=270>0`. Deleting that same-sign seam would invalidate cylindrical cells.
 
-The positive linear/bilinear base searches did not complete. Two 150-second ordering screens produced 49 and 53 timeouts without a completed trial; other fixed-order base trials also timed out. A rational compactification `w=z/(1+z)` simplifies an individual positive fiber, but inverse transport makes its upper endpoint switch between finite and infinity within a parent region. That is not an original-coordinate CAD cell without further splitting. These are exact structural insights, not completed positive solutions. Authoritative notes: [GLUZA33_POSITIVE_BILINEAR.md](reference/GLUZA33_POSITIVE_BILINEAR.md), [GLUZA_POSITIVE_LINEAR_BASES.md](reference/GLUZA_POSITIVE_LINEAR_BASES.md).
+The positive linear/bilinear base searches did not complete. Two 150-second ordering screens produced 49 and 53 timeouts without a completed trial; other fixed-order base trials also timed out. A rational compactification `w=z/(1+z)` simplifies an individual positive fiber, but inverse transport makes its upper endpoint switch between finite and infinity within a parent region. That is not an original-coordinate CAD cell without further splitting. These are exact structural insights, not completed positive solutions. *October 12:* the opt-in `projective_sections` extension accepts exactly such upper sections, `RootIndexDomain::PositiveOrInfinity`. Under it, the `bilinear_general` projective plan completes positive Gluza33. Authoritative notes: [GLUZA33_POSITIVE_BILINEAR.md](reference/GLUZA33_POSITIVE_BILINEAR.md), [GLUZA_POSITIVE_LINEAR_BASES.md](reference/GLUZA_POSITIVE_LINEAR_BASES.md).
 
 ### Earlier expensive attempts and the first factorization breakthrough
 
@@ -372,7 +461,7 @@ Three pure policy tests, admitted generic synthetic controls with a negative rat
 
 ### Final original campaign and stopping result
 
-The final original positive Gluza33 continuation **times out after 6,603.858274935 seconds**, with **2,010,632 KiB peak RSS** (1,963.508 MiB, about 1.92 GiB). Total campaign wall time is 6,604.300292846 seconds. Worker CPU time is 6,402.654628 user seconds plus 24.558223 system seconds. The configured solve allowance is 6,600 seconds; the reported wall time includes supervisor polling/termination overhead. There is no result file, no exported cell count and no independent verification run. The reserved verification allowance is unused. **The aggregate remains 303/331, with positive Gluza33 and 27 symbolic ZZ originals unresolved.**
+The final original positive Gluza33 continuation **times out after 6,603.858274935 seconds**, with **2,010,632 KiB peak RSS** (1,963.508 MiB, about 1.92 GiB). Total campaign wall time is 6,604.300292846 seconds. Worker CPU time is 6,402.654628 user seconds plus 24.558223 system seconds. The configured solve allowance is 6,600 seconds; the reported wall time includes supervisor polling/termination overhead. There is no result file, no exported cell count and no independent verification run. The reserved verification allowance is unused. **The aggregate remains 303/331, with positive Gluza33 and 27 symbolic ZZ originals unresolved.** As of October 12 this is still true under the strict contract; see the [October 12 continuation](#october-12-continuation) for the opt-in projective result.
 
 The run uses one CPU (8), a 50-GiB allowance and the frozen optional lowest-degree-axis backend, with a shared 7,200-second solve/verification budget. It starts from a fresh copy of all 27,897 inherited operation records (305,478,455 bytes). The original problem, order `[x0,x2,x1,x7,x4,x6,x3,x5]`, scale anchor `x0`, affine policy, interval stock four, 32,768-term source allowances and 131,072 total guard terms are retained. Only the backend policy, checkpoint location and deadline differ from the preceding audited continuation. The previously obstructing 2,867-term factor completes inside the original solver in 1.996107155 seconds; standalone profiler factors were not injected.
 
@@ -570,7 +659,7 @@ The following work is easy to miss when focusing only on A446 and Gluza33. It ma
 
 ### Exact resultant acceleration and the A377 high-degree frontier
 
-Production's conservative default is deterministic exact algebra. Two separate accelerators were investigated: bounded interpolation with sufficient exact reconstruction checks, and signed integer packing/binary segmentation. The latter substitutes a sufficiently large integer base under proved degree and coefficient bounds, decodes signed digits, reconstructs and checks the complete encoding, and restores all rational scale/sign data. It is not a heuristic agreement of a few modular images. The production option remains disabled by default, and proof verification can use the ordinary exact backend independently. See [binary segmentation](reference/BINARY_SEGMENTATION_RESULTANTS.md), its [production check](reference/BINARY_SEGMENTATION_PRODUCTION_CHECK.md), and [src/resultant_segmentation.rs](src/resultant_segmentation.rs).
+Production's conservative default is deterministic exact algebra. Two separate accelerators were investigated: bounded interpolation with sufficient exact reconstruction checks, and signed integer packing/binary segmentation. The latter substitutes a sufficiently large integer base under proved degree and coefficient bounds, decodes signed digits, reconstructs and checks the complete encoding, and restores all rational scale/sign data. It is not a heuristic agreement of a few modular images. The production option was disabled by default until October 11. Since October 12, `binary_resultants` defaults to `true`, and every segmented or interpolated result is spot-checked through Symbolica's own substitution and Brown resultant ([ALGEBRA_KERNELS_2026_10_12.md](reference/ALGEBRA_KERNELS_2026_10_12.md)). That note also records the reduced verifier independence this implies. See [binary segmentation](reference/BINARY_SEGMENTATION_RESULTANTS.md), its [production check](reference/BINARY_SEGMENTATION_PRODUCTION_CHECK.md), and [src/resultant_segmentation.rs](src/resultant_segmentation.rs).
 
 Two authentic captured pair resultants were exactly reproduced through that production path: A317, 9,835 output terms, 38.16 seconds algebra; A318, 18,939 terms, 20.03 seconds algebra. Their independently completed numeric-Ducos grids contain 34,945 and 42,813 valid points. Builds differ, so those two times are not a head-to-head speed comparison. Both original symbolic decompositions remain unresolved. The static degree-product admission minimum was changed from 64 to 60, with a regression admitting a 10-by-6 pair and declining a 9-by-6 pair; the other bounds were unchanged.
 
@@ -604,7 +693,7 @@ Transport is not relabeling a result. It needs the full independently verified d
 
 ### Known integer-shift hazard in wider reuse of a research helper
 
-The handoff audit found one additional limitation in the frozen tropical root-gap helper, not a failure of the executed screen. Its `|e|<=128` dyadic admission is broader than the safe primitive-Integer shift range in the pinned pristine Numerica. A future exponent such as 63 or 127, or a sufficiently large shift of a small primitive coefficient, can take the known value-overflow path. Before reusing that helper on wider inputs, force `MultiPrecisionInteger` shifts or apply the separate [integer-left-shift fix](patches/numerica-integer-left-shift.patch); the bound is not itself a safe general API contract.
+The handoff audit found one additional limitation in the frozen tropical root-gap helper, not a failure of the executed screen. Its `|e|<=128` dyadic admission is broader than the safe primitive-Integer shift range in the pinned pristine Numerica. A future exponent such as 63 or 127, or a sufficiently large shift of a small primitive coefficient, can take the known value-overflow path. Before reusing that helper on wider inputs, force `MultiPrecisionInteger` shifts or apply the separate [integer-left-shift fix](patches/numerica-integer-left-shift.patch), now upstream as [symbolica-dev/symbolica#75](https://github.com/symbolica-dev/symbolica/pull/75). The bound is not itself a safe general API contract.
 
 The PR #2 review also identified a separate pre-existing portability edge in `domain::affine_replace`: the expression `m[variable] as usize + 1` can overflow on a 32-bit target for exponent `u32::MAX`, before the enclosing saturating addition. The new checked Bernstein tensor count does not fix that other path. The published Nix targets and measured campaigns are 64-bit, so this is an outstanding extreme-input/32-bit portability concern, not an observed failure of the recorded corpus. Address it with a focused exact refusal test before claiming broader 32-bit support.
 
@@ -642,7 +731,7 @@ A valid next result must include the full original domain or be explicitly label
 
 The handoff does not schedule these investigations. They are the most defensible directions if work is later resumed.
 
-1. **Follow the final Gluza frontier.** The new main-axis result demonstrates that a structural backend heuristic can clear a real obstacle. A bounded generic axis portfolio, better lifting/assignment heuristics or smaller exact resultants may help the next one. Success means progressing a complete original solve and eventually verifying it, not a faster isolated factor alone.
+1. **Follow the final Gluza frontier.** *Superseded on October 12:* the positive problem completes under the opt-in projective contract. A strict solve needs relevance-aware projection, not more factor gates; see the October 12 next steps. The new main-axis result demonstrates that a structural backend heuristic can clear a real obstacle. A bounded generic axis portfolio, better lifting/assignment heuristics or smaller exact resultants may help the next one. Success means progressing a complete original solve and eventually verifying it, not a faster isolated factor alone.
 2. **Typed whole-cell premises and selected-root proofs.** CFF chambers, graph-flow slacks, conditional AM–GM identities and positive-system exclusion all need authenticated inequalities on the full current base, with acyclic premise dependencies and domain-sensitive caches. Implement one narrow checker with negative tests before expanding discovery. A root selector needs a stable exact meaning through permitted specializations, not a sample-only index.
 3. **Ordered quadratic blocks with original-coordinate restoration.** The graph-derived fraction/worldline charts expose real structure. The final-axis identities preserve existing obligations and are safer than deleting a projection alphabet. Measure the actual large remaining factor/resultant costs, then solve the export/recylindrification contract. A smaller chart basis without original cells is not the requested deliverable.
 4. **Root isolation where positivity is proved.** The optional positive-axis/unit-shift experiments give a concrete API-time and memory improvement on an authentic large operand. Production integration still needs boundary-domain/index semantics, exact coincident-root behavior and complete verifier adaptation. Keep the full-real fallback and compare whole original solves.
@@ -666,7 +755,7 @@ At the requested stopping point, terminate no unrelated process, leave no task-o
 
 ## Reference index
 
-This index preserves the full set of tracked research/validation notes available at the handoff, plus the final factorization note. Entries are evidence pointers, not a claim that every proposed algorithm was implemented. Many are chronological snapshots: their local completion counts and pending plans may be superseded by this handoff and the latest audit. Read their dates, measurement scopes and follow-up sections. No untracked alternate-mass A381 workstream note is included.
+This index preserves the full set of tracked research/validation notes available at the handoff, plus the final factorization note and the seven notes of the October 12 continuation. Entries are evidence pointers, not a claim that every proposed algorithm was implemented. Many are chronological snapshots: their local completion counts and pending plans may be superseded by this handoff and the latest audit. Read their dates, measurement scopes and follow-up sections. No untracked alternate-mass A381 workstream note is included.
 
 | Note | Repository path |
 | --- | --- |
@@ -702,6 +791,7 @@ This index preserves the full set of tracked research/validation notes available
 | [Original Gluza33 continuation with affine factor preconditioning](reference/AFFINE_GLUZA33_CONTINUATION.md) | `reference/AFFINE_GLUZA33_CONTINUATION.md` |
 | [Bounded affine prefix evaluation](reference/AFFINE_PREFIX_EVALUATION.md) | `reference/AFFINE_PREFIX_EVALUATION.md` |
 | [Follow-up campaigns after exact square and sum reductions](reference/AFFINE_SUM_FOLLOWUP_CAMPAIGNS.md) | `reference/AFFINE_SUM_FOLLOWUP_CAMPAIGNS.md` |
+| [Algebra kernels and projection changes of 2026-10-12](reference/ALGEBRA_KERNELS_2026_10_12.md) | `reference/ALGEBRA_KERNELS_2026_10_12.md` |
 | [Slow original ordering APIs](reference/API_SLOW_SUITE.md) | `reference/API_SLOW_SUITE.md` |
 | [Bound progress I/O on optional base-support fallbacks](reference/BASE_PROGRESS_THROTTLE.md) | `reference/BASE_PROGRESS_THROTTLE.md` |
 | [Restartable first-axis support proposals](reference/BASE_SUPPORT_PROPOSAL_CACHE.md) | `reference/BASE_SUPPORT_PROPOSAL_CACHE.md` |
@@ -709,6 +799,7 @@ This index preserves the full set of tracked research/validation notes available
 | [Exact support blocks at the first lifting axis](reference/BASE_UNIVARIATE_BASIS_PROPOSAL.md) | `reference/BASE_UNIVARIATE_BASIS_PROPOSAL.md` |
 | [Differentiated support-source limits](reference/BASE_UNIVARIATE_RESOURCE_POLICY.md) | `reference/BASE_UNIVARIATE_RESOURCE_POLICY.md` |
 | [First-axis support-basis retention diagnostics](reference/BASE_UNIVARIATE_RETENTION_DIAGNOSTICS.md) | `reference/BASE_UNIVARIATE_RETENTION_DIAGNOSTICS.md` |
+| [`bilinear_general`: exact two-axis positive fibers over verified base pieces](reference/BILINEAR_GENERAL.md) | `reference/BILINEAR_GENERAL.md` |
 | [Exact checks of the bounded production resultant kernel](reference/BINARY_SEGMENTATION_PRODUCTION_CHECK.md) | `reference/BINARY_SEGMENTATION_PRODUCTION_CHECK.md` |
 | [Exact binary segmentation of captured resultants](reference/BINARY_SEGMENTATION_RESULTANTS.md) | `reference/BINARY_SEGMENTATION_RESULTANTS.md` |
 | [C470: exact observation of local refinement and cache admission](reference/C470_REFINEMENT_OBSERVER.md) | `reference/C470_REFINEMENT_OBSERVER.md` |
@@ -745,6 +836,7 @@ This index preserves the full set of tracked research/validation notes available
 | [Positive Gluza33: the next algebra gate](reference/GLUZA33_NEXT_INVESTIGATION.md) | `reference/GLUZA33_NEXT_INVESTIGATION.md` |
 | [Positive Gluza33: strict-premise obstruction and a generic two-fiber proposal](reference/GLUZA33_POSITIVE_BILINEAR.md) | `reference/GLUZA33_POSITIVE_BILINEAR.md` |
 | [Exact two-step Gluza33 reduction (research)](reference/GLUZA33_RAYLEIGH_REDUCTION.md) | `reference/GLUZA33_RAYLEIGH_REDUCTION.md` |
+| [Positive Gluza33: graph structure, projection sizes and why the final campaign stalled](reference/GLUZA33_STRUCTURE_2026_10_12.md) | `reference/GLUZA33_STRUCTURE_2026_10_12.md` |
 | [Bounded Wang reconstruction resolves the captured Gluza33 factor](reference/GLUZA33_WANG_PREFLIGHT.md) | `reference/GLUZA33_WANG_PREFLIGHT.md` |
 | [Gluza33: the saturated-witness source budget](reference/GLUZA33_WITNESS_BUDGET.md) | `reference/GLUZA33_WITNESS_BUDGET.md` |
 | [Gluza33: the source-specific cause of the discriminant fallback](reference/GLUZA33_WITNESS_STOCK_TRACE.md) | `reference/GLUZA33_WITNESS_STOCK_TRACE.md` |
@@ -759,10 +851,12 @@ This index preserves the full set of tracked research/validation notes available
 | [Rational-interval Descartes diagnostic](reference/INTERVAL_DESCARTES_DIAGNOSTIC.md) | `reference/INTERVAL_DESCARTES_DIAGNOSTIC.md` |
 | [Bounded source admission for interval root certificates](reference/INTERVAL_SOURCE_BUDGET_PRODUCTION.md) | `reference/INTERVAL_SOURCE_BUDGET_PRODUCTION.md` |
 | [A377: an exact discriminant-of-resultant reduction](reference/ITERATED_RESULTANT_RESEARCH.md) | `reference/ITERATED_RESULTANT_RESEARCH.md` |
+| [Kinematic portfolio ordering and the parametric analysis](reference/KINEMATIC_PORTFOLIO.md) | `reference/KINEMATIC_PORTFOLIO.md` |
 | [Joint homogeneous anchors and exact short projection prefixes](reference/LINEAR_PREFIX_RESEARCH.md) | `reference/LINEAR_PREFIX_RESEARCH.md` |
 | [Generic CAD literature: priorities for the unresolved corpus](reference/LITERATURE_GENERIC_GCAD.md) | `reference/LITERATURE_GENERIC_GCAD.md` |
 | [Graph structure, SOFIA and region analysis for GCAD](reference/LITERATURE_REGIONS_SOFIA.md) | `reference/LITERATURE_REGIONS_SOFIA.md` |
 | [Tropical sampling and graph structure: a plan for exact CAD](reference/LITERATURE_TROPICAL_SAMPLING.md) | `reference/LITERATURE_TROPICAL_SAMPLING.md` |
+| [Local-engine refinement thrash: pair witnesses, sibling retention, admission](reference/LOCAL_ENGINE_THRASH.md) | `reference/LOCAL_ENGINE_THRASH.md` |
 | [Local cut archive restart experiment](reference/LOCAL_HINT_ARCHIVE.md) | `reference/LOCAL_HINT_ARCHIVE.md` |
 | [Bounded observation of repeated local guard failures](reference/LOCAL_OBSTRUCTION_OBSERVER.md) | `reference/LOCAL_OBSTRUCTION_OBSERVER.md` |
 | [Deferred projection and live-cut compaction](reference/LOCAL_PROJECTION_LIVENESS.md) | `reference/LOCAL_PROJECTION_LIVENESS.md` |
@@ -786,6 +880,7 @@ This index preserves the full set of tracked research/validation notes available
 | [Direct prepared-problem worker diagnostics](reference/PREPARED_WORKER_DIAGNOSTICS.md) | `reference/PREPARED_WORKER_DIAGNOSTICS.md` |
 | [Avoiding persistence for exact primitive-linear identities](reference/PRIMITIVE_LINEAR_CACHE.md) | `reference/PRIMITIVE_LINEAR_CACHE.md` |
 | [Integer fibers for exact root refinement](reference/PRIMITIVE_ROOT_FIBERS.md) | `reference/PRIMITIVE_ROOT_FIBERS.md` |
+| [Projective sections: an opt-in contract extension for `bilinear_general`](reference/PROJECTIVE_SECTIONS.md) | `reference/PROJECTIVE_SECTIONS.md` |
 | [Published source history](reference/PUBLICATION_HISTORY.md) | `reference/PUBLICATION_HISTORY.md` |
 | [Bounded quadratic-face projection experiment](reference/QUADRATIC_BLOCK_FACE_DIAGNOSTIC.md) | `reference/QUADRATIC_BLOCK_FACE_DIAGNOSTIC.md` |
 | [Exact quadratic components with a strict residual](reference/QUADRATIC_COMPONENT_CERTIFICATE.md) | `reference/QUADRATIC_COMPONENT_CERTIFICATE.md` |
@@ -826,6 +921,7 @@ This index preserves the full set of tracked research/validation notes available
 | [Two-coordinate positive homogeneous chart: export and verification audit](reference/TWO_COORDINATE_CHART_AUDIT.md) | `reference/TWO_COORDINATE_CHART_AUDIT.md` |
 | [Two-point convexity: conservative local sign certificates](reference/TWO_POINT_CONVEXITY.md) | `reference/TWO_POINT_CONVEXITY.md` |
 | [A matrix-pencil route for two-point domains](reference/TWO_POINT_MATRIX_PENCIL.md) | `reference/TWO_POINT_MATRIX_PENCIL.md` |
+| [Unresolved originals: the October 12 local-recipe campaign](reference/UNRESOLVED_CAMPAIGN_2026_10_12.md) | `reference/UNRESOLVED_CAMPAIGN_2026_10_12.md` |
 | [Unresolved symbolic kinematics and ladder scope](reference/UNRESOLVED_KINEMATIC_SCOPE.md) | `reference/UNRESOLVED_KINEMATIC_SCOPE.md` |
 | [Original aggressive merging: defects and compatibility](reference/UPSTREAM_MERGE_AUDIT.md) | `reference/UPSTREAM_MERGE_AUDIT.md` |
 | [Disposition of all eleven upstream utility tests](reference/UPSTREAM_UTILITY_TESTS.md) | `reference/UPSTREAM_UTILITY_TESTS.md` |

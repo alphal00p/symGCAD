@@ -2,13 +2,15 @@
 
 Exact generic cylindrical algebraic decomposition in Rust, using Symbolica for all symbolic algebra. symGCAD implements the projection/lifting strategy of [GCAD](https://github.com/magv/gcad), adds certified reductions and bounded ordering search, and exports independently checkable JSON proofs.
 
-The audited checkpoint solves **303/331 distinct original problems**, including **124/124 fixed-kinematics ZZ cases**. The remaining 27 symbolic ZZ problems and positive Gluza33 are explicitly incomplete. A446 and its crossing complete at fixed kinematics; their full symbolic domains remain unresolved.
+Under the default strict contract, the audited checkpoint solves **303/331 distinct original problems**, including **124/124 fixed-kinematics ZZ cases**. The remaining 27 symbolic ZZ problems and positive Gluza33 are explicitly incomplete under that contract. A446 and its crossing complete at fixed kinematics; their full symbolic domains remain unresolved.
 
-The [benchmark](benchmark/benchmark.pdf) reports every original problem, including unresolved one-hour attempts and Gluza33's subsequent two-hour timeout. The tracked fast suite passes **662 tests**, with two expensive tests ignored. Completed algebra is retained between bounded campaigns; timeouts and conditional chambers receive no original-completion credit.
+**Positive Gluza33 under the projective contract (2026-10-12).** Positive Gluza33 completes under the opt-in [projective-sections contract extension](reference/PROJECTIVE_SECTIONS.md), in which upper cell sections may reach +infinity. It gives 2,372 independently verified cells, with a 0.42 s solve and a 0.55 s verification. A fresh-point check of the original inequalities found 0 failures in 4,744 points. Under the same option, positive Gluza30 drops from 80,980 cells to 1. The extension does not apply to the sign-split symbolic ZZ problems, and none of them closes.
+
+The [benchmark](benchmark/benchmark.pdf) reports every original problem, including unresolved attempts. The fast suite passes **753 tests** at `9baf91c`, with two expensive tests ignored. Completed algebra is retained between bounded campaigns; timeouts and conditional chambers receive no original-completion credit.
 
 The [implementation checkpoint](reference/FINAL_CHECKPOINT.md) records the certified reductions, measured improvements and remaining work. The latest optional [factorization-axis experiment](reference/GLUZA33_FINAL_FACTOR_PUSH.md) clears a captured Gluza33 obstruction: its 1,731-term component factors in 0.280 seconds, and the full 2,867-term source in 1.951 seconds, with exact signed reconstruction. These are isolated algebra measurements; the production dependency is unchanged.
 
-The detailed [HANDOFF.md](HANDOFF.md) covers the complete implementation, failed and successful investigations, CFF/graph and tropical research, unresolved proof obligations, and reproduction and resumption instructions.
+The detailed [HANDOFF.md](HANDOFF.md) covers the complete implementation, failed and successful investigations, CFF/graph and tropical research, unresolved proof obligations, and reproduction and resumption instructions. Its [October 12 continuation](HANDOFF.md#october-12-continuation) summarizes the latest changes and open problems.
 
 ## Quick start
 
@@ -53,6 +55,8 @@ symgcad verify result.json
 symgcad project problem.toml --output projection.json
 symgcad order problem.toml --output order.json
 symgcad bench campaign.toml
+symgcad pieces plan problem.toml --out-dir pieces    # bilinear_general: one problem per base piece
+symgcad pieces assemble problem.toml --plan pieces/plan.json --results r*.json --output result.json
 ```
 
 The binary above is `target/release/symgcad`; add that directory to `PATH` or use the full path. `--help` documents each command. [Detailed usage](docs/USAGE.md) covers all options, proof formats and worked reductions.
@@ -77,9 +81,17 @@ graph-driven sign analysis; no-deformation numerical integration remains future 
 | `bilinear_general` | Certified two-variable positive-target reduction over a verified partition of the base into independently solvable pieces (`symgcad pieces plan/assemble`). Opt-in `projective_sections = true` (an explicit contract extension, default off) lets upper sections reach +infinity and then needs only the single piece `{d>0}`; see [docs/USAGE.md](docs/USAGE.md#projective-sections-opt-in-contract-extension). |
 | `quadratic_ladder` | Certified five-sector arrangement when a quadratic opens two positive roots below a linear fiber. |
 
-For bounded MCTS, select `ordering = "mcts"`; `search_time_secs`, `max_rollouts` and the process limits cap exploration. `checkpoint_dir` retains validated algebra work and a restart journal. Trial pruning predicts cost only: it cannot discard a mathematical region or turn a timeout into a proof. Homogeneous scale reduction is explicit and checks the original domain and order obligations.
+For parametric Feynman inputs, `ordering = "kinematic_portfolio"` probes the certified homogeneous anchors and kinematic orders in bounded workers. It picks the order with the fewest kinematic cells; see the [measured gains and regressions](reference/KINEMATIC_PORTFOLIO.md). For bounded MCTS, select `ordering = "mcts"`; `search_time_secs`, `max_rollouts` and the process limits cap exploration. `checkpoint_dir` retains validated algebra work and a restart journal. Trial pruning predicts cost only: it cannot discard a mathematical region or turn a timeout into a proof. Homogeneous scale reduction is explicit and checks the original domain and order obligations.
 
-Optional improvements include exact positivity certificates, invertible factorization preconditioning, positive-root Descartes covers and completed-proof caches. Each retains its mathematical checks and explicit resource limits. [Detailed usage](docs/USAGE.md) describes the switches; the [handoff](HANDOFF.md) records measured benefits, failed trials and promotion requirements.
+Optional improvements include:
+
+* exact positivity certificates;
+* invertible factorization preconditioning;
+* positive-root Descartes covers and completed-proof caches;
+* `local_retain_siblings`, which keeps completed local child proofs across refinements ([thrash note](reference/LOCAL_ENGINE_THRASH.md));
+* `projection_strict_bezout_hints`, which gives replayed omission of pair resultants in certified global projection.
+
+Each retains its mathematical checks and explicit resource limits. Exact binary segmentation (`binary_resultants`) is on by default since 2026-10-12, alongside proved-degree interpolation with a second-route spot check ([kernel note](reference/ALGEBRA_KERNELS_2026_10_12.md)). [Detailed usage](docs/USAGE.md) describes the switches; the [handoff](HANDOFF.md) records measured benefits, failed trials and promotion requirements.
 
 A `complete_generic` result covers full-dimensional open cells outside its recorded algebraic exceptional set. Lower-dimensional sections are excluded. The verifier reconstructs exact projection/reduction identities, root bounds and exhaustive coverage; an incomplete result cannot pass. Exceptional parameter specializations require a new solve after substitution.
 
@@ -102,6 +114,15 @@ A [supplemental seeded sanity check](reference/SUPPLEMENTAL_SANITY.md) sampled t
 - [Benchmark document](benchmark/benchmark.pdf) and [Typst source](benchmark/benchmark.typ): per-problem comparison and methodology.
 - [Ordering and MCTS companion](benchmark/ordering-mcts.pdf): search mechanics and evidence.
 - [Validation record](BENCHMARKS.md): measured milestones, limits, artifact hashes and unresolved cases.
+- [FLINT versus Symbolica](FLINT_vs_symbolica/): the reproducible algebra-kernel comparison campaign.
+- October 12 notes:
+  - [projective sections](reference/PROJECTIVE_SECTIONS.md)
+  - [bilinear_general](reference/BILINEAR_GENERAL.md)
+  - [Gluza33 structure](reference/GLUZA33_STRUCTURE_2026_10_12.md)
+  - [local-engine thrash](reference/LOCAL_ENGINE_THRASH.md)
+  - [algebra kernels](reference/ALGEBRA_KERNELS_2026_10_12.md)
+  - [kinematic portfolio](reference/KINEMATIC_PORTFOLIO.md)
+  - [unresolved campaign](reference/UNRESOLVED_CAMPAIGN_2026_10_12.md)
 - [Reference reproduction](reference/README.md): corpus extraction, native adapter and audit protocols.
 - [Implementation plan](SYMGCAD_PLAN.MD) and [algorithm research](ALGORITHM_RESEARCH.md): design, evidence and remaining work.
 
