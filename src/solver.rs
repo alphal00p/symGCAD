@@ -480,9 +480,85 @@ pub fn prepare_projection(
     Projection,
     Option<OptimizedProjectionReport>,
 )> {
+    if problem.solver.engine == "optimized" {
+        // Identical to the solve path: one cache for ordering and projection,
+        // with the same certified-projection call and cache fingerprint.
+        let (selected, normalized, projection, report, _, _) = prepare_optimized(problem)?;
+        ensure!(
+            selected == order,
+            "optimized projection order differs from the selected order"
+        );
+        return Ok((normalized, projection, Some(report)));
+    }
     let normalized = normalize(problem, order)?;
     let (projection, report) = compute_projection(problem, order, &normalized)?;
     Ok((normalized, projection, report))
+}
+
+/// True exactly when `solve` delegates to the positive-scale reduction.
+/// Kept next to `solve_impl`, which dispatches through this same predicate.
+pub fn uses_homogeneous_reduction(problem: &Problem) -> bool {
+    if problem.solver.homogeneous_anchor.is_none() {
+        return false;
+    }
+    match problem.solver.engine.as_str() {
+        "quadratic_ladder" | "bilinear_positive" | "linear_negative" => false,
+        "monotone" if problem.split.is_empty() => problem.solver.monotone_negative_target,
+        _ => true,
+    }
+}
+
+/// Metadata for a projection of the positive-scale reduced problem.
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+pub struct HomogeneousProjection {
+    pub anchor: String,
+    /// The original-coordinate lifting order; the projection itself uses the
+    /// reduced order (the same order without the anchor).
+    pub original_order: Vec<String>,
+}
+
+pub struct ProblemProjection {
+    /// Order of the projected problem's variables (reduced if homogeneous).
+    pub order: Vec<String>,
+    pub normalized: NormalizedProblem,
+    pub projection: Projection,
+    pub optimization: Option<OptimizedProjectionReport>,
+    pub homogeneous: Option<HomogeneousProjection>,
+}
+
+/// The projection that `solve` itself computes before lifting, including the
+/// positive-scale reduction. The public `project` command reports this, so
+/// its kernels, variable count and cache keys match the solve path.
+pub fn project_problem(problem: &Problem) -> Result<ProblemProjection> {
+    problem.validate()?;
+    if uses_homogeneous_reduction(problem) {
+        let reduction = crate::homogeneity::reduced_projection_problem(problem)?;
+        ensure!(
+            !uses_homogeneous_reduction(&reduction.reduced),
+            "unexpected nested homogeneous reduction"
+        );
+        let mut projected = project_problem(&reduction.reduced)?;
+        projected.homogeneous = Some(HomogeneousProjection {
+            anchor: reduction.anchor,
+            original_order: reduction.original_order,
+        });
+        return Ok(projected);
+    }
+    let (order, normalized, projection, optimization) = if problem.solver.engine == "optimized" {
+        let (order, normalized, projection, report, _, _) = prepare_optimized(problem)?;
+        (order, normalized, projection, Some(report))
+    } else {
+        let order = selected_order(problem)?;
+        let (normalized, projection, optimization) = prepare_projection(problem, &order)?;
+        (order, normalized, projection, optimization)
+    };
+    Ok(ProblemProjection {
+        order,
+        normalized,
+        projection,
+        optimization,
+        homogeneous: None,
+    })
 }
 
 fn compute_projection(
@@ -592,6 +668,10 @@ fn classify_solve_result(problem: &Problem, result: Result<SolveResult>) -> Resu
 
 fn solve_impl(problem: &Problem) -> Result<SolveResult> {
     problem.validate()?;
+    // The same predicate decides the public projection path.
+    if uses_homogeneous_reduction(problem) {
+        return crate::homogeneity::solve_homogeneous(problem);
+    }
     if problem.solver.engine == "quadratic_ladder" {
         return crate::quadratic_ladder::solve(problem);
     }

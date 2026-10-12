@@ -326,3 +326,55 @@ fn checker_rejects_changed_bijections_boundaries_cells_and_reduced_coverage() {
     bad.cells[0].axes[0].sample = rational("2").unwrap().to_string();
     assert!(verify(&bad).is_err());
 }
+
+/// The public projection must be the projection `solve` lifts: for a scale
+/// anchor this is the reduced problem's projection, never the unreduced one.
+#[test]
+fn public_projection_matches_the_solve_reduction_for_every_engine_path() {
+    for (engine, positivity) in [("optimized", true), ("optimized", false), ("baseline", false)] {
+        let mut p = problem(
+            &["r", "x", "y"],
+            &["r>0", "x>0", "y>0", "x^2+y^2-3*x*y+r^2>0"],
+            &["x*y-r^2", "x^2-2*r*y"],
+            &["r", "x", "y"],
+            "r",
+        );
+        p.solver.engine = engine.into();
+        p.solver.positivity = positivity;
+        p.solver.ordering = "given".into();
+        p.solver.order = vec!["r".into(), "y".into(), "x".into()];
+        assert!(symgcad::solver::uses_homogeneous_reduction(&p));
+        let projected = symgcad::solver::project_problem(&p).unwrap();
+        let homogeneous = projected.homogeneous.as_ref().unwrap();
+        assert_eq!(homogeneous.anchor, "r");
+        assert_eq!(homogeneous.original_order, vec!["r", "y", "x"]);
+        assert_eq!(projected.order, vec!["y", "x"]);
+        assert_eq!(projected.projection.levels.len(), 2);
+        let (table, levels) = symgcad::solver::projection_table(
+            &projected.normalized.algebra,
+            &projected.projection,
+        );
+        let result = solve(&p).unwrap();
+        assert_eq!(result.status, Status::CompleteGeneric, "{engine}");
+        let reduced = &result.homogeneous.as_ref().unwrap().reduced;
+        assert_eq!(reduced.order, projected.order);
+        assert_eq!(reduced.polynomials, table, "{engine} {positivity}");
+        assert_eq!(reduced.projection_levels, levels, "{engine} {positivity}");
+        assert!(verify(&result).unwrap().verified);
+        // Without the anchor the projection keeps every original variable.
+        let mut unanchored = p.clone();
+        unanchored.solver.homogeneous_anchor = None;
+        unanchored.solver.homogeneous_block.clear();
+        assert!(!symgcad::solver::uses_homogeneous_reduction(&unanchored));
+        let full = symgcad::solver::project_problem(&unanchored).unwrap();
+        assert!(full.homogeneous.is_none());
+        assert_eq!(full.projection.levels.len(), 3);
+    }
+    // Engines that solve without the reduction keep their own projection.
+    let mut monotone = basic();
+    monotone.solver.engine = "monotone".into();
+    monotone.split.clear();
+    assert!(!symgcad::solver::uses_homogeneous_reduction(&monotone));
+    monotone.solver.monotone_negative_target = true;
+    assert!(symgcad::solver::uses_homogeneous_reduction(&monotone));
+}

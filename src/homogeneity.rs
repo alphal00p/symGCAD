@@ -181,6 +181,26 @@ pub fn selected_order(problem: &Problem) -> Result<Vec<String>> {
     choose_original_order(problem, &prepare(problem)?)
 }
 
+/// The exact reduced problem that `solve_homogeneous` solves, with its fixed
+/// reduced order, the anchor and the original-coordinate lifting order. The
+/// public `project` command uses this so it reports the same projection.
+pub struct ReducedProjectionProblem {
+    pub reduced: Problem,
+    pub anchor: String,
+    pub original_order: Vec<String>,
+}
+
+pub fn reduced_projection_problem(problem: &Problem) -> Result<ReducedProjectionProblem> {
+    let reduction = prepare(problem)?;
+    let original_order = choose_original_order(problem, &reduction)?;
+    let anchor = reduction.anchor.clone();
+    Ok(ReducedProjectionProblem {
+        reduced: fixed_reduced_problem(reduction, &original_order),
+        anchor,
+        original_order,
+    })
+}
+
 fn fixed_reduced_problem(mut reduction: Reduction, order: &[String]) -> Problem {
     reduction.reduced.solver.order = order
         .iter()
