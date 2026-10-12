@@ -1,0 +1,30 @@
+name = "g33 projective base d>0 D_opt_a4_O1"
+variables = ["x0", "x1", "x2", "x4", "x6", "x7"]
+constraints = ["x0^2*x1*x2+x0*x1^2*x2+x0*x1*x2^2+x0^2*x1*x4+x0*x1^2*x4+x0^2*x2*x4+4*x0*x1*x2*x4+x1^2*x2*x4+x0*x2^2*x4+x1*x2^2*x4+x0*x1*x4^2+x0*x2*x4^2+x1*x2*x4^2-8*x0*x1*x2*x6+x1^2*x2*x6+x1*x2^2*x6-8*x0*x1*x4*x6+x1^2*x4*x6-8*x0*x2*x4*x6-6*x1*x2*x4*x6+x2^2*x4*x6+x1*x4^2*x6+x2*x4^2*x6+x1*x2*x6^2+x1*x4*x6^2+x2*x4*x6^2+x0^2*x1*x7+x0*x1^2*x7+x0^2*x2*x7-6*x0*x1*x2*x7+x1^2*x2*x7+x0*x2^2*x7+x1*x2^2*x7-8*x0*x1*x4*x7-8*x0*x2*x4*x7-8*x1*x2*x4*x7-8*x0*x1*x6*x7+x1^2*x6*x7-8*x0*x2*x6*x7+4*x1*x2*x6*x7+x2^2*x6*x7-8*x1*x4*x6*x7-8*x2*x4*x6*x7+x1*x6^2*x7+x2*x6^2*x7+x0*x1*x7^2+x0*x2*x7^2+x1*x2*x7^2+x1*x6*x7^2+x2*x6*x7^2 > 0", "x0 > 0", "x1 > 0", "x2 > 0", "x4 > 0", "x6 > 0", "x7 > 0"]
+split = []
+variable_groups = [["x0", "x1", "x2", "x4", "x6", "x7"]]
+
+[parameters]
+
+[solver]
+engine = "optimized"
+ordering = "given"
+order = ["x4", "x7", "x2", "x1", "x0", "x6"]
+merge = "none"
+seed = 0
+cache_memory_mib = 512
+positivity = true
+input_positivity = false
+prune_operations = false
+local_adjacent_pairs = true
+local_stable_samples = true
+local_retain_siblings = true
+local_max_refinements = 20000000
+local_max_nodes = 200000000
+homogeneous_block = ["x0", "x1", "x2", "x4", "x6", "x7"]
+homogeneous_anchor = "x4"
+
+[limits]
+wall_time_secs = 1800.0
+memory_mib = 8192
+workers = 1

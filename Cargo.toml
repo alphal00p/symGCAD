@@ -17,6 +17,18 @@ libc = "0.2"
 rand = "0.9"
 symbolica = { version = "3.0.1", default-features = false, features = ["integer-gmp", "float-mpfr", "tracing_max_level_info"] }
 
+[features]
+# Benchmark-only hooks for benchmark/FLINT_vs_symbolica (off by default; not
+# production API): exact segmentation operands, the univariate integer
+# resultant kernel, and SYMGCAD_CAPTURE_ALL operation harvesting.
+flint-bench-hooks = []
+
+# Symbolica side of the FLINT comparison (see benchmark/FLINT_vs_symbolica/README.md).
+[[example]]
+name = "flint_vs_symbolica"
+path = "benchmark/FLINT_vs_symbolica/symbolica/flint_vs_symbolica.rs"
+required-features = ["flint-bench-hooks"]
+
 # Standalone pins. A consuming workspace supplies its own root patches, so
 # symGCAD shares the consumer's Symbolica types instead of a private checkout.
 [patch.crates-io]

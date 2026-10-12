@@ -636,6 +636,37 @@ pub fn try_resultant(
     Ok(Some((result, statistics)))
 }
 
+/// Benchmark-only access for `benchmark/FLINT_vs_symbolica` (cargo feature
+/// `flint-bench-hooks`, off by default). Not part of the production API: it
+/// exposes the exact numeric operands and kernel that production segmentation
+/// runs, so they can be timed in isolation against FLINT.
+#[cfg(feature = "flint-bench-hooks")]
+pub mod bench_hooks {
+    use super::*;
+
+    /// The exact Kronecker-encoded univariate integer operands whose resultant
+    /// production binary segmentation computes; `None` when it declines.
+    pub fn encoded_operands(
+        p: &Poly,
+        q: &Poly,
+        variable: usize,
+        options: &Options,
+    ) -> Result<Option<(UnivariatePolynomial<Z>, UnivariatePolynomial<Z>)>> {
+        let Some(prepared) = prepare(p, q, variable, options, &mut || Ok(()))? else {
+            return Ok(None);
+        };
+        let ep = encode(&prepared.left, variable, &prepared.plan, &mut || Ok(()))?;
+        let eq = encode(&prepared.right, variable, &prepared.plan, &mut || Ok(()))?;
+        Ok(Some((ep, eq)))
+    }
+
+    /// Production's deterministic univariate integer resultant (linear
+    /// identity, exact shared-factor test, then Lazard-Ducos).
+    pub fn integer_resultant(p: &UnivariatePolynomial<Z>, q: &UnivariatePolynomial<Z>) -> Integer {
+        super::integer_resultant(p, q)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

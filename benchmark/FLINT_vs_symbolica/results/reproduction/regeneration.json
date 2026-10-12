@@ -1,0 +1,102 @@
+{
+ "date": "2026-10-12",
+ "tree": "branch claude/flint-vs-symbolica on base 9baf91c (kernels identical to the campaign build at 4dbe440)",
+ "builds_from_clean_state": {
+  "symbolica_side": {
+   "command": "nix develop -c cargo build --release --locked -j 8 --features flint-bench-hooks --bin symgcad --example flint_vs_symbolica",
+   "fresh_target_dir": true,
+   "wall_first_build": "11m 10s",
+   "wall_rebuild_after_rustfmt": "9m 29s",
+   "default_build_without_feature": "cargo build --release --locked -j 8: ok (8m 53s)",
+   "rustc": "1.98.1 (48a229cea 2026-09-01)",
+   "sha256_final_build_used_by_run_2": {
+    "target/release/examples/flint_vs_symbolica": "8dcc7d1b07e0261cce0c6ae6be303d6deb4d557051c0c6b0e90aba1c234f1843",
+    "target/release/symgcad (with flint-bench-hooks)": "74f0b0f4d6223a6fbb658988c3a17a939bb24afd2db138edac82823b84b4a772"
+   }
+  },
+  "flint_side": {
+   "command": "nix develop .#reference -c make -C benchmark/FLINT_vs_symbolica/flint",
+   "flint": "3.6.0",
+   "gcc": "16.2.0",
+   "sha256": {
+    "flint/build/flint_bench": "c5f2b31e10df40172a69e204ca6b6a83a5d1866e6ce8e1a9f0e099a353819dc1"
+   }
+  }
+ },
+ "materialize_all": {
+  "command": "scripts/materialize.py operands/manifest.json operands/sources <work>/ops",
+  "requested": 195,
+  "decompressed_and_sha256_equal": 137,
+  "derived_and_sha256_equal": 46,
+  "sha256_mismatches": 0,
+  "not_committed": 6,
+  "needs_uncommitted_parent": 6,
+  "note": "the 12 missing operands are the six large g33S2 factor operands omitted for size and their gcd children"
+ },
+ "build_manifest_from_original_captures": {
+  "command": "scripts/build_manifest.py --harvest-dir <original harvest dir> --captures-root <original checkout> --ops-dir <work>/ops",
+  "ops": 195,
+  "same_ids_in_same_order": true,
+  "sha256_equal": 195,
+  "selection_counts_equal": true,
+  "sizes_equal": true
+ },
+ "subset_runs": [
+  {
+   "run": 1,
+   "binaries": "first clean build (sources before rustfmt; semantically identical)",
+   "command": "nix develop .#reference -c benchmark/FLINT_vs_symbolica/scripts/reproduce_subset.sh <work> 220,230",
+   "started": "2026-10-12T12:19:01Z",
+   "finished": "2026-10-12T12:28:40Z",
+   "jobs": 97,
+   "jobs_ok_in_both": 88,
+   "exact_outputs_identical": 88,
+   "state_changes": 0,
+   "cross_library_mismatches": 0,
+   "time_ratio_rerun_over_campaign": {
+    "geomean": 0.994,
+    "min": 0.846,
+    "max": 1.042
+   }
+  },
+  {
+   "run": 2,
+   "binaries": "rebuilt from the committed sources (sha256 above)",
+   "command": "nix develop .#reference -c benchmark/FLINT_vs_symbolica/scripts/reproduce_subset.sh <work> 220,230",
+   "started": "2026-10-12T12:47:51Z",
+   "finished": "2026-10-12T12:57:31Z",
+   "jobs": 97,
+   "jobs_ok_in_both": 88,
+   "exact_outputs_identical": 88,
+   "state_changes": 0,
+   "same_capped_state": 4,
+   "cross_library_mismatches": 0,
+   "time_ratio_rerun_over_campaign": {
+    "geomean": 0.995,
+    "min": 0.85,
+    "max": 1.047
+   },
+   "new_measurements": "5 jobs not yet run in the campaign snapshot: g33-disc2-interpimg (all kernels)",
+   "files": [
+    "reproduction.json",
+    "run.json",
+    "materialize.json",
+    "orchestrate.log",
+    "per_job.csv"
+   ]
+  }
+ ],
+ "compared_against": "results/per_job.json (campaign snapshot 2026-10-12 12:57 UTC); the runs originally compared against an earlier 12:20 snapshot (84 common jobs, all identical)",
+ "reharvest": {
+  "command": "harvest/harvest.sh <problem> 220 <work>",
+  "g33D": {
+   "operations": 101,
+   "identical_input_hashes_and_operations": true
+  },
+  "fixedA377": {
+   "operations": 284,
+   "identical_input_hashes_and_operations": true
+  },
+  "note": "complete (not deadline-killed) harvests are deterministic"
+ }
+}

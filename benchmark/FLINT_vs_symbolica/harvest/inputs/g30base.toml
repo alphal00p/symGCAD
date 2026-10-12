@@ -1,0 +1,57 @@
+name = "research Gluza30 positive two-fiber ladder base"
+variables = [
+    "x2",
+    "x6",
+    "x7",
+    "x5",
+    "x1",
+]
+constraints = [
+    "x2>0",
+    "x6>0",
+    "x7>0",
+    "x5>0",
+    "x1>0",
+]
+split = [
+    "(1)+(-1)*x7+(-1)*x6+(-1)*x5*x7+(-1)*x5*x6+(1)*x2+(-1)*x2*x7+(-1)*x2*x6+(-1)*x2*x5+(1)*x1+(-1)*x1*x7+(-1)*x1*x6+(-1)*x1*x5",
+    "(1)*x7+(-1)*x6*x7+(1)*x5+(1)*x5*x7+(-1)*x5*x6+(-1)*x5*x6*x7+(1)*x2*x7+(-1)*x2*x6*x7+(1)*x2*x5+(-1)*x2*x5*x6+(1)*x1+(-1)*x1*x6+(-1)*x1*x6*x7+(-1)*x1*x5+(-1)*x1*x5*x7+(1)*x1*x2+(-1)*x1*x2*x7+(-1)*x1*x2*x6+(-1)*x1*x2*x5",
+    "(1)*x6+(-1)*x6*x7+(1)*x5+(-1)*x5*x7+(1)*x5*x6+(-1)*x5*x6*x7+(1)*x2+(-1)*x2*x7+(-1)*x2*x6*x7+(-1)*x2*x5+(-1)*x2*x5*x6+(1)*x1*x6+(-1)*x1*x6*x7+(1)*x1*x5+(-1)*x1*x5*x7+(1)*x1*x2+(-1)*x1*x2*x7+(-1)*x1*x2*x6+(-1)*x1*x2*x5",
+]
+variable_groups = [[
+    "x2",
+    "x6",
+    "x7",
+    "x5",
+    "x1",
+]]
+
+[parameters]
+
+[solver]
+engine = "optimized"
+ordering = "given"
+order = [
+    "x2",
+    "x6",
+    "x7",
+    "x5",
+    "x1",
+]
+merge = "none"
+seed = 0
+max_rollouts = 256
+search_pruning = true
+cache_memory_mib = 128
+positivity = true
+input_positivity = false
+prune_operations = false
+local_adjacent_pairs = true
+local_max_refinements = 1000000
+local_max_nodes = 10000000
+homogeneous_block = []
+
+[limits]
+wall_time_secs = 1800.0
+memory_mib = 8192
+workers = 1

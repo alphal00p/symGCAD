@@ -788,6 +788,23 @@ impl<'a> ProjectionCache<'a> {
             bytes = serde_json::to_vec(&capture)?;
         }
         let destination = directory.join(format!("active-{}.json", std::process::id()));
+        // Benchmark harvest only (cargo feature `flint-bench-hooks`, off by
+        // default; see benchmark/FLINT_vs_symbolica): with
+        // SYMGCAD_CAPTURE_ALL set, also keep every completed operation.
+        #[cfg(feature = "flint-bench-hooks")]
+        if completed.is_some() && std::env::var_os("SYMGCAD_CAPTURE_ALL").is_some() {
+            static SEQUENCE: std::sync::atomic::AtomicUsize =
+                std::sync::atomic::AtomicUsize::new(0);
+            let index = SEQUENCE.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            write_atomic(
+                &directory.join(format!(
+                    "op-{}-{index:07}-{}.json",
+                    std::process::id(),
+                    request.key
+                )),
+                &bytes,
+            )?;
+        }
         if bytes.len() <= self.options.max_capture_bytes {
             write_atomic(&destination, &bytes)?;
         } else {
