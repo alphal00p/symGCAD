@@ -153,6 +153,13 @@ impl Builder<'_> {
             .then(|| positive_coordinate(self.normalized, level))
             .flatten();
         let mut pool = stack_samples::StackSamples::new();
+        // Deferred construction already uses the strict-interior sample policy.
+        // Complete children of discarded discovery rounds are kept at their
+        // exact samples and moved into the strictly containing new sector.
+        let mut retained = self
+            .options
+            .retain_sibling_proofs
+            .then(sibling_pool::SiblingPool::default);
         let mut frontier = loop {
             self.check_budget()?;
             if cuts.len() > MAX_CUTS {
@@ -163,6 +170,7 @@ impl Builder<'_> {
                 return Ok(None);
             }
             let mut frontier = Vec::new();
+            let mut completed: Vec<Child> = Vec::new();
             let mut additions = BTreeSet::new();
             let mut siblings = 0usize;
             let mut requirements = 0usize;
@@ -175,21 +183,35 @@ impl Builder<'_> {
                 }
                 let lower = i.checked_sub(1).and_then(|j| roots.get(j));
                 let upper = roots.get(i);
-                let retained = pool.choose(lower, upper);
-                self.report.stable_sample_hits += usize::from(retained.is_some());
-                self.report.stable_sample_misses += usize::from(retained.is_none());
-                let sample = retained.unwrap_or_else(|| sector_sample(lower, upper));
-                prefix.push(sample.clone());
-                let child = if let Some(constraint) = ray.filter(|_| i == 0) {
-                    Ok(Built {
-                        node: LocalNode::Rejected { constraint },
-                        required: self.input_factors[constraint].iter().copied().collect(),
-                        cells: 0,
-                    })
+                let negative_ray = i == 0 && ray.is_some();
+                let reused = if negative_ray {
+                    None
                 } else {
-                    self.visit(prefix)
+                    retained
+                        .as_mut()
+                        .and_then(|children| children.take_inside(lower, upper))
                 };
-                prefix.pop();
+                let (sample, child) = if let Some((sample, built)) = reused {
+                    self.report.retained_sibling_proofs += 1;
+                    (sample, Ok(built))
+                } else {
+                    let hint = pool.choose(lower, upper);
+                    self.report.stable_sample_hits += usize::from(hint.is_some());
+                    self.report.stable_sample_misses += usize::from(hint.is_none());
+                    let sample = hint.unwrap_or_else(|| sector_sample(lower, upper));
+                    prefix.push(sample.clone());
+                    let child = if let Some(constraint) = ray.filter(|_| i == 0) {
+                        Ok(Built {
+                            node: LocalNode::Rejected { constraint },
+                            required: self.input_factors[constraint].iter().copied().collect(),
+                            cells: 0,
+                        })
+                    } else {
+                        self.visit(prefix)
+                    };
+                    prefix.pop();
+                    (sample, child)
+                };
                 if !(i == 0 && ray.is_some()) {
                     let (recorded, evictions) = pool.remember(&sample);
                     self.report.stable_sample_recorded += usize::from(recorded);
@@ -244,14 +266,25 @@ impl Builder<'_> {
                                 return Err(Stop::Resource("local projection cell limit".into()));
                             }
                             frontier.push(Child { sample, built });
+                        } else if !negative_ray {
+                            completed.push(Child { sample, built });
                         }
                     }
                 }
                 if !additions.is_empty() {
-                    frontier.clear();
-                    if !self.options.batch_sibling_discovery
-                        || additions.len() >= 8
-                        || siblings >= 32
+                    if retained.is_some() {
+                        completed.extend(frontier.drain(..).filter(|child| {
+                            ray.is_none() || child.sample > Rational::zero()
+                        }));
+                    } else {
+                        frontier.clear();
+                    }
+                    // Retained complete siblings are never wasted, so a
+                    // retaining round collects every discovery before restart.
+                    if retained.is_none()
+                        && (!self.options.batch_sibling_discovery
+                            || additions.len() >= 8
+                            || siblings >= 32)
                     {
                         break;
                     }
@@ -259,6 +292,11 @@ impl Builder<'_> {
             }
             if additions.is_empty() {
                 break frontier;
+            }
+            if let Some(children) = &mut retained {
+                for child in completed {
+                    children.retain(child.sample, child.built);
+                }
             }
             self.report.refinement_cuts += additions.len();
             self.report.multi_cut_refinements += usize::from(additions.len() > 1);

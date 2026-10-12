@@ -2350,7 +2350,10 @@ impl Builder<'_> {
             };
             // Never intern here: only factors already admitted by guard_basis
             // are tagged, so the registry is identical with the diagnostic off.
-            let factors = self.operations.factors(std::slice::from_ref(p))?;
+            // A diagnostic factorization failure only leaves the origin unknown.
+            let Ok(factors) = self.operations.factors(std::slice::from_ref(p)) else {
+                continue;
+            };
             for factor in factors {
                 if let (Some(&id), Some(diag)) = (self.ids.get(&factor), &mut self.thrash) {
                     diag.tag(id, bits);
@@ -2592,7 +2595,8 @@ impl Builder<'_> {
         let log = self.operations.diag_log.take();
         let mut guards = self.guard_basis(&raw)?;
         if let Some(log) = log {
-            self.diag_tag_projection(&raw, cuts, level, positive_ray.as_ref(), log)?;
+            // Diagnostic attribution never changes the outcome of a projection.
+            let _ = self.diag_tag_projection(&raw, cuts, level, positive_ray.as_ref(), log);
         }
         self.guard_nonzero(&guards, prefix)?;
         let mut removals = Vec::new();

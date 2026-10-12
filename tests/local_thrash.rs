@@ -123,6 +123,31 @@ fn retained_siblings_preserve_coverage_and_skip_revisiting_completed_children() 
 }
 
 #[test]
+fn deferred_discovery_retains_siblings_with_identical_coverage() {
+    let mut reused = 0;
+    for p in fixtures() {
+        let plain = certified(&p, &options(false, false));
+        let deferred = LocalOptions {
+            defer_projection: true,
+            ..options(true, false)
+        };
+        let retained = certified(
+            &p,
+            &LocalOptions {
+                retain_sibling_proofs: true,
+                ..deferred.clone()
+            },
+        );
+        let without = certified(&p, &deferred);
+        equivalent(&retained, &plain);
+        equivalent(&without, &plain);
+        assert!(report(&retained).deferred_stacks > 0);
+        reused += report(&retained).retained_sibling_proofs;
+    }
+    assert!(reused > 0, "fixtures did not exercise deferred retention");
+}
+
+#[test]
 fn retention_requires_the_strict_interior_sample_policy() {
     let p = problem(&["x", "y"], &[], &["y^2-x", "y-1"]);
     assert!(solve_local(&p, &options(false, true)).is_err());
