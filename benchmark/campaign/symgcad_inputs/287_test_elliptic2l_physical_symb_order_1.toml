@@ -1,0 +1,86 @@
+name = "test_elliptic2l_physical_symb/order/1"
+variables = [
+    "s",
+    "t",
+    "pp4",
+    "x0",
+    "x1",
+    "x2",
+    "x3",
+    "x4",
+    "x5",
+    "x6",
+]
+constraints = [
+    "x0^2*x3 + x0^2*x5 + x0^2*x6 + x0*x1*x3*(2 - s) + x0*x1*x5*(2 - s) + x0*x1*x6*(2 - s) + x0*x3^2 + 2*x0*x3*x4 + x0*x3*x5*(2 - s) + x0*x3*x6*(2 - pp4) + 2*x0*x4*x5 + 2*x0*x4*x6 + 2*x0*x5*x6 + x0*x6^2 + x1^2*x3 + x1^2*x5 + x1^2*x6 + x1*x3^2 + 2*x1*x3*x4 + 2*x1*x3*x5 + x1*x3*x6*(2 - pp4) + 2*x1*x4*x5 + 2*x1*x4*x6 + x1*x5*x6*(2 - pp4) + x1*x6^2 + x3^2*x4 + x3^2*x5 + x3*x4^2 + 2*x3*x4*x5 + x3*x4*x6*(2 - pp4) + x3*x5*x6*(2 - pp4) + x4^2*x5 + x4^2*x6 + x4*x5*x6*(2 - t) + x4*x6^2 + x5*x6^2 < 0",
+    "x0 > 0",
+    "x1 > 0",
+    "x2 > 0",
+    "x3 > 0",
+    "x4 > 0",
+    "x5 > 0",
+    "x6 > 0",
+    "pp4 < 4",
+    "pp4 > 0",
+    "s > 4",
+    "t < 0",
+]
+split = []
+variable_groups = [
+    [
+    "s",
+    "t",
+    "pp4",
+],
+    [
+    "x0",
+    "x1",
+    "x2",
+    "x3",
+    "x4",
+    "x5",
+    "x6",
+],
+]
+
+[parameters]
+
+[solver]
+engine = "monotone"
+ordering = "given"
+order = [
+    "pp4",
+    "t",
+    "s",
+    "x6",
+    "x2",
+    "x3",
+    "x1",
+    "x0",
+    "x5",
+    "x4",
+]
+merge = "none"
+seed = 0
+max_rollouts = 256
+search_pruning = true
+cache_memory_mib = 128
+positivity = true
+input_positivity = false
+prune_operations = false
+monotone_negative_target = true
+homogeneous_block = [
+    "x0",
+    "x1",
+    "x2",
+    "x3",
+    "x4",
+    "x5",
+    "x6",
+]
+homogeneous_anchor = "x6"
+
+[limits]
+wall_time_secs = 180.0
+memory_mib = 16384
+workers = 1

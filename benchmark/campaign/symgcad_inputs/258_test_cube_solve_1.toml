@@ -1,0 +1,33 @@
+name = "test_cube/solve/1"
+variables = [
+    "x",
+    "y",
+    "z",
+]
+constraints = [
+    "1 - x^2 > 0",
+    "1 - y^2 > 0",
+    "1 - z^2 > 0",
+]
+split = []
+variable_groups = []
+
+[parameters]
+
+[solver]
+engine = "optimized"
+ordering = "mods"
+order = []
+merge = "none"
+seed = 0
+max_rollouts = 256
+search_pruning = true
+cache_memory_mib = 128
+positivity = true
+input_positivity = true
+homogeneous_block = []
+
+[limits]
+wall_time_secs = 60.0
+memory_mib = 4096
+workers = 1

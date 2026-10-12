@@ -1,0 +1,65 @@
+name = "finiteAx12_6_159_7_0__2_1_1_1_1_0_0_1_0/symbolic"
+variables = [
+    "s",
+    "t",
+    "x0",
+    "x1",
+    "x2",
+    "x3",
+    "x4",
+    "x7",
+]
+constraints = [
+    "s > 4",
+    "x0 > 0",
+    "x1 > 0",
+    "x2 > 0",
+    "x3 > 0",
+    "x4 > 0",
+    "x7 > 0",
+]
+split = ["(mt2)*x0^2*x4 + (mt2)*x0^2*x7 + (2*mt2)*x0*x1*x4 + (2*mt2)*x0*x1*x7 + (2*mt2 - s)*x0*x2*x4 + (2*mt2 - s)*x0*x2*x7 + (2*mt2 - mz2)*x0*x3*x4 + (2*mt2 - mz2)*x0*x3*x7 + (mt2)*x0*x4^2 + (2*mt2 - mz2)*x0*x4*x7 + (mt2)*x0*x7^2 + (mt2)*x1^2*x4 + (mt2)*x1^2*x7 + (2*mt2)*x1*x2*x4 + (2*mt2)*x1*x2*x7 + (2*mt2 - t)*x1*x3*x4 + (2*mt2 - t)*x1*x3*x7 + (mt2)*x1*x4^2 + (2*mt2 - mz2)*x1*x4*x7 + (mt2)*x1*x7^2 + (mt2)*x2^2*x4 + (mt2)*x2^2*x7 + (2*mt2 - mz2)*x2*x3*x4 + (2*mt2 - mz2)*x2*x3*x7 + (mt2)*x2*x4^2 + (2*mt2 - mz2)*x2*x4*x7 + (mt2)*x2*x7^2 + (mt2)*x3^2*x4 + (mt2)*x3^2*x7 + (mt2)*x3*x4^2 + (2*mt2 - mz2)*x3*x4*x7 + (mt2)*x3*x7^2"]
+variable_groups = [
+    [
+    "s",
+    "t",
+],
+    [
+    "x0",
+    "x1",
+    "x2",
+    "x3",
+    "x4",
+    "x7",
+],
+]
+
+[parameters]
+mt2 = "1"
+mz2 = "5/18"
+
+[solver]
+engine = "monotone"
+ordering = "mods"
+order = []
+merge = "none"
+seed = 0
+max_rollouts = 256
+search_pruning = true
+cache_memory_mib = 128
+positivity = true
+input_positivity = true
+homogeneous_block = [
+    "x0",
+    "x1",
+    "x2",
+    "x3",
+    "x4",
+    "x7",
+]
+homogeneous_anchor = "x4"
+
+[limits]
+wall_time_secs = 60.0
+memory_mib = 4096
+workers = 1

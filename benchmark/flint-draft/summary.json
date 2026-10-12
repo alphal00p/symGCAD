@@ -1,0 +1,351 @@
+{
+ "schema": 1,
+ "n_ops": 195,
+ "outputs_compared": 164,
+ "mismatches": [],
+ "ratio_definition": "Symbolica time / FLINT time (min over repetitions, one pinned CPU); >1 means FLINT faster",
+ "by_kind": [
+  {
+   "kind": "resultant",
+   "n": 67,
+   "geomean_production_over_flint": 1.0160764995682634,
+   "n_ratio": 17,
+   "time_weighted_production_over_flint": 1.124632910526718
+  },
+  {
+   "kind": "discriminant",
+   "n": 34,
+   "geomean_production_over_flint": 0.8336006963072025,
+   "n_ratio": 12,
+   "time_weighted_production_over_flint": 0.1338956610547375
+  },
+  {
+   "kind": "factor",
+   "n": 42,
+   "geomean_production_over_flint": 2.3750163668951463,
+   "n_ratio": 18,
+   "time_weighted_production_over_flint": 11.64241432053409
+  },
+  {
+   "kind": "gcd",
+   "n": 24,
+   "geomean_production_over_flint": 3.771063042482377,
+   "n_ratio": 4,
+   "time_weighted_production_over_flint": 18.31820691134164
+  },
+  {
+   "kind": "Z[x] resultant (interp. image)",
+   "n": 2,
+   "geomean_production_over_flint": null,
+   "n_ratio": 0,
+   "time_weighted_production_over_flint": null
+  },
+  {
+   "kind": "Z[x] resultant (segmentation)",
+   "n": 26,
+   "geomean_production_over_flint": null,
+   "n_ratio": 0,
+   "time_weighted_production_over_flint": null
+  }
+ ],
+ "groups": [
+  {
+   "kind": "resultant",
+   "size_class": "<1 ms",
+   "n": 17,
+   "n_ratio": 17,
+   "geomean_production_over_flint": 1.0160764995682634,
+   "min": 0.5434543454345435,
+   "max": 2.735321649073889,
+   "symbolica_faster": 10,
+   "geomean_ducos_over_flint_mpoly": 1.0175181030478229,
+   "n_ducos": 17,
+   "symbolica_timeouts": 0,
+   "flint_timeouts": 0
+  },
+  {
+   "kind": "resultant",
+   "size_class": "timeout",
+   "n": 50,
+   "n_ratio": 0,
+   "geomean_production_over_flint": null,
+   "min": null,
+   "max": null,
+   "symbolica_faster": 0,
+   "geomean_ducos_over_flint_mpoly": null,
+   "n_ducos": 0,
+   "symbolica_timeouts": 0,
+   "flint_timeouts": 0
+  },
+  {
+   "kind": "discriminant",
+   "size_class": "<1 ms",
+   "n": 10,
+   "n_ratio": 10,
+   "geomean_production_over_flint": 0.9621379070371262,
+   "min": 0.5521885521885522,
+   "max": 1.708421891604676,
+   "symbolica_faster": 6,
+   "geomean_ducos_over_flint_mpoly": 1.134804283878438,
+   "n_ducos": 9,
+   "symbolica_timeouts": 0,
+   "flint_timeouts": 0
+  },
+  {
+   "kind": "discriminant",
+   "size_class": "1-100 ms",
+   "n": 1,
+   "n_ratio": 1,
+   "geomean_production_over_flint": 1.2370694012559593,
+   "min": 1.2370694012559593,
+   "max": 1.2370694012559593,
+   "symbolica_faster": 0,
+   "geomean_ducos_over_flint_mpoly": 1.2339446666208387,
+   "n_ducos": 1,
+   "symbolica_timeouts": 0,
+   "flint_timeouts": 0
+  },
+  {
+   "kind": "discriminant",
+   "size_class": ">=10 s",
+   "n": 1,
+   "n_ratio": 1,
+   "geomean_production_over_flint": 0.13388425409777566,
+   "min": 0.13388425409777568,
+   "max": 0.13388425409777568,
+   "symbolica_faster": 1,
+   "geomean_ducos_over_flint_mpoly": 0.7425465281142223,
+   "n_ducos": 1,
+   "symbolica_timeouts": 0,
+   "flint_timeouts": 0
+  },
+  {
+   "kind": "discriminant",
+   "size_class": "timeout",
+   "n": 22,
+   "n_ratio": 0,
+   "geomean_production_over_flint": null,
+   "min": null,
+   "max": null,
+   "symbolica_faster": 0,
+   "geomean_ducos_over_flint_mpoly": null,
+   "n_ducos": 0,
+   "symbolica_timeouts": 0,
+   "flint_timeouts": 0
+  },
+  {
+   "kind": "factor",
+   "size_class": "<1 ms",
+   "n": 9,
+   "n_ratio": 9,
+   "geomean_production_over_flint": 0.9795808610129322,
+   "min": 0.26540434301550775,
+   "max": 2.16873358177042,
+   "symbolica_faster": 5,
+   "geomean_ducos_over_flint_mpoly": null,
+   "n_ducos": 0,
+   "symbolica_timeouts": 0,
+   "flint_timeouts": 0
+  },
+  {
+   "kind": "factor",
+   "size_class": "1-100 ms",
+   "n": 8,
+   "n_ratio": 8,
+   "geomean_production_over_flint": 5.269925008076037,
+   "min": 1.1568334981515458,
+   "max": 14.16633493846977,
+   "symbolica_faster": 0,
+   "geomean_ducos_over_flint_mpoly": null,
+   "n_ducos": 0,
+   "symbolica_timeouts": 0,
+   "flint_timeouts": 0
+  },
+  {
+   "kind": "factor",
+   "size_class": ">=10 s",
+   "n": 1,
+   "n_ratio": 1,
+   "geomean_production_over_flint": 11.70040297031866,
+   "min": 11.70040297031866,
+   "max": 11.70040297031866,
+   "symbolica_faster": 0,
+   "geomean_ducos_over_flint_mpoly": null,
+   "n_ducos": 0,
+   "symbolica_timeouts": 0,
+   "flint_timeouts": 0
+  },
+  {
+   "kind": "factor",
+   "size_class": "timeout",
+   "n": 24,
+   "n_ratio": 0,
+   "geomean_production_over_flint": null,
+   "min": null,
+   "max": null,
+   "symbolica_faster": 0,
+   "geomean_ducos_over_flint_mpoly": null,
+   "n_ducos": 0,
+   "symbolica_timeouts": 0,
+   "flint_timeouts": 0
+  },
+  {
+   "kind": "gcd",
+   "size_class": "<1 ms",
+   "n": 2,
+   "n_ratio": 2,
+   "geomean_production_over_flint": 2.144014661899052,
+   "min": 2.094374847672435,
+   "max": 2.1948310139165006,
+   "symbolica_faster": 0,
+   "geomean_ducos_over_flint_mpoly": null,
+   "n_ducos": 0,
+   "symbolica_timeouts": 0,
+   "flint_timeouts": 0
+  },
+  {
+   "kind": "gcd",
+   "size_class": "1-100 ms",
+   "n": 1,
+   "n_ratio": 1,
+   "geomean_production_over_flint": 2.3932273534000066,
+   "min": 2.3932273534000066,
+   "max": 2.3932273534000066,
+   "symbolica_faster": 0,
+   "geomean_ducos_over_flint_mpoly": null,
+   "n_ducos": 0,
+   "symbolica_timeouts": 0,
+   "flint_timeouts": 0
+  },
+  {
+   "kind": "gcd",
+   "size_class": "0.1-10 s",
+   "n": 1,
+   "n_ratio": 1,
+   "geomean_production_over_flint": 18.38297138257491,
+   "min": 18.382971382574908,
+   "max": 18.382971382574908,
+   "symbolica_faster": 0,
+   "geomean_ducos_over_flint_mpoly": null,
+   "n_ducos": 0,
+   "symbolica_timeouts": 0,
+   "flint_timeouts": 0
+  },
+  {
+   "kind": "gcd",
+   "size_class": "timeout",
+   "n": 20,
+   "n_ratio": 0,
+   "geomean_production_over_flint": null,
+   "min": null,
+   "max": null,
+   "symbolica_faster": 0,
+   "geomean_ducos_over_flint_mpoly": null,
+   "n_ducos": 0,
+   "symbolica_timeouts": 0,
+   "flint_timeouts": 0
+  },
+  {
+   "kind": "Z[x] resultant (interp. image)",
+   "size_class": "timeout",
+   "n": 2,
+   "n_ratio": 0,
+   "geomean_production_over_flint": null,
+   "min": null,
+   "max": null,
+   "symbolica_faster": 0,
+   "geomean_ducos_over_flint_mpoly": null,
+   "n_ducos": 0,
+   "symbolica_timeouts": 0,
+   "flint_timeouts": 0
+  },
+  {
+   "kind": "Z[x] resultant (segmentation)",
+   "size_class": "timeout",
+   "n": 26,
+   "n_ratio": 0,
+   "geomean_production_over_flint": null,
+   "min": null,
+   "max": null,
+   "symbolica_faster": 0,
+   "geomean_ducos_over_flint_mpoly": null,
+   "n_ducos": 0,
+   "symbolica_timeouts": 0,
+   "flint_timeouts": 0
+  }
+ ],
+ "best_for_symbolica": [
+  {
+   "id": "g33S2-dis-20-569a4bfe48",
+   "ratio": 0.13388425409777568
+  },
+  {
+   "id": "g33D-fac-11-d2c3440e52",
+   "ratio": 0.26540434301550775
+  },
+  {
+   "id": "g30base-res-05-e62c63f5e6",
+   "ratio": 0.5434543454345435
+  },
+  {
+   "id": "fixedA377-dis-09-20cef82215",
+   "ratio": 0.5521885521885522
+  },
+  {
+   "id": "g33D-res-04-510ee225c6",
+   "ratio": 0.6513856812933025
+  },
+  {
+   "id": "fixedA377-res-05-7e4afd66c1",
+   "ratio": 0.652855543113102
+  },
+  {
+   "id": "g33D-fac-09-a4744cff24",
+   "ratio": 0.6861932526612421
+  },
+  {
+   "id": "g30base-dis-06-5b279bda26",
+   "ratio": 0.7216821691436488
+  }
+ ],
+ "best_for_flint": [
+  {
+   "id": "g33S2-fac-28-3a75cafd52-gcd",
+   "ratio": 18.382971382574908
+  },
+  {
+   "id": "fixedA377-fac-12-09df769d8f",
+   "ratio": 14.16633493846977
+  },
+  {
+   "id": "g33S2-fac-28-3a75cafd52",
+   "ratio": 11.70040297031866
+  },
+  {
+   "id": "g30base-fac-11-7421067c62",
+   "ratio": 9.43691934660541
+  },
+  {
+   "id": "g30base-fac-13-399b6b3505",
+   "ratio": 9.252125297383028
+  },
+  {
+   "id": "fixedA377-fac-11-79a6584b20",
+   "ratio": 6.415225669993543
+  },
+  {
+   "id": "g30base-fac-12-6a00291643",
+   "ratio": 5.41630488024416
+  },
+  {
+   "id": "g30base-fac-10-de301fb47b",
+   "ratio": 5.389131322540255
+  }
+ ],
+ "snapshot_of": {
+  "path": "/common/dev/gcad/artifacts/research/claude-2026-10-12/flint-bench/summary.json",
+  "sha256": "a0491e582e359dbc362ff8da8817baf0e2d27db46a303b3a25490fee1eba4507",
+  "table_sha256": "1aebe8a7872bcc6084bddbcd88850eded66cb12be2372f8bd9ae412eeddf8d0f",
+  "note": "draft snapshot taken 2026-10-12 while the FLINT campaign was still running; per_op and timeouts omitted"
+ }
+}

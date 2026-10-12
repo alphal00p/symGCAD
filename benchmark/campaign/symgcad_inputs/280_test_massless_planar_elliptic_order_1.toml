@@ -1,0 +1,59 @@
+name = "test_massless_planar_elliptic/order/1"
+variables = [
+    "x0",
+    "x1",
+    "x2",
+    "x3",
+    "x4",
+    "x5",
+    "x6",
+]
+constraints = [
+    "7*x0*x1*x2 + 7*x0*x1*x3 + 7*x0*x1*x4 + 7*x0*x1*x6 - 23*x0*x2*x3 + 29*x0*x2*x4 - 2*x0*x2*x5 + 11*x0*x2*x6 + 31*x0*x3*x4 - 2*x0*x3*x5 - 13*x0*x3*x6 - 2*x0*x4*x5 + 41*x0*x4*x6 - 2*x0*x5*x6 - 23*x1*x2*x3 + 29*x1*x2*x4 - 3*x1*x2*x5 + 31*x1*x3*x4 - 3*x1*x3*x5 - 17*x1*x3*x6 - 3*x1*x4*x5 + 19*x1*x4*x6 - 3*x1*x5*x6 - 23*x2*x3*x5 - 23*x2*x3*x6 + 29*x2*x4*x5 + 29*x2*x4*x6 + 5*x2*x5*x6 + 31*x3*x4*x5 + 31*x3*x4*x6 + 37*x3*x5*x6 < 0",
+    "x0 > 0",
+    "x1 > 0",
+    "x2 > 0",
+    "x3 > 0",
+    "x4 > 0",
+    "x5 > 0",
+    "x6 > 0",
+]
+split = []
+variable_groups = [[
+    "x0",
+    "x1",
+    "x2",
+    "x3",
+    "x4",
+    "x5",
+    "x6",
+]]
+
+[parameters]
+
+[solver]
+engine = "baseline"
+ordering = "given"
+order = [
+    "x4",
+    "x3",
+    "x2",
+    "x6",
+    "x5",
+    "x1",
+    "x0",
+]
+merge = "none"
+seed = 0
+max_rollouts = 256
+search_pruning = true
+cache_memory_mib = 128
+positivity = false
+input_positivity = false
+prune_operations = false
+homogeneous_block = []
+
+[limits]
+wall_time_secs = 120.0
+memory_mib = 8192
+workers = 1

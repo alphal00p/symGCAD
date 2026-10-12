@@ -2,8 +2,11 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-# A public checkout can render the committed, audited table snapshot directly.
-# Regeneration additionally needs the retained (ignored) campaign evidence.
+# Renders the committed report (benchmark.typ reads report-data.json) and the separately
+# preserved ordering/MCTS companion. Rebuilding report-data.json from fresh runs is done by
+# benchmark/run_final.sh (see benchmark/README.md).
+# --regenerate rebuilds the frozen 2026-10-10 audit snapshot data.json, which the report reads
+# only as history; it needs the retained (ignored) campaign evidence.
 if [[ "${1:-}" == --regenerate ]]; then
     completion="${2:-artifacts/completion-aggregate-303.json}"
     args=(--completion "$completion" --output benchmark/data.json --followups benchmark/followups.json)
@@ -19,5 +22,5 @@ elif [[ $# -ne 0 ]]; then
 fi
 nix develop --command typst compile benchmark/benchmark.typ benchmark/benchmark.pdf
 nix develop --command typst compile benchmark/ordering-mcts.typ benchmark/ordering-mcts.pdf
-sha256sum benchmark/data.json benchmark/benchmark.typ benchmark/benchmark.pdf \
-    benchmark/ordering-mcts.typ benchmark/ordering-mcts.pdf
+sha256sum benchmark/report-data.json benchmark/benchmark.typ benchmark/improvements.typ benchmark/benchmark.pdf \
+    benchmark/data.json benchmark/ordering-mcts.typ benchmark/ordering-mcts.pdf

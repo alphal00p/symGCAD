@@ -1,0 +1,53 @@
+name = "finiteAx12_3_296_4_0__0_0_0_2_0_1_0_0_1/symbolic"
+variables = [
+    "s",
+    "t",
+    "x3",
+    "x5",
+    "x8",
+]
+constraints = [
+    "s > 4",
+    "x3 > 0",
+    "x5 > 0",
+    "x8 > 0",
+]
+split = ["(mt2)*x3^2*x5 + (mt2)*x3^2*x8 + (mt2)*x3*x5^2 + (2*mt2 - t)*x3*x5*x8 + (mt2)*x5^2*x8"]
+variable_groups = [
+    [
+    "s",
+    "t",
+],
+    [
+    "x3",
+    "x5",
+    "x8",
+],
+]
+
+[parameters]
+mt2 = "1"
+mz2 = "5/18"
+
+[solver]
+engine = "monotone"
+ordering = "mods"
+order = []
+merge = "none"
+seed = 0
+max_rollouts = 256
+search_pruning = true
+cache_memory_mib = 128
+positivity = true
+input_positivity = true
+homogeneous_block = [
+    "x3",
+    "x5",
+    "x8",
+]
+homogeneous_anchor = "x3"
+
+[limits]
+wall_time_secs = 60.0
+memory_mib = 4096
+workers = 1

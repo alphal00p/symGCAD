@@ -1,0 +1,63 @@
+name = "test_pentabox_exd/order/1"
+variables = [
+    "x0",
+    "x1",
+    "x2",
+    "x3",
+    "x4",
+    "x5",
+    "x6",
+    "x7",
+]
+constraints = [
+    "-6*x0*x2*x4 - 6*x0*x2*x5 - 6*x0*x2*x6 - 6*x0*x2*x7 - 3*x0*x3*x4 - 3*x0*x3*x5 - 3*x0*x3*x6 - 3*x0*x3*x7 - 3*x0*x5*x7 + 5*x1*x3*x4 + 5*x1*x3*x5 + 5*x1*x3*x6 + 5*x1*x3*x7 + 7*x1*x4*x7 + x1*x5*x6 + 5*x1*x5*x7 - 6*x2*x4*x6 + x2*x4*x7 - 4*x2*x5*x6 - 3*x3*x4*x6 < 0",
+    "x0 > 0",
+    "x1 > 0",
+    "x2 > 0",
+    "x3 > 0",
+    "x4 > 0",
+    "x5 > 0",
+    "x6 > 0",
+    "x7 > 0",
+]
+split = []
+variable_groups = [[
+    "x0",
+    "x1",
+    "x2",
+    "x3",
+    "x4",
+    "x5",
+    "x6",
+    "x7",
+]]
+
+[parameters]
+
+[solver]
+engine = "optimized"
+ordering = "mods"
+order = []
+merge = "none"
+seed = 0
+max_rollouts = 256
+search_pruning = true
+cache_memory_mib = 128
+positivity = true
+input_positivity = true
+homogeneous_block = [
+    "x0",
+    "x1",
+    "x2",
+    "x3",
+    "x4",
+    "x5",
+    "x6",
+    "x7",
+]
+homogeneous_anchor = "x4"
+
+[limits]
+wall_time_secs = 60.0
+memory_mib = 4096
+workers = 1
