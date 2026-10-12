@@ -15,29 +15,81 @@
 //! independently replays every reused subtree at its exact prefix.
 use super::{Built, stack_samples};
 use crate::roots::FiberRoot;
-use std::{collections::BTreeMap, ops::Bound};
+use std::{cell::Cell, collections::BTreeMap, ops::Bound, rc::Rc};
 use symbolica::prelude::*;
 
 /// Scheduling bound only: a full pool drops further completed children, which
 /// are then simply revisited. It never limits which sectors must be proved.
 const MAX_RETAINED: usize = 65_536;
 
-#[derive(Default)]
+/// One budget shared by every pool on the active path. A child's weight is the
+/// number of proof-tree nodes it retains. A declined child is simply dropped and
+/// later revisited (the pre-retention behaviour), so the budget bounds memory
+/// without affecting any proof.
+pub(super) struct RetentionBudget {
+    limit: usize,
+    used: Cell<usize>,
+    peak: Cell<usize>,
+    declined: Cell<usize>,
+}
+
+impl RetentionBudget {
+    pub(super) fn new(limit: usize) -> Rc<Self> {
+        Rc::new(Self {
+            limit,
+            used: Cell::new(0),
+            peak: Cell::new(0),
+            declined: Cell::new(0),
+        })
+    }
+    pub(super) fn report(&self, report: &mut super::LocalReport) {
+        report.retained_sibling_budget = self.limit;
+        report.retained_sibling_peak_weight = self.peak.get();
+        report.retained_sibling_budget_drops = self.declined.get();
+    }
+}
+
 pub(super) struct SiblingPool {
-    children: BTreeMap<Rational, Built>,
+    children: BTreeMap<Rational, (Built, usize)>,
+    weight: usize,
+    budget: Rc<RetentionBudget>,
+}
+
+impl Drop for SiblingPool {
+    fn drop(&mut self) {
+        self.budget.used.set(self.budget.used.get() - self.weight);
+    }
 }
 
 impl SiblingPool {
+    pub(super) fn new(budget: Rc<RetentionBudget>) -> Self {
+        Self {
+            children: BTreeMap::new(),
+            weight: 0,
+            budget,
+        }
+    }
+
     #[cfg(test)]
     pub(super) fn len(&self) -> usize {
         self.children.len()
     }
 
-    /// Keep one complete child at its exact visited sample.
+    /// Keep one complete child at its exact visited sample, within budget.
     pub(super) fn retain(&mut self, sample: Rational, built: Built) {
-        if self.children.len() < MAX_RETAINED {
-            self.children.entry(sample).or_insert(built);
+        let weight = built.nodes.max(1);
+        let used = self.budget.used.get();
+        if self.children.len() >= MAX_RETAINED
+            || self.children.contains_key(&sample)
+            || used.saturating_add(weight) > self.budget.limit
+        {
+            self.budget.declined.set(self.budget.declined.get() + 1);
+            return;
         }
+        self.children.insert(sample, (built, weight));
+        self.weight += weight;
+        self.budget.used.set(used + weight);
+        self.budget.peak.set(self.budget.peak.get().max(used + weight));
     }
 
     /// Move out a retained child whose sample lies strictly inside the open
@@ -61,7 +113,9 @@ impl SiblingPool {
             .map(|(sample, _)| sample)
             .find(|sample| stack_samples::strictly_inside(sample, lower, upper))?
             .clone();
-        let built = self.children.remove(&sample)?;
+        let (built, weight) = self.children.remove(&sample)?;
+        self.weight -= weight;
+        self.budget.used.set(self.budget.used.get() - weight);
         Some((sample, built))
     }
 }
@@ -88,17 +142,18 @@ mod tests {
         }
     }
 
-    fn leaf(cells: usize) -> Built {
+    fn leaf(nodes: usize) -> Built {
         Built {
             node: LocalNode::Accepted { signs: vec![] },
             required: BTreeSet::new(),
-            cells,
+            cells: nodes,
+            nodes,
         }
     }
 
     #[test]
     fn strict_membership_selects_one_child_and_moves_it() {
-        let mut pool = SiblingPool::default();
+        let mut pool = SiblingPool::new(RetentionBudget::new(usize::MAX));
         pool.retain(Rational::from(1), leaf(1));
         pool.retain(Rational::from(5), leaf(5));
         // Point roots at 0 and 3: only sample 1 lies strictly inside (0,3).
@@ -114,5 +169,27 @@ mod tests {
         assert_eq!(pool.len(), 1);
         let (sample, _) = pool.take_inside(Some(&three), None).unwrap();
         assert_eq!(sample, Rational::from(5));
+    }
+
+    #[test]
+    fn shared_budget_declines_children_and_is_released_on_take_and_drop() {
+        let budget = RetentionBudget::new(10);
+        let mut outer = SiblingPool::new(budget.clone());
+        outer.retain(Rational::from(1), leaf(5));
+        {
+            let mut inner = SiblingPool::new(budget.clone());
+            inner.retain(Rational::from(2), leaf(5));
+            // 5 + 5 = 10 is within the limit; one more child is declined.
+            inner.retain(Rational::from(3), leaf(1));
+            assert_eq!(inner.len(), 1);
+            assert_eq!(budget.used.get(), 10);
+        }
+        // Dropping the inner pool releases its weight.
+        assert_eq!(budget.used.get(), 5);
+        let (zero, three) = (root(0, 0, 0), root(1, 3, 3));
+        assert!(outer.take_inside(Some(&zero), Some(&three)).is_some());
+        assert_eq!(budget.used.get(), 0);
+        assert_eq!(budget.peak.get(), 10);
+        assert_eq!(budget.declined.get(), 1);
     }
 }

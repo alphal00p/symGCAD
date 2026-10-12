@@ -228,6 +228,7 @@ mod tests {
             },
             required: BTreeSet::from([7, 9]),
             cells: children,
+            nodes: children + 1,
         }
     }
     #[test]

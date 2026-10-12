@@ -200,6 +200,23 @@ fn reused_children_keep_exact_samples_and_forgeries_are_rejected() {
 }
 
 #[test]
+fn retention_memory_budget_only_declines_reuse_never_coverage() {
+    let mut declined = 0;
+    for mut p in fixtures() {
+        let unlimited = certified(&p, &options(true, true));
+        // One MiB of process memory allows 128 retained proof nodes in total.
+        p.limits.memory_mib = 1;
+        let tight = certified(&p, &options(true, true));
+        equivalent(&tight, &unlimited);
+        let r = report(&tight);
+        assert_eq!(r.retained_sibling_budget, 128);
+        assert!(r.retained_sibling_peak_weight <= 128);
+        declined += r.retained_sibling_budget_drops;
+    }
+    assert!(declined > 0, "fixtures did not exercise the retention budget");
+}
+
+#[test]
 fn retention_never_hides_resource_stops() {
     let p = fixtures().remove(1);
     for o in [

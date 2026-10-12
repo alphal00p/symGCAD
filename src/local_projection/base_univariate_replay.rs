@@ -170,6 +170,7 @@ fn replay(
         base_typed: BTreeSet::new(),
         base_retained_bits: 0,
         thrash: None,
+        retention_budget: sibling_pool::RetentionBudget::new(usize::MAX),
     };
     stage(
         output,

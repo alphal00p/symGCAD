@@ -159,7 +159,7 @@ impl Builder<'_> {
         let mut retained = self
             .options
             .retain_sibling_proofs
-            .then(sibling_pool::SiblingPool::default);
+            .then(|| sibling_pool::SiblingPool::new(self.retention_budget.clone()));
         let mut frontier = loop {
             self.check_budget()?;
             if cuts.len() > MAX_CUTS {
@@ -205,6 +205,7 @@ impl Builder<'_> {
                             node: LocalNode::Rejected { constraint },
                             required: self.input_factors[constraint].iter().copied().collect(),
                             cells: 0,
+                            nodes: 1,
                         })
                     } else {
                         self.visit(prefix)
@@ -378,8 +379,10 @@ impl Builder<'_> {
         }
         let mut required = self.projection_requirements(&projection);
         let mut cells = 0usize;
+        let mut nodes = 1usize;
         let mut sectors = Vec::with_capacity(frontier.len());
         for child in frontier {
+            nodes = nodes.saturating_add(child.built.nodes);
             for id in child.built.required {
                 match highest(&self.polynomials[id]) {
                     Some(axis) if axis == level => {
@@ -420,6 +423,7 @@ impl Builder<'_> {
             },
             required,
             cells,
+            nodes,
         }))
     }
 }
@@ -575,6 +579,7 @@ mod tests {
                 },
                 required: BTreeSet::from([sample.unsigned_abs() as usize]),
                 cells: 0,
+                nodes: 1,
             },
         }
     }

@@ -377,6 +377,14 @@ pub struct LocalReport {
     /// same stack visit (`retain_sibling_proofs`); each is still replayed.
     #[serde(skip_serializing_if = "is_zero_count")]
     pub retained_sibling_proofs: usize,
+    /// Shared retained-node budget (proof-tree nodes) and its peak use;
+    /// children declined by it are revisited as before retention.
+    #[serde(skip_serializing_if = "is_zero_count")]
+    pub retained_sibling_budget: usize,
+    #[serde(skip_serializing_if = "is_zero_count")]
+    pub retained_sibling_peak_weight: usize,
+    #[serde(skip_serializing_if = "is_zero_count")]
+    pub retained_sibling_budget_drops: usize,
     pub second_cancellation_pairs_omitted: usize,
     pub subtree_cache_hits: usize,
     pub subtree_cache_misses: usize,
@@ -1783,12 +1791,17 @@ struct Builder<'a> {
     base_retained_bits: u64,
     /// Read-only refinement counters; `None` unless the diagnostic env is set.
     thrash: Option<thrash_diag::ThrashDiag>,
+    /// Memory bound shared by every retained-sibling pool on the active path.
+    retention_budget: std::rc::Rc<sibling_pool::RetentionBudget>,
 }
 #[derive(Serialize, Deserialize)]
 struct Built {
     node: LocalNode,
     required: BTreeSet<usize>,
     cells: usize,
+    /// Proof-tree nodes in `node` (scheduling/memory accounting only).
+    #[serde(default)]
+    nodes: usize,
 }
 
 fn write_progress(path: &std::path::Path, report: &LocalReport) -> Result<()> {
@@ -1821,6 +1834,9 @@ impl Builder<'_> {
             .as_ref()
             .map(obstruction_observer::Observer::snapshot);
         report.thrash = self.thrash.as_ref().map(|diag| diag.report.clone());
+        if self.options.retain_sibling_proofs {
+            self.retention_budget.report(&mut report);
+        }
         report
     }
     fn publish(&mut self, force: bool) -> Result<()> {
@@ -2380,6 +2396,7 @@ impl Builder<'_> {
                         node: LocalNode::Rejected { constraint: i },
                         required,
                         cells: 0,
+                        nodes: 1,
                     }));
                 }
             }
@@ -2400,6 +2417,7 @@ impl Builder<'_> {
             },
             required,
             cells: 1,
+            nodes: 1,
         }))
     }
     fn project(
@@ -2696,7 +2714,7 @@ impl Builder<'_> {
         // obligations are then merged exactly as for a freshly visited child.
         let mut siblings = (self.options.retain_sibling_proofs
             && self.options.stable_sector_samples)
-            .then(sibling_pool::SiblingPool::default);
+            .then(|| sibling_pool::SiblingPool::new(self.retention_budget.clone()));
         // Diagnostic-only memory of earlier-round samples and their outcome.
         let mut diag_samples: Option<HashMap<Rational, bool>> =
             self.thrash.as_ref().map(|_| HashMap::new());
@@ -2788,6 +2806,7 @@ impl Builder<'_> {
                             },
                             required: self.input_factors[ray.constraint].iter().copied().collect(),
                             cells: 0,
+                            nodes: 1,
                         })
                     } else {
                         prefix.push(sample.clone());
@@ -2899,7 +2918,11 @@ impl Builder<'_> {
             if additions.is_empty() {
                 self.guard_nonzero(&required, prefix)?;
                 let root_bounds = local_bounds(&roots, projection.positive_ray.as_ref())?;
+                let nodes = sectors
+                    .iter()
+                    .fold(1usize, |total, (_, child)| total.saturating_add(child.nodes));
                 break Built {
+                    nodes,
                     node: LocalNode::Stack {
                         cuts: cut_list,
                         projection,
@@ -3267,6 +3290,11 @@ pub fn solve_local(problem: &Problem, options: &LocalOptions) -> Result<LocalSol
         base_typed: BTreeSet::new(),
         base_retained_bits: 0,
         thrash: thrash_diag::ThrashDiag::enabled().then(thrash_diag::ThrashDiag::default),
+        // A conservative 2 KiB per retained proof node, so retained siblings
+        // may use about a quarter of the process memory limit.
+        retention_budget: sibling_pool::RetentionBudget::new(
+            (problem.limits.memory_mib as usize).saturating_mul(1024 * 1024 / 4 / 2048),
+        ),
     };
     builder.report.active_phase = "input_factorization".into();
     builder.publish(true)?;
