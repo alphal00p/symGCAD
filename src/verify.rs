@@ -305,7 +305,7 @@ pub(crate) fn verify_nonlocal(result: &SolveResult) -> Result<Verification> {
             result.problem.solver.prune_operations || evidence.operation_removals.is_empty(),
             "whole-operation removals require prune_operations mode"
         );
-        crate::optimized_projection::replay_certified_projection_with_operations(
+        crate::optimized_projection::replay_certified_projection_with_omissions(
             &original.algebra,
             &original.positives,
             &original.split,
@@ -314,6 +314,7 @@ pub(crate) fn verify_nonlocal(result: &SolveResult) -> Result<Verification> {
             &evidence.initial_removals,
             &evidence.removals,
             &evidence.operation_removals,
+            &evidence.pair_omissions,
         )?
     } else {
         ensure!(
@@ -323,8 +324,9 @@ pub(crate) fn verify_nonlocal(result: &SolveResult) -> Result<Verification> {
                 .as_ref()
                 .is_none_or(|r| r.removals.is_empty()
                     && r.initial_removals.is_empty()
-                    && r.operation_removals.is_empty()),
-            "nonvanishing removals require certified projection mode"
+                    && r.operation_removals.is_empty()
+                    && r.pair_omissions.is_empty()),
+            "nonvanishing removals and pair omissions require certified projection mode"
         );
         project_checked(algebra, &all)?
     };

@@ -236,6 +236,7 @@ fn base_problem(problem: &Problem, input: &Input) -> Result<Problem> {
     base.solver.homogeneous_anchor = None;
     base.solver.homogeneous_block.clear();
     base.solver.local_strict_bezout_hints.clear();
+    base.solver.projection_strict_bezout_hints.clear();
     base.solver.merge = "none".into();
     base.validate()?;
     Ok(base)

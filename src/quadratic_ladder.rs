@@ -220,6 +220,7 @@ fn base_problem(problem: &Problem, input: &Input) -> Result<Problem> {
     base.solver.order = base.variables.clone();
     base.solver.merge = "none".into();
     base.solver.local_strict_bezout_hints.clear();
+    base.solver.projection_strict_bezout_hints.clear();
     base.solver.negative_linear_guide = None;
     base.solver.bilinear_positive_guide = None;
     base.validate()?;

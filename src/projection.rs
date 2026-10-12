@@ -106,9 +106,80 @@ pub fn exact_resultant_ducos(left: &Poly, right: &Poly, variable: usize) -> Resu
             });
         }
     }
+    if left.degree(variable) >= 2
+        && right.degree(variable) >= 2
+        && resultant_vanishes_identically(left, right, variable)
+    {
+        return Ok(left.zero());
+    }
     Ok(left
         .to_univariate(variable)
         .resultant_ducos_integer(&right.to_univariate(variable)))
+}
+
+/// Exact test for Res_x(left, right) = 0, i.e. a common factor of positive
+/// degree in x. Symbolica 3.0.1's Lazard-Ducos panics instead of returning
+/// zero in that case (`patches/symbolica-ducos-zero-subresultant.patch`), so
+/// Ducos is only called once this returns false.
+///
+/// At a point where both leading coefficients in x stay nonzero, coprime
+/// specializations prove Res(point) != 0 (resultant and specialization
+/// commute there), hence Res != 0. That integer coprimality test is
+/// `resultant_segmentation::integer_polynomials_share_factor`. If three
+/// such points all share a factor, Symbolica's exact multivariate gcd decides.
+fn resultant_vanishes_identically(left: &Poly, right: &Poly, variable: usize) -> bool {
+    use symbolica::prelude::*;
+    let parameters: Vec<usize> = (0..left.nvars())
+        .filter(|&v| v != variable && (left.degree(v) > 0 || right.degree(v) > 0))
+        .collect();
+    let leading = [
+        left.univariate_lcoeff(variable),
+        right.univariate_lcoeff(variable),
+    ];
+    let integer_image = |f: &Poly| -> UnivariatePolynomial<Z> {
+        let image = f.to_univariate_from_univariate(variable);
+        let mut denominator = Integer::one();
+        for c in image.coefficients() {
+            denominator = denominator.lcm(c.denominator_ref());
+        }
+        let scale = Rational::from(denominator);
+        UnivariatePolynomial::from_coefficients(
+            &Z,
+            image
+                .coefficients()
+                .iter()
+                .map(|c| (c * &scale).numerator())
+                .collect(),
+            std::sync::Arc::new(f.variables()[variable].clone()),
+        )
+    };
+    let mut full_degree_points = 0;
+    for t in 0..16i64 {
+        let specialize = |f: &Poly| {
+            parameters
+                .iter()
+                .enumerate()
+                .fold(f.clone(), |acc, (j, &v)| {
+                    let j = j as i64;
+                    acc.replace(v, &Rational::from(2 + t * (j + 1) + j))
+                })
+        };
+        if leading.iter().any(|c| specialize(c).is_zero()) {
+            continue;
+        }
+        let (a, b) = (specialize(left), specialize(right));
+        if !crate::resultant_segmentation::integer_polynomials_share_factor(
+            &integer_image(&a),
+            &integer_image(&b),
+        ) {
+            return false;
+        }
+        full_degree_points += 1;
+        if full_degree_points == 3 || parameters.is_empty() {
+            break;
+        }
+    }
+    left.gcd(right).degree(variable) > 0
 }
 
 fn resultant_with_linear_second(polynomial: &Poly, linear: &Poly, variable: usize) -> Poly {

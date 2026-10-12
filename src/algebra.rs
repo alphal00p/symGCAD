@@ -104,6 +104,30 @@ impl Algebra {
         Ok(polynomial)
     }
 
+    /// `parse` for untrusted evidence. Symbolica's unnormalized parse tree is
+    /// bounded first (see `token_estimate`): every subexpression's expanded
+    /// term count, total degree and coefficient size must fit `caps`. Only
+    /// then does Symbolica normalize and expand it, which would otherwise
+    /// evaluate a short text such as `(x+y+z+1)^300` or `7^(3^20)` in full
+    /// before any polynomial cap applies.
+    pub fn parse_with_expansion_caps(&self, expression: &str, caps: ExpansionCaps) -> Result<Poly> {
+        use symbolica::parser::{ParseSettings, Token};
+        let text = expression.replace("**", "^");
+        let mut depth = 0usize;
+        for b in text.bytes() {
+            if b == b'(' {
+                depth += 1;
+                ensure!(depth <= 256, "expression nesting cap");
+            } else if b == b')' {
+                depth = depth.saturating_sub(1);
+            }
+        }
+        let token = Token::parse(&text, ParseSettings::symbolica().convert_mul_to_atom(false))
+            .map_err(|e| anyhow!("invalid polynomial: {e}"))?;
+        token_estimate(&token, &self.names, &caps, &mut 0, 0)?;
+        self.parse(&text)
+    }
+
     fn degree_bounds(&self, atom: AtomView<'_>) -> Result<Vec<u64>> {
         let mut bounds = vec![0; self.names.len()];
         match atom {
@@ -298,6 +322,141 @@ impl Algebra {
             Ok(specialized.to_univariate_from_univariate(variable))
         }).collect()
     }
+}
+
+/// Caps for [`Algebra::parse_with_expansion_caps`].
+#[derive(Clone, Copy, Debug)]
+pub struct ExpansionCaps {
+    /// Terms of every subexpression after full expansion.
+    pub max_terms: u64,
+    /// Total degree of every subexpression.
+    pub max_degree: u64,
+    /// Bits of every expanded coefficient, including numeric powers.
+    pub max_coefficient_bits: u64,
+}
+
+/// Upper bounds (terms, total degree, coefficient bits) of a token tree after
+/// full expansion, checked against `caps` at every node. Runs on Symbolica's
+/// unnormalized parse tree, because normalization already evaluates numeric
+/// powers (`7^(3^20)` would not return). Sums add term counts, products
+/// multiply them; a power f^e of a t-term f has at most C(t+e-1, e) terms and
+/// coefficients of at most e*(bits(f)+bits(t)) bits.
+fn token_estimate(
+    token: &symbolica::parser::Token,
+    names: &[String],
+    caps: &ExpansionCaps,
+    visits: &mut usize,
+    depth: usize,
+) -> Result<(u64, u64, u64)> {
+    use symbolica::parser::{Operator, Token};
+    *visits += 1;
+    ensure!(
+        *visits <= 1 << 20 && depth <= 256,
+        "expression token/depth cap"
+    );
+    let bits = |n: u64| u64::from(u64::BITS - n.leading_zeros());
+    let estimate = match token {
+        Token::Number(text, false) => {
+            // The tokenizer attaches a leading sign to integer literals.
+            let digits = text
+                .strip_prefix('-')
+                .or_else(|| text.strip_prefix('+'))
+                .unwrap_or(text);
+            ensure!(
+                !digits.is_empty() && digits.bytes().all(|b| b.is_ascii_digit()),
+                "only exact integer and rational literals are allowed"
+            );
+            // A decimal digit carries less than four bits.
+            (1, 0, 4 * digits.len() as u64)
+        }
+        Token::ID(name) => {
+            ensure!(
+                names.iter().any(|n| n == name.as_str()),
+                "undeclared variable {name}"
+            );
+            (1, 1, 0)
+        }
+        Token::Op(_, _, Operator::Neg, args) if args.len() == 1 => {
+            token_estimate(&args[0], names, caps, visits, depth + 1)?
+        }
+        Token::Op(_, _, Operator::Inv, args) if args.len() == 1 => {
+            let (_, degree, height) = token_estimate(&args[0], names, caps, visits, depth + 1)?;
+            ensure!(degree == 0, "division by a nonconstant expression");
+            (1, 0, height)
+        }
+        Token::Op(_, _, Operator::Add, args) => {
+            let mut total = (0u64, 0u64, 0u64);
+            for arg in args {
+                let (terms, degree, height) = token_estimate(arg, names, caps, visits, depth + 1)?;
+                total = (
+                    total.0.saturating_add(terms),
+                    total.1.max(degree),
+                    total.2.max(height),
+                );
+            }
+            (
+                total.0,
+                total.1,
+                total.2.saturating_add(bits(args.len() as u64)),
+            )
+        }
+        Token::Op(_, _, Operator::Mul, args) => {
+            let mut total = (1u64, 0u64, 0u64);
+            for arg in args {
+                let (terms, degree, height) = token_estimate(arg, names, caps, visits, depth + 1)?;
+                total = (
+                    total.0.saturating_mul(terms),
+                    total.1.saturating_add(degree),
+                    total.2.saturating_add(height),
+                );
+            }
+            (total.0, total.1, total.2.saturating_add(bits(total.0)))
+        }
+        Token::Op(_, _, Operator::Pow, args) if args.len() == 2 => {
+            let Token::Number(exponent, false) = &args[1] else {
+                bail!("exponents must be nonnegative integer literals");
+            };
+            ensure!(
+                !exponent.is_empty()
+                    && exponent.len() <= 18
+                    && exponent.bytes().all(|b| b.is_ascii_digit()),
+                "exponents must be nonnegative integer literals"
+            );
+            let e: u64 = exponent.parse()?;
+            let (terms, degree, height) = token_estimate(&args[0], names, caps, visits, depth + 1)?;
+            if degree == 0 {
+                (1, 0, height.saturating_mul(e))
+            } else {
+                // degree >= 1: the degree cap bounds e before the count loop.
+                ensure!(
+                    degree.saturating_mul(e) <= caps.max_degree,
+                    "expression expansion exceeds the term/degree/size cap"
+                );
+                // C(terms+e-1, e) as an exact running binomial, abandoned once
+                // it exceeds the cap.
+                let mut count = 1u128;
+                for i in 1..=u128::from(e) {
+                    count = count * (u128::from(terms) - 1 + i) / i;
+                    if count > u128::from(caps.max_terms) {
+                        break;
+                    }
+                }
+                (
+                    u64::try_from(count).unwrap_or(u64::MAX),
+                    degree * e,
+                    e.saturating_mul(height.saturating_add(bits(terms))),
+                )
+            }
+        }
+        _ => bail!("unsupported syntax in rational polynomial input"),
+    };
+    ensure!(
+        estimate.0 <= caps.max_terms
+            && estimate.1 <= caps.max_degree
+            && estimate.2 <= caps.max_coefficient_bits,
+        "expression expansion exceeds the term/degree/size cap"
+    );
+    Ok(estimate)
 }
 
 /// Primitive integer representative, with positive leading coefficient.

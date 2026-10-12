@@ -12,7 +12,7 @@ an unrelated test-feature fix. They are **not** applied by bootstrap or enabled
 in production. The linked note gives isolated setup, feature/environment flags,
 exact regression evidence and matched measurements.
 
-Fetch the pinned dependencies and apply both fixes with
+Fetch the pinned dependencies and apply the three fixes with
 `scripts/bootstrap-deps.sh --apply-patches`. Repeating that command is safe;
 `scripts/bootstrap-deps.sh --check --apply-patches` verifies them without
 changing files. The default bootstrap leaves sources pristine, matching the
@@ -108,3 +108,48 @@ This is a scoped source audit, not a claim about every external user of numerica
 The research Kronecker resultant helper uses
 `Integer::from(value.to_multi_prec() << bits)` explicitly; this workaround does
 not require modifying the reference checkout.
+
+## Ducos resultant with a vanishing subresultant
+
+`symbolica-ducos-zero-subresultant.patch` targets the same revision, in
+`src/poly/univariate.rs` and `src/poly/resultant.rs`. It applies to the pristine
+checkout and on top of the two patches above. It is **not applied** to the
+reference checkout or linked into symGCAD's production binaries; an upstream
+PR still has to be opened from a Symbolica fork.
+
+`UnivariatePolynomial::mul_exp` turns the zero polynomial into a vector of
+explicit zero coefficients. In `ducos_next_subresultant`, a monomial regular
+subresultant `S_e = c*x^e` makes every `H_j` zero, so the next subresultant
+comes back as such an untruncated zero whenever it vanishes. The main Ducos
+loop then misses `b.is_zero()`: debug builds panic with a subtraction overflow
+at `a.degree() - b.degree()` (resultant.rs:172), release builds wrap and index
+out of bounds (resultant.rs:375). A vanishing subresultant means a common
+factor, so every affected call has resultant zero. The minimal case is
+`Res(3x^5, -x^3-3x)`. The defect never produced a wrong nonzero value in the
+review's 60,000 checks; it crashes instead. In symGCAD it reached production
+through exact interpolation images, whose specialized operands share a root
+at some sample points (2026-10-12 algebra-fixes review).
+
+The patch makes `mul_exp` return the zero polynomial unchanged and truncates
+the Ducos subresultant before returning it. It adds a regression covering
+three univariate integer cases, a shared-factor product, a case with
+polynomial coefficients, and a coprime control.
+
+symGCAD does not depend on the patch: `resultant_segmentation::integer_resultant`
+decides a vanishing integer resultant first, exactly (a degree-zero gcd modulo
+a fixed prime that keeps both degrees proves coprimality, otherwise
+Symbolica's integer gcd decides), and only calls Lazard-Ducos on coprime
+operands, and `projection::exact_resultant_ducos` first proves that the
+resultant does not vanish identically (coprime integer images at a full-degree
+specialization, otherwise Symbolica's multivariate gcd) before calling Ducos.
+
+Check and apply **in a separate Symbolica checkout**, then run:
+
+```sh
+git apply --check /absolute/path/to/symGCAD/patches/symbolica-ducos-zero-subresultant.patch
+git apply /absolute/path/to/symGCAD/patches/symbolica-ducos-zero-subresultant.patch
+cargo test --lib --no-default-features --features integer-gmp,float-mpfr ducos_resultant_of_operands_with_a_common_factor_is_zero
+```
+
+Without `native_code_generation`, the library test target additionally needs
+the test-only `experimental/symbolica-factor-tests-without-native-codegen.patch`.

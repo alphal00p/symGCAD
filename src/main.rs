@@ -12,7 +12,7 @@ use symgcad::{
     Problem,
     benchmark::{self, ProcessOutcome},
     output::{SolveResult, Status},
-    solver::{prepare_projection, projection_table, selected_order, solve},
+    solver::{project_problem, projection_table, selected_order, solve},
 };
 
 #[derive(Parser)]
@@ -523,7 +523,7 @@ fn worker(operation: &str, input: &Path, output: &Path) -> Result<()> {
                 .get_mut("optimized_projection")
                 .and_then(Value::as_object_mut)
             {
-                for field in ["removals", "initial_removals"] {
+                for field in ["removals", "initial_removals", "pair_omissions"] {
                     if let Some(certificates) = report.remove(field) {
                         report.insert(
                             format!("{field}_count"),
@@ -538,11 +538,13 @@ fn worker(operation: &str, input: &Path, output: &Path) -> Result<()> {
             )?;
         }
         "project" => {
-            let order = selected_order(&problem)?;
-            let (normalized, projection, optimization) = prepare_projection(&problem, &order)?;
-            let (polynomials, levels) = projection_table(&normalized.algebra, &projection);
+            // Exactly the projection computed by `solve`, including the
+            // homogeneous positive-scale reduction when solve would apply it.
+            let projected = project_problem(&problem)?;
+            let (polynomials, levels) =
+                projection_table(&projected.normalized.algebra, &projected.projection);
             emit(
-                &json!({"schema_version":1,"order":order,"polynomials":polynomials,"levels":levels,"steps":projection.steps,"optimization":optimization}),
+                &json!({"schema_version":1,"order":projected.order,"polynomials":polynomials,"levels":levels,"steps":projected.projection.steps,"optimization":projected.optimization,"homogeneous":projected.homogeneous}),
                 Some(output),
             )?;
         }

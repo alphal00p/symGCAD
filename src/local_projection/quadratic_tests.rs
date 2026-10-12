@@ -2,9 +2,10 @@ use super::*;
 
 #[test]
 fn independent_opt_in_discriminant_replay_preserves_the_signed_polynomial() {
-    let algebra = Algebra::new(&["s".into(), "x".into()]).unwrap();
-    let p = algebra.parse("x^10+(s+1)^120").unwrap();
-    let expected = algebra.parse("-10^10*(s+1)^1080").unwrap();
+    // Two parameters: one-parameter inputs now take size-admitted interpolation.
+    let algebra = Algebra::new(&["s".into(), "x".into(), "t".into()]).unwrap();
+    let p = algebra.parse("x^10+(s+t+1)^12").unwrap();
+    let expected = algebra.parse("-10^10*(s+t+1)^108").unwrap();
     let (_, statistics) = crate::projection::discriminant_with_binary_statistics(&p, 1).unwrap();
     assert!(statistics.is_some());
     let mut independent = IndependentOperations {

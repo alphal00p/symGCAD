@@ -5,7 +5,9 @@
 //! discard signs, and bound the permanent by the product of row l1 norms.
 //! Its degree in parameter y is bounded both by n deg_y(p)+m deg_y(q) and by
 //! n max(e_x+e_y in p)+m max(e_x+e_y in q)-mn. The latter follows because
-//! every determinant monomial has total eliminated-axis weight mn.
+//! every determinant monomial has total eliminated-axis weight mn. The exact
+//! Sylvester assignment bound (see resultant_interpolation) is never larger
+//! and, when enabled, narrows each parameter's box independently.
 //!
 //! Widening that box to include input support gives an injective mixed-radix
 //! monomial code. Evaluate its digits at B=2^k with B>2 times both the output
@@ -26,7 +28,10 @@ use crate::{
 use anyhow::{Result, ensure};
 use serde::{Deserialize, Serialize};
 use std::{sync::Arc, time::Instant};
-use symbolica::prelude::*;
+use symbolica::{
+    domains::finite_field::{ToFiniteField, Zp64},
+    prelude::*,
+};
 
 #[derive(Clone, Debug)]
 pub struct Options {
@@ -45,6 +50,8 @@ pub struct Options {
     pub max_output_bits: usize,
     pub max_total_input_bits: usize,
     pub max_output_terms: usize,
+    /// Narrow each parameter's degree box by the exact assignment bound.
+    pub assignment_bound: bool,
 }
 impl Default for Options {
     fn default() -> Self {
@@ -66,6 +73,7 @@ impl Default for Options {
             max_output_bits: 256_000_000,
             max_total_input_bits: 512_000_000,
             max_output_terms: 65536,
+            assignment_bound: true,
         }
     }
 }
@@ -89,6 +97,9 @@ pub struct Statistics {
     pub decoding_seconds: f64,
     pub numeric_result_bits: u64,
     pub output_terms: usize,
+    /// Whether the independent spot check found a full-degree point.
+    #[serde(default)]
+    pub spot_checked: bool,
 }
 
 fn check(callback: &mut impl FnMut() -> Result<()>) -> Result<()> {
@@ -225,8 +236,15 @@ fn prepare(
         let Some((rectangular, diagonal)) = rectangular.zip(diagonal) else {
             return Ok(None);
         };
+        let assignment = if options.assignment_bound {
+            crate::resultant_interpolation::assignment_degree_bound(p, q, x, i)?
+                .map_or(u64::MAX, |bound| bound as u64)
+        } else {
+            u64::MAX
+        };
         let d = rectangular
             .min(diagonal)
+            .min(assignment)
             .max(u64::from(p.degree(i)))
             .max(u64::from(q.degree(i)));
         if d > MAX_DEGREE {
@@ -380,7 +398,67 @@ fn encode(
     Ok(result)
 }
 
-fn integer_resultant(p: &UnivariatePolynomial<Z>, q: &UnivariatePolynomial<Z>) -> Integer {
+/// Fixed odd primes below 2^62 for the deterministic coprimality test; a
+/// unit test checks them with Symbolica's primality test.
+pub(crate) const COPRIMALITY_PRIMES: [u64; 4] = [
+    4_611_686_018_427_387_847, // 2^62 - 57
+    4_611_686_018_427_387_817, // 2^62 - 87
+    2_305_843_009_213_693_951, // 2^61 - 1
+    1_152_921_504_606_846_883, // 2^60 - 93
+];
+
+/// Exact decision whether two nonconstant integer polynomials share a factor
+/// of positive degree, i.e. whether their resultant vanishes.
+///
+/// For a prime P dividing neither leading coefficient, any common factor g
+/// over Z has lc(g) | lc(p), so g mod P keeps its positive degree and divides
+/// both reductions. A degree-zero gcd modulo such a P (Symbolica's Euclidean
+/// gcd over Zp64) therefore proves coprimality. Otherwise Symbolica's exact
+/// integer gcd decides. No probabilistic step is involved.
+pub(crate) fn integer_polynomials_share_factor(
+    p: &UnivariatePolynomial<Z>,
+    q: &UnivariatePolynomial<Z>,
+) -> bool {
+    debug_assert!(p.degree() > 0 && q.degree() > 0);
+    let mut modular_attempts = 0;
+    for prime in COPRIMALITY_PRIMES {
+        let field = Zp64::new(prime);
+        let reduce =
+            |f: &UnivariatePolynomial<Z>| f.map_coeff(|c| c.to_finite_field(&field), field.clone());
+        let (left, right) = (reduce(p), reduce(q));
+        // Truncation drops a vanishing leading coefficient: skip that prime.
+        if left.degree() != p.degree() || right.degree() != q.degree() {
+            continue;
+        }
+        if left.gcd_euclidean(&right).degree() == 0 {
+            return false;
+        }
+        modular_attempts += 1;
+        if modular_attempts == 2 {
+            break;
+        }
+    }
+    let gcd = p
+        .clone()
+        .to_multivariate::<u32>()
+        .gcd(&q.clone().to_multivariate::<u32>());
+    gcd.degree(0) > 0
+}
+
+/// Deterministic integer resultant with Sylvester sign and scale.
+///
+/// Symbolica 3.0.1 (rev 75f8350) `UnivariatePolynomial::resultant` panics
+/// when a subresultant vanishes identically: `mul_exp` of a zero polynomial
+/// keeps untruncated zero coefficients, so Ducos' loop misses `b.is_zero()`
+/// and later underflows `a.degree() - b.degree()` (debug) or indexes out of
+/// bounds (release). A vanishing subresultant means a common factor, hence a
+/// zero resultant, so that case is decided exactly first and Ducos is only
+/// called on coprime operands (`patches/symbolica-ducos-zero-subresultant.patch`
+/// fixes the backend itself).
+pub(crate) fn integer_resultant(
+    p: &UnivariatePolynomial<Z>,
+    q: &UnivariatePolynomial<Z>,
+) -> Integer {
     fn linear_second(p: &UnivariatePolynomial<Z>, q: &UnivariatePolynomial<Z>) -> Integer {
         let neg_constant = -q.coefficients()[0].clone();
         let leading = &q.coefficients()[1];
@@ -392,12 +470,24 @@ fn integer_resultant(p: &UnivariatePolynomial<Z>, q: &UnivariatePolynomial<Z>) -
         }
         if p.degree() % 2 == 1 { -result } else { result }
     }
+    if p.is_zero() || q.is_zero() {
+        return Integer::zero();
+    }
+    if p.is_constant() {
+        return p.lcoeff().pow(q.degree() as u64);
+    }
+    if q.is_constant() {
+        return q.lcoeff().pow(p.degree() as u64);
+    }
     if q.degree() == 1 {
         return linear_second(p, q);
     }
     if p.degree() == 1 {
         let result = linear_second(q, p);
         return if q.degree() % 2 == 1 { -result } else { result };
+    }
+    if integer_polynomials_share_factor(p, q) {
+        return Integer::zero();
     }
     // Z is Euclidean: this is deterministic Lazard-Ducos, not the separate
     // multivariate auto/Monte Carlo CRT implementation.
@@ -531,6 +621,9 @@ pub fn try_resultant(
         result.variables() == p.variables() && result.degree(variable) == 0,
         "decoded resultant map or support changed"
     );
+    // Independent route at one full-degree point (see resultant_interpolation::spot_check).
+    let spot_checked = crate::resultant_interpolation::spot_check(p, q, variable, 2, &result)?;
+    check(&mut callback)?;
     let statistics = Statistics {
         plan,
         encoding_seconds,
@@ -538,6 +631,7 @@ pub fn try_resultant(
         decoding_seconds: decoding_started.elapsed().as_secs_f64(),
         numeric_result_bits: encoded.significant_bits(),
         output_terms: result.nterms(),
+        spot_checked,
     };
     Ok(Some((result, statistics)))
 }
@@ -942,5 +1036,135 @@ mod tests {
         let q = make("2*x-3");
         assert_eq!(integer_resultant(&p, &q), Integer::from(-43));
         assert_eq!(integer_resultant(&q, &p), Integer::from(43));
+    }
+
+    /// Sylvester determinant by fraction-free Bareiss elimination, for
+    /// ascending integer coefficient vectors (test oracle only).
+    fn sylvester_determinant(p: &[Integer], q: &[Integer]) -> Integer {
+        let (m, n) = (p.len() - 1, q.len() - 1);
+        let size = m + n;
+        let mut a = vec![vec![Integer::zero(); size]; size];
+        for row in 0..n {
+            for k in 0..=m {
+                a[row][row + (m - k)] = p[k].clone();
+            }
+        }
+        for row in 0..m {
+            for k in 0..=n {
+                a[n + row][row + (n - k)] = q[k].clone();
+            }
+        }
+        let mut negate = false;
+        let mut previous = Integer::one();
+        for k in 0..size.saturating_sub(1) {
+            if a[k][k].is_zero() {
+                let Some(pivot) = (k + 1..size).find(|&i| !a[i][k].is_zero()) else {
+                    return Integer::zero();
+                };
+                a.swap(k, pivot);
+                negate = !negate;
+            }
+            for i in k + 1..size {
+                for j in k + 1..size {
+                    let value = &(&a[i][j] * &a[k][k]) - &(&a[i][k] * &a[k][j]);
+                    a[i][j] = value / &previous;
+                }
+            }
+            previous = a[k][k].clone();
+        }
+        let determinant = a[size - 1][size - 1].clone();
+        if negate { -determinant } else { determinant }
+    }
+
+    #[test]
+    fn integer_resultant_decides_shared_factors_before_ducos() {
+        for prime in COPRIMALITY_PRIMES {
+            assert!(Integer::from(prime).is_prime(0), "{prime}");
+        }
+        let a = algebra(&["x"]);
+        let var = Arc::new(a.variables[0].clone());
+        let make =
+            |c: &[Integer]| UnivariatePolynomial::from_coefficients(&Z, c.to_vec(), var.clone());
+        let ints = |c: &[i64]| c.iter().map(|&v| Integer::from(v)).collect::<Vec<_>>();
+        // Symbolica 3.0.1's Lazard-Ducos panics on each of these pairs, which
+        // share the factor x (the reviewer's minimal cases).
+        for (p, q) in [
+            (ints(&[0, 0, 0, 0, 0, 3]), ints(&[0, -3, 0, -1])),
+            (ints(&[0, 3_000_000_021, 0, 1]), ints(&[0, 0, 0, 3])),
+            (
+                ints(&[0, 0, 0, 0, 3, 0, 0, 3]),
+                ints(&[0, 3, 0, 0, 0, 0, 0, 3]),
+            ),
+        ] {
+            assert!(integer_resultant(&make(&p), &make(&q)).is_zero());
+            assert!(integer_resultant(&make(&q), &make(&p)).is_zero());
+        }
+        // A leading coefficient divisible by the first two primes forces the
+        // later primes; a shared factor then still reaches the exact gcd.
+        let blocked = Integer::from(COPRIMALITY_PRIMES[0]) * Integer::from(COPRIMALITY_PRIMES[1]);
+        let p = vec![
+            Integer::from(1),
+            Integer::from(1),
+            Integer::zero(),
+            blocked.clone(),
+        ];
+        let q = ints(&[1, 0, 1]);
+        assert_eq!(
+            integer_resultant(&make(&p), &make(&q)),
+            sylvester_determinant(&p, &q)
+        );
+        let shared = &make(&ints(&[3, 0, 1])) * &make(&p);
+        let other = &make(&ints(&[3, 0, 1])) * &make(&ints(&[-2, 5]));
+        assert!(integer_resultant(&shared, &other).is_zero());
+        // Deterministic structured fuzz against the Sylvester determinant:
+        // half the pairs carry an explicit common factor.
+        let mut state = 0x9e37_79b9_7f4a_7c15u64;
+        let mut next = move |bound: u64| {
+            state ^= state << 13;
+            state ^= state >> 7;
+            state ^= state << 17;
+            state % bound
+        };
+        let random = |degree: usize, next: &mut dyn FnMut(u64) -> u64| {
+            let sparse = next(4);
+            (0..=degree)
+                .map(|i| {
+                    if i < degree && next(4) < sparse {
+                        Integer::zero()
+                    } else {
+                        let mut v = next(9) as i64 - 4;
+                        if i == degree && v == 0 {
+                            v = 1;
+                        }
+                        if next(12) == 0 {
+                            v *= 1_000_000_007;
+                        }
+                        Integer::from(v)
+                    }
+                })
+                .collect::<Vec<_>>()
+        };
+        let (mut zeros, mut nonzeros) = (0, 0);
+        for iteration in 0..3000 {
+            let (p, q) = if iteration % 2 == 0 {
+                let g = make(&random(1 + next(3) as usize, &mut next));
+                let left = make(&random(1 + next(6) as usize, &mut next));
+                let right = make(&random(1 + next(6) as usize, &mut next));
+                (&g * &left, &g * &right)
+            } else {
+                (
+                    make(&random(2 + next(7) as usize, &mut next)),
+                    make(&random(2 + next(7) as usize, &mut next)),
+                )
+            };
+            let expected = sylvester_determinant(p.coefficients(), q.coefficients());
+            assert_eq!(integer_resultant(&p, &q), expected, "{p:?} {q:?}");
+            if expected.is_zero() {
+                zeros += 1;
+            } else {
+                nonzeros += 1;
+            }
+        }
+        assert!(zeros >= 1000 && nonzeros >= 1000, "{zeros} {nonzeros}");
     }
 }

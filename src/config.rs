@@ -110,10 +110,12 @@ pub struct SolverOptions {
     pub search_local_progress: bool,
     pub checkpoint_dir: Option<PathBuf>,
     pub cache_memory_mib: usize,
-    /// Experimental exact binary segmentation of bounded two-parameter pairs
-    /// and one- or two-parameter discriminants after interpolation declines. Static
-    /// declines retain the ordinary exact backend.
-    #[serde(skip_serializing_if = "is_false")]
+    /// Exact binary segmentation of bounded two-parameter pairs and one- or
+    /// two-parameter discriminants after interpolation declines. Static
+    /// declines retain the ordinary exact backend. Default on since the
+    /// 2026-10-12 kernel measurements; `binary_resultants = false` opts out.
+    /// Only the opt-out is serialized, so it survives worker hand-off.
+    #[serde(skip_serializing_if = "is_true")]
     pub binary_resultants: bool,
     /// Experimental exact affine preconditioning of projection factorizations
     /// and their independent verification. Coordinate maps remain unchanged.
@@ -202,6 +204,16 @@ pub struct SolverOptions {
     /// separation. Every used identity and coordinate premise is checked.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub local_strict_bezout_hints: Vec<crate::local_projection::StrictBezoutHint>,
+    /// Optional identities p*L+q*M=k*S (S=H^2 or S>0, exactly certified on
+    /// the coordinate box) omitting Res(p,q) in certified global projection.
+    /// Requires positivity mode; every used identity is replayed on verify.
+    /// Used by the optimized engine (directly or as the linear_negative or
+    /// monotone base); other engines refuse them. Under `homogeneous_anchor`
+    /// projection runs on the reduced problem (anchor = 1, other variables
+    /// keep their names), so hints are written in those coordinates.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub projection_strict_bezout_hints:
+        Vec<crate::strict_bezout_projection::ProjectionBezoutHint>,
     /// Isolate the first-axis root union without constant projection algebra.
     #[serde(skip_serializing_if = "is_true")]
     pub local_base_point_projection: bool,
@@ -241,7 +253,7 @@ impl Default for SolverOptions {
             search_local_progress: false,
             checkpoint_dir: None,
             cache_memory_mib: 128,
-            binary_resultants: false,
+            binary_resultants: true,
             affine_factorization: false,
             positivity: false,
             input_positivity: false,
@@ -269,6 +281,7 @@ impl Default for SolverOptions {
             local_descartes_interval_template_limit: 2,
             local_positive_pair_witnesses: false,
             local_strict_bezout_hints: Vec::new(),
+            projection_strict_bezout_hints: Vec::new(),
             local_base_point_projection: true,
             local_base_univariate_basis: false,
             local_adjacent_pairs: false,
@@ -372,6 +385,23 @@ impl Problem {
         ensure!(
             !self.solver.local_base_univariate_basis || !self.solver.local_hint_archive,
             "local_base_univariate_basis does not permit local_hint_archive in v1"
+        );
+        ensure!(
+            self.solver.projection_strict_bezout_hints.is_empty() || self.solver.positivity,
+            "projection_strict_bezout_hints require certified projection (positivity = true)"
+        );
+        // Engines without certified global projection would silently ignore
+        // the proposals; refuse them instead.
+        ensure!(
+            self.solver.projection_strict_bezout_hints.is_empty()
+                || match self.solver.engine.as_str() {
+                    "optimized" | "linear_negative" => true,
+                    "monotone" => self.solver.monotone_base_engine == "optimized",
+                    _ => false,
+                },
+            "projection_strict_bezout_hints are only used by certified global projection \
+             (engine optimized, linear_negative, or monotone with monotone_base_engine = \
+             \"optimized\"); the local engine takes local_strict_bezout_hints"
         );
         let names: BTreeSet<_> = self.variables.iter().collect();
         ensure!(names.len() == self.variables.len(), "duplicate variables");
