@@ -289,7 +289,22 @@ fn shifted_bound(bound: &Option<RootBound>) -> Option<RootBound> {
     bound.as_ref().map(|b| RootBound {
         polynomial: b.polynomial + 1,
         index: b.index,
-        index_domain: b.index_domain,
+        // Every selector survives the positive rescaling x_i = x_anchor*r_i
+        // (x_anchor > 0) unchanged: real, positive and descending root
+        // ordinals, and a missing positive root (+infinity) of a projective
+        // section. Reduced results with projective sections never verify
+        // (`verify::verify` rejects them outside bilinear_general), so none
+        // reaches a certified homogeneous result.
+        index_domain: match b.index_domain {
+            crate::output::RootIndexDomain::Real => crate::output::RootIndexDomain::Real,
+            crate::output::RootIndexDomain::Positive => crate::output::RootIndexDomain::Positive,
+            crate::output::RootIndexDomain::RealDescending => {
+                crate::output::RootIndexDomain::RealDescending
+            }
+            crate::output::RootIndexDomain::PositiveOrInfinity => {
+                crate::output::RootIndexDomain::PositiveOrInfinity
+            }
+        },
         lower: b.lower.clone(),
         upper: b.upper.clone(),
     })

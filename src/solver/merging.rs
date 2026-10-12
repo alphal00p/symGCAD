@@ -21,6 +21,9 @@ fn boundary(value: &Option<RootBound>) -> Option<Boundary> {
             RootIndexDomain::Real => 0,
             RootIndexDomain::Positive => 1,
             RootIndexDomain::RealDescending => 2,
+            // Never compared in practice: `merge` refuses cells that carry
+            // an opt-in projective bound.
+            RootIndexDomain::PositiveOrInfinity => 3,
         },
     })
 }
@@ -142,11 +145,18 @@ fn direction(first: &Cell, second: &Cell, axis: usize) -> Option<bool> {
 /// Compatibility only: seams remain recoverable from raw cells and the trace.
 /// Preserve the historical smallest-pair/first-axis policy, samples, bound
 /// evidence and output order while indexing potentially adjacent cells.
+///
+/// Cells with an opt-in projective bound (`RootIndexDomain::PositiveOrInfinity`)
+/// are refused: they are kept unchanged and never merged with any other cell.
+/// Problem validation also refuses `merge = "aggressive"` together with
+/// `projective_sections`.
 pub fn merge(raw: &[Cell]) -> Vec<Cell> {
     let mut cells = raw.iter().cloned().map(Some).collect::<Vec<_>>();
     let mut index = Index::default();
     for (id, cell) in raw.iter().enumerate() {
-        index.insert(id, cell);
+        if !cell.has_projective_bound() {
+            index.insert(id, cell);
+        }
     }
     while let Some((i, j, axis)) = index.candidates.pop_first() {
         let (Some(first), Some(second)) = (&cells[i], &cells[j]) else {
@@ -306,6 +316,20 @@ mod tests {
             assert_eq!(merge(&incompatible).len(), 2);
         }
         assert!(merge(&[]).is_empty());
+        // Opt-in projective sections are refused: cells carrying one keep
+        // their exact raw form, even where a seam would otherwise match.
+        for side in [0, 1, 2] {
+            let mut projective = cells.clone();
+            let selector = projective[side].axes[0]
+                .upper
+                .get_or_insert_with(|| bound(0, 3).unwrap());
+            selector.index_domain = RootIndexDomain::PositiveOrInfinity;
+            let merged = merge(&projective);
+            assert!(merged.contains(&projective[side]));
+            // The middle cell separates the outer two; otherwise the other
+            // two cells still merge with each other.
+            assert_eq!(merged.len(), if side == 1 { 3 } else { 2 });
+        }
         let zero_dimensional = vec![Cell {
             axes: vec![],
             signs: vec![1],

@@ -36,6 +36,53 @@
 //!
 //! The planner objective only selects among valid plans: the verifier accepts
 //! every plan that passes the checks above, whichever objective produced it.
+//!
+//! # Projective plans (opt-in contract extension)
+//!
+//! With `solver.projective_sections = true` (default false) a cell's upper
+//! boundary may go continuously to +infinity: it may be a projective section
+//! (`RootIndexDomain::PositiveOrInfinity`), "the index-th distinct strictly
+//! positive root of P, or +infinity where fewer exist". Cells remain connected
+//! open cylindrical cells in the compactified coordinates u=x/(1+x), whose
+//! upper sections are continuous with values in (0,1].
+//!
+//! Write F = A(y)*x + B(y) with slope A(y)=a*y+b and intercept B(y)=c*y+d,
+//! all coordinates positive. Suppose the replayed premises give the ratio
+//! orders a<=c, b<=d and c<=d (`RatioOrder{lower,upper}`, pointwise
+//! lower/u_lower <= upper/u_upper with certified u_*>0, so lower and upper
+//! share the implications lower>0 => upper>0 and upper<0 => lower<0 at EVERY
+//! point, including where an atom vanishes) and Delta=b*c-a*d = m*G^2 with
+//! m>0 (`Separator::Square`, so Delta>=0 everywhere). Then, at every base
+//! point:
+//! * d<0: d<0 => b<0 and c<0 (b<=d, c<=d), and c<0 => a<0 (a<=c), so F<0 on
+//!   the whole open quadrant: the fiber is empty (the empty claim {d<0}).
+//! * d>0: let Y* be the positive root of B(y) or +infinity. B(0)=d>0 and B is
+//!   affine, so Y*=-d/c when c<0 and Y*=+infinity when c>=0, and B>0 exactly
+//!   on 0<y<Y*. There, F(.,y) is affine in x with F(0,y)=B(y)>0, so with X(y)
+//!   the positive root of F in x or +infinity (X=-B/A when A<0, +infinity
+//!   when A>=0) the x-fiber is exactly 0<x<X(y). For y>=Y* (only when c<0):
+//!   c<0 => a<0, and (-d/c)-(-b/a) = Delta/(a*c) >= 0, so Y* is at or beyond
+//!   the root -b/a of the decreasing A; hence A(y)<0 and B(y)<0 for y>Y*,
+//!   so F<0 for every x>0, and F=A(Y*)*x<=0 on the line y=Y*.
+//! * d=0 is a lower-dimensional seam (d is an exceptional polynomial).
+//!
+//! So the positive fiber over a base point with d>0 is EXACTLY
+//! {0<y<Y*, 0<x<X(y)}. Both sections are continuous into (0,+infinity] on
+//! {d>0}: in compactified form v*=Y*/(1+Y*) = d/(d+max(-c,0)) and
+//! u*=X/(1+X) = B/(B+max(-A,0)) with B>0, both continuous and positive.
+//! Hence S decomposes as ONE cell per base cell of a decomposition of {d>0}
+//! (the original base constraints plus the strict condition d>0, no split),
+//! with y in (0, PositiveOrInfinity root 0 of B) and x in (0,
+//! PositiveOrInfinity root 0 of F), plus the empty claim {d<0}. The F=0
+//! sheet inside the open quadrant is exactly the boundary x=X(y) (or the line
+//! y=Y* where A(Y*)=0), so interior F=0 sheets remain cell boundaries and
+//! never lie inside a cell.
+//!
+//! The planner uses this plan only when the option is on and the premises
+//! above were discovered (otherwise it keeps the strict plan). The verifier
+//! replays every premise exactly, requires the option, the Square separator,
+//! the three ratio orders, a non-constant d and exactly the projective piece
+//! and empty claim, verifies the piece, and rebuilds and compares every cell.
 use crate::{
     Problem,
     algebra::{Poly, rational},
@@ -43,7 +90,10 @@ use crate::{
         CertificateOptions, DomainCertificate, certify_nonzero, derive_domain, verify_certificate,
     },
     identity::{check_positive_square_identity, positive_square_witness},
-    output::{Axis, Cell, RootBound, RootIndexDomain, SolveResult, Statistics, Status},
+    output::{
+        Axis, Cell, PROJECTIVE_INFINITY, RootBound, RootIndexDomain, SolveResult, Statistics,
+        Status, has_projective_bounds,
+    },
     problem::{NormalizedProblem, normalize},
     solver::{evaluate, merge, sign},
     verify::Verification,
@@ -168,6 +218,52 @@ pub struct BilinearGeneralPlan {
     pub separator: Separator,
     pub pieces: Vec<PieceSpec>,
     pub empty: Vec<EmptyClaim>,
+    /// Projective plan of the opt-in `solver.projective_sections` contract
+    /// extension (see the module documentation): exactly the piece {d>0}
+    /// without split and the empty claim {d<0}, restored with projective
+    /// upper sections. Omitted (false) for every strict plan, so strict plans
+    /// serialize exactly as before the extension.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub projective: bool,
+}
+
+/// The ratio orders (lower, upper) a projective plan needs.
+const PROJECTIVE_ORDERS: [(Atom, Atom); 3] =
+    [(Atom::A, Atom::C), (Atom::B, Atom::D), (Atom::C, Atom::D)];
+
+/// The single piece of a projective plan: {d>0}, no split.
+pub fn projective_piece() -> PieceSpec {
+    PieceSpec {
+        conditions: vec![Condition {
+            atom: Atom::D,
+            sign: 1,
+        }],
+        split: vec![],
+    }
+}
+
+/// The single empty claim of a projective plan: {d<0}.
+pub fn projective_empty_claim() -> EmptyClaim {
+    EmptyClaim {
+        conditions: vec![Condition {
+            atom: Atom::D,
+            sign: -1,
+        }],
+    }
+}
+
+/// Whether recorded premises carry everything a projective plan needs: the
+/// ratio orders a<=c, b<=d, c<=d, Delta=m*G^2 with m>0, and a non-constant d.
+/// Discovery uses it to choose the plan; the verifier separately requires the
+/// same facts from the replayed logic.
+fn projective_premises_present(premises: &[SignPremise], separator: &Separator, d: &Poly) -> bool {
+    matches!(separator, Separator::Square { .. })
+        && !d.is_constant()
+        && PROJECTIVE_ORDERS.iter().all(|(l, u)| {
+            premises.iter().any(|p| {
+                matches!(p, SignPremise::RatioOrder { lower, upper, .. } if lower == l && upper == u)
+            })
+        })
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -944,7 +1040,11 @@ fn replay_plan(problem: &Problem, plan: &BilinearGeneralPlan) -> Result<Replayed
         alias,
         separator_sign: plan.separator.delta_sign(),
     };
-    check_partition(&logic, &atoms, plan)?;
+    if plan.projective {
+        check_projective(problem, &logic, &atoms, plan)?;
+    } else {
+        check_partition(&logic, &atoms, plan)?;
+    }
     Ok(Replayed {
         input,
         atoms,
@@ -1030,6 +1130,54 @@ fn check_partition(logic: &Logic, atoms: &[Poly; 5], plan: &BilinearGeneralPlan)
             "base pieces do not partition sign vector {v:?} ({claims} claims)"
         );
     }
+    Ok(())
+}
+
+/// Independent check of a projective plan (opt-in contract extension; see
+/// the module documentation). `logic` holds only replayed premises.
+fn check_projective(
+    problem: &Problem,
+    logic: &Logic,
+    atoms: &[Poly; 5],
+    plan: &BilinearGeneralPlan,
+) -> Result<()> {
+    ensure!(
+        problem.solver.projective_sections,
+        "projective bilinear general plans require the opt-in contract extension solver.projective_sections = true"
+    );
+    ensure!(
+        matches!(plan.separator, Separator::Square { .. }) && logic.separator_sign == 1,
+        "projective plans require Delta = m*G^2 with m > 0"
+    );
+    for (lower, upper) in PROJECTIVE_ORDERS {
+        ensure!(
+            logic.relations.contains(&(lower.index(), upper.index())),
+            "projective plans require the replayed ratio order {lower:?} <= {upper:?}"
+        );
+    }
+    // Implied by the replayed ratio orders; kept explicit.
+    ensure!(
+        logic.alias.iter().all(Option::is_none),
+        "projective plans require nonzero coefficients"
+    );
+    let d = &atoms[Atom::D.index()];
+    ensure!(
+        !d.is_constant(),
+        "projective plans require a non-constant d"
+    );
+    ensure!(
+        plan.pieces == [projective_piece()] && plan.empty == [projective_empty_claim()],
+        "a projective plan has exactly the piece {{d>0}} without split and the empty claim {{d<0}}"
+    );
+    check_shape(&plan.pieces[0].conditions, &plan.pieces[0].split, atoms)?;
+    check_shape(&plan.empty[0].conditions, &[], atoms)?;
+    // d<0 forces all four coefficients negative (redundant with the orders).
+    ensure!(
+        logic
+            .close([0, 0, 0, -1, 0])
+            .is_none_or(|f| all_negative(&f)),
+        "projective empty claim {{d<0}} does not close to an all-negative pattern"
+    );
     Ok(())
 }
 
@@ -1177,6 +1325,7 @@ fn discover(
         separator,
         pieces: vec![],
         empty: vec![],
+        projective: false,
     };
     // The planner runs on the same logic the verifier replays.
     let premise_logic = {
@@ -1205,9 +1354,20 @@ fn discover(
         }
     };
     let objective = Objective::parse(&problem.solver.bilinear_general_plan_objective)?;
-    let (pieces, empty) = plan_pieces(&premise_logic, objective);
-    plan.pieces = pieces;
-    plan.empty = empty;
+    if problem.solver.projective_sections
+        && projective_premises_present(&plan.premises, &plan.separator, &atoms[Atom::D.index()])
+    {
+        // Opt-in contract extension: one piece {d>0} restored with projective
+        // upper sections (module documentation). Without these premises the
+        // strict plan below is used.
+        plan.projective = true;
+        plan.pieces = vec![projective_piece()];
+        plan.empty = vec![projective_empty_claim()];
+    } else {
+        let (pieces, empty) = plan_pieces(&premise_logic, objective);
+        plan.pieces = pieces;
+        plan.empty = empty;
+    }
     check_time(problem, started)?;
     let replayed = replay_plan(problem, &plan)?;
     Ok((plan, replayed))
@@ -1278,6 +1438,8 @@ fn piece_problem(
     base.solver.bilinear_general_base_block.clear();
     base.solver.bilinear_general_base_engine = "optimized".into();
     base.solver.bilinear_general_plan_objective = "region_weighted".into();
+    // Pieces are ordinary problems under the default contract.
+    base.solver.projective_sections = false;
     base.solver.bilinear_positive_guide = None;
     base.solver.negative_linear_guide = None;
     base.solver.local_strict_bezout_hints.clear();
@@ -1359,20 +1521,9 @@ fn shift(bound: &Option<RootBound>, offset: usize) -> Option<RootBound> {
     })
 }
 
-/// Emit each expected cell exactly once; also the streaming verifier.
-fn reconstruct(
-    replayed: &Replayed,
-    plan: &BilinearGeneralPlan,
-    bases: &[SolveResult],
-    mut emit: impl FnMut(Cell) -> Result<bool>,
-) -> Result<Layout> {
-    let input = &replayed.input;
-    let logic = &replayed.logic;
+/// The concatenated piece tables (with id offsets) that start every layout.
+fn piece_layout(input: &Input, bases: &[SolveResult]) -> Result<(Layout, Vec<usize>)> {
     let n = input.order.len() - 2;
-    ensure!(
-        bases.len() == plan.pieces.len(),
-        "bilinear general piece inventory changed"
-    );
     let algebra = &input.normalized.algebra;
     let mut layout = Layout {
         table: vec![],
@@ -1407,6 +1558,28 @@ fn reconstruct(
             layout.exceptional.push(id + offset);
         }
     }
+    Ok((layout, offsets))
+}
+
+/// Emit each expected cell exactly once; also the streaming verifier.
+fn reconstruct(
+    replayed: &Replayed,
+    plan: &BilinearGeneralPlan,
+    bases: &[SolveResult],
+    mut emit: impl FnMut(Cell) -> Result<bool>,
+) -> Result<Layout> {
+    if plan.projective {
+        return reconstruct_projective(replayed, plan, bases, emit);
+    }
+    let input = &replayed.input;
+    let logic = &replayed.logic;
+    let n = input.order.len() - 2;
+    ensure!(
+        bases.len() == plan.pieces.len(),
+        "bilinear general piece inventory changed"
+    );
+    let algebra = &input.normalized.algebra;
+    let (mut layout, offsets) = piece_layout(input, bases)?;
     for p in &replayed.atoms {
         if !p.is_constant() {
             append(input, p, &mut layout);
@@ -1564,6 +1737,124 @@ fn reconstruct(
                     return Ok(layout);
                 }
             }
+        }
+    }
+    Ok(layout)
+}
+
+/// Projective upper section: root 0 among the distinct strictly positive
+/// roots of polynomial `id` on the fiber, or +infinity where it is missing.
+/// `value` is that root at the cell sample (None: +infinity there).
+fn projective_bound(id: usize, value: Option<&Rational>) -> RootBound {
+    let text = value.map_or_else(|| PROJECTIVE_INFINITY.to_string(), |v| v.to_string());
+    RootBound {
+        polynomial: id,
+        index: 0,
+        index_domain: RootIndexDomain::PositiveOrInfinity,
+        lower: text.clone(),
+        upper: text,
+    }
+}
+
+/// Projective restoration (module documentation): one cell per base cell of
+/// the piece {d>0}, y in (0, B-section) and x in (0, F-section).
+fn reconstruct_projective(
+    replayed: &Replayed,
+    plan: &BilinearGeneralPlan,
+    bases: &[SolveResult],
+    mut emit: impl FnMut(Cell) -> Result<bool>,
+) -> Result<Layout> {
+    let input = &replayed.input;
+    let n = input.order.len() - 2;
+    ensure!(
+        plan.projective
+            && plan.pieces == [projective_piece()]
+            && plan.empty == [projective_empty_claim()],
+        "not a projective bilinear general plan"
+    );
+    ensure!(bases.len() == 1, "bilinear general piece inventory changed");
+    let algebra = &input.normalized.algebra;
+    let (mut layout, offsets) = piece_layout(input, bases)?;
+    // Exceptional set: the piece's own, the seam d=0, every coordinate, the
+    // two section polynomials B=c*y+d and F.
+    append(input, &replayed.atoms[Atom::D.index()], &mut layout);
+    for variable in &input.order[..n] {
+        append(input, &algebra.parse(variable)?, &mut layout);
+    }
+    let yid = append(input, &algebra.parse(&input.order[n])?, &mut layout);
+    let xid = append(input, &algebra.parse(&input.order[n + 1])?, &mut layout);
+    let bid = append(input, &input.b0, &mut layout);
+    let target = &input.normalized.positives[input.target];
+    let fid = append(input, target, &mut layout);
+    layout.exceptional.sort_unstable();
+    layout.exceptional.dedup();
+    let zero = Rational::zero();
+    let one = Rational::one();
+    let two = Rational::from(2);
+    let offset = offsets[0];
+    for cell in &bases[0].cells {
+        ensure!(
+            cell.axes.len() == n && cell.signs.is_empty(),
+            "invalid bilinear general piece cell shape"
+        );
+        let mut point = cell
+            .axes
+            .iter()
+            .map(|axis| rational(&axis.sample))
+            .collect::<Result<Vec<_>>>()?;
+        point.resize(n + 2, Rational::zero());
+        let [a, b, c, d]: [Rational; 4] =
+            std::array::from_fn(|i| evaluate(&replayed.atoms[i], &point));
+        ensure!(
+            d > zero,
+            "projective piece cell violates its strict path condition d>0"
+        );
+        // y-section Y*: the positive root of B(y)=c*y+d, or +infinity.
+        let y_root = (c < zero).then(|| -d.clone() / &c);
+        let ys = y_root.as_ref().map_or_else(|| one.clone(), |r| r / &two);
+        point[n] = ys.clone();
+        let slope = &a * &ys + &b;
+        let intercept = &c * &ys + &d;
+        ensure!(
+            intercept > zero,
+            "projective y sample lies above the intercept section"
+        );
+        // x-section X(y): the positive root of F(.,y)=A*x+B, or +infinity.
+        let x_root = (slope < zero).then(|| -intercept / &slope);
+        let xs = x_root.as_ref().map_or_else(|| one.clone(), |r| r / &two);
+        point[n + 1] = xs.clone();
+        ensure!(
+            evaluate(target, &point) > zero,
+            "restored sample is not in the original target"
+        );
+        let mut axes: Vec<Axis> = cell
+            .axes
+            .iter()
+            .map(|axis| Axis {
+                variable: axis.variable.clone(),
+                sample: axis.sample.clone(),
+                lower: shift(&axis.lower, offset),
+                upper: shift(&axis.upper, offset),
+            })
+            .collect();
+        axes.push(Axis {
+            variable: input.order[n].clone(),
+            sample: ys.to_string(),
+            lower: Some(bound(yid, &zero)),
+            upper: Some(projective_bound(bid, y_root.as_ref())),
+        });
+        axes.push(Axis {
+            variable: input.order[n + 1].clone(),
+            sample: xs.to_string(),
+            lower: Some(bound(xid, &zero)),
+            upper: Some(projective_bound(fid, x_root.as_ref())),
+        });
+        if !emit(Cell {
+            axes,
+            signs: vec![],
+        })? {
+            layout.stopped = true;
+            return Ok(layout);
         }
     }
     Ok(layout)
@@ -1888,6 +2179,17 @@ pub fn verify(result: &SolveResult, evidence: &BilinearGeneralEvidence) -> Resul
         "mixed bilinear general proof modes"
     );
     let plan = &evidence.plan;
+    // Projective sections exist only under the opt-in contract extension and
+    // only in projective plans; `replay_plan` rejects a projective plan
+    // unless the problem enables `projective_sections`.
+    ensure!(
+        plan.projective || !has_projective_bounds(result),
+        "projective (positive_or_infinity) sections require a projective plan"
+    );
+    ensure!(
+        !has_projective_bounds(result) || result.problem.solver.projective_sections,
+        "projective (positive_or_infinity) sections require solver.projective_sections = true"
+    );
     let replayed = replay_plan(&result.problem, plan)?;
     let input = &replayed.input;
     ensure!(
@@ -2145,9 +2447,71 @@ mod table_tests {
                 },
                 pieces,
                 empty,
+                projective: false,
             };
             check_partition(&logic, &atoms_polys, &plan).unwrap();
         }
+    }
+
+    /// Exact brute-force check of the projective fiber theorem (module
+    /// documentation): under a<=c, b<=d, c<=d and Delta>=0 the positive fiber
+    /// is empty for d<0 and exactly {0<y<Y*, 0<x<X(y)} for d>0, also where
+    /// a, b, c or Delta vanish. Coefficients range over small integers.
+    #[test]
+    fn projective_fiber_is_exact_under_the_corner_chain() {
+        let range = -3i64..=3;
+        let ys: Vec<Rational> = (1..30i64)
+            .map(|k| Rational::from(k) / Rational::from(4))
+            .collect();
+        let xs: Vec<Rational> = (1..30i64)
+            .map(|k| Rational::from(k) / Rational::from(3))
+            .collect();
+        let mut tuples = 0;
+        let mut points = 0;
+        for a in range.clone() {
+            for b in range.clone() {
+                for c in range.clone() {
+                    for d in range.clone() {
+                        if !(a <= c && b <= d && c <= d && b * c - a * d >= 0 && d != 0) {
+                            continue;
+                        }
+                        tuples += 1;
+                        let [a, b, c, d] = [a, b, c, d].map(Rational::from);
+                        let y_star = (c < Rational::zero()).then(|| -d.clone() / &c);
+                        for y in &ys {
+                            let slope = &a * y + &b;
+                            let intercept = &c * y + &d;
+                            let x_star =
+                                (slope < Rational::zero()).then(|| -intercept.clone() / &slope);
+                            for x in &xs {
+                                let f = &slope * x + &intercept;
+                                let in_cell = d > Rational::zero()
+                                    && y_star.as_ref().is_none_or(|r| y < r)
+                                    && x_star.as_ref().is_none_or(|r| x < r);
+                                // Off the cell, F<=0; inside, F>0.
+                                assert_eq!(
+                                    f > Rational::zero(),
+                                    in_cell,
+                                    "a={a} b={b} c={c} d={d} y={y} x={x}"
+                                );
+                                if in_cell {
+                                    // Inside the y-range B>0, so X is the
+                                    // only place F changes sign in x.
+                                    assert!(intercept > Rational::zero());
+                                }
+                                points += 1;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        assert!(tuples > 100, "{tuples}");
+        assert!(points > 50_000);
+        // The premises matter: without a<=c the region y>Y* can meet F>0.
+        let f = |a: i64, b: i64, c: i64, d: i64, y: i64, x: i64| a * x * y + b * x + c * y + d;
+        // a=1>c=-1 violates a<=c: y=3>Y*=1 but F(y=3,x=10)=28>0.
+        assert_eq!(f(1, 0, -1, 1, 3, 10), 28);
     }
 
     #[test]

@@ -74,7 +74,7 @@ graph-driven sign analysis; no-deformation numerical integration remains future 
 | `monotone` | Certified linear/quadratic endpoint reduction, including conditional quadratic cases. |
 | `linear_negative` | Certified negative-target reduction using positive comparison polynomials. |
 | `bilinear_positive` | Certified two-variable positive-target reduction. |
-| `bilinear_general` | Certified two-variable positive-target reduction over a verified partition of the base into independently solvable pieces (`symgcad pieces plan/assemble`). |
+| `bilinear_general` | Certified two-variable positive-target reduction over a verified partition of the base into independently solvable pieces (`symgcad pieces plan/assemble`). Opt-in `projective_sections = true` (an explicit contract extension, default off) lets upper sections reach +infinity and then needs only the single piece `{d>0}`; see [docs/USAGE.md](docs/USAGE.md#projective-sections-opt-in-contract-extension). |
 | `quadratic_ladder` | Certified five-sector arrangement when a quadratic opens two positive roots below a linear fiber. |
 
 For bounded MCTS, select `ordering = "mcts"`; `search_time_secs`, `max_rollouts` and the process limits cap exploration. `checkpoint_dir` retains validated algebra work and a restart journal. Trial pruning predicts cost only: it cannot discard a mathematical region or turn a timeout into a proof. Homogeneous scale reduction is explicit and checks the original domain and order obligations.

@@ -72,10 +72,18 @@ fn contains(
                     roots_in_open_interval(&fiber, &(-cauchy).min(x.clone() - Rational::one()), x)
                         > bound.index
                 }
-                crate::output::RootIndexDomain::Positive if x > &Rational::zero() => {
+                // x lies above the index-th positive root iff more than index
+                // distinct positive roots lie below it. For the opt-in
+                // projective selector a missing root is +infinity, which this
+                // count already treats as never below x.
+                crate::output::RootIndexDomain::Positive
+                | crate::output::RootIndexDomain::PositiveOrInfinity
+                    if x > &Rational::zero() =>
+                {
                     roots_in_open_interval(&fiber, &Rational::zero(), x) > bound.index
                 }
-                crate::output::RootIndexDomain::Positive => false,
+                crate::output::RootIndexDomain::Positive
+                | crate::output::RootIndexDomain::PositiveOrInfinity => false,
                 crate::output::RootIndexDomain::RealDescending => {
                     // For descending root i, x lies above it iff at most i
                     // distinct roots lie above x. The refinement sample is
@@ -336,5 +344,25 @@ mod root_selection_tests {
                 member("z*(z-t)", RootIndexDomain::Positive, 0, true, 2, z).unwrap()
             );
         }
+    }
+
+    #[test]
+    fn projective_upper_sections_are_infinite_where_the_positive_root_is_missing() {
+        // z < (first positive root of t*z+1, or +infinity): the root -1/t is
+        // positive only for t<0.
+        let p = "t*z+1";
+        let upper = |t, z| member(p, RootIndexDomain::PositiveOrInfinity, 0, false, t, z);
+        assert!(upper(-1, 0).unwrap() && !upper(-1, 2).unwrap());
+        for t in [1, 2] {
+            for z in [1, 5, 1000] {
+                assert!(upper(t, z).unwrap(), "t={t} z={z}");
+            }
+        }
+        // A missing root gives a constant nonzero fiber at t=0: still inside.
+        assert!(upper(0, 7).unwrap());
+        // Non-positive z lies below every positive root and below infinity.
+        assert!(upper(-1, -3).unwrap());
+        // A second positive root never exists for a linear fiber.
+        assert!(member(p, RootIndexDomain::PositiveOrInfinity, 1, false, -1, 9).unwrap());
     }
 }

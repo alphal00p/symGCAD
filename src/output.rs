@@ -21,11 +21,59 @@ pub enum RootIndexDomain {
     /// This selector alone does not assert that its root is a continuous
     /// section; the enclosing coverage certificate must prove that property.
     RealDescending,
+    /// Projective section of the OPT-IN contract extension
+    /// `solver.projective_sections` (disabled by default): the index-th
+    /// distinct strictly positive root of the boundary polynomial on the
+    /// fiber, or +infinity where fewer than index+1 such roots exist.
+    ///
+    /// Such a bound may only be an UPPER bound of a cell axis. A cell carrying
+    /// one is a connected open cylindrical cell in the compactified
+    /// coordinate u=x/(1+x): its upper section u=X/(1+X) is continuous with
+    /// values in (0,1], and u=1 (x=+infinity) is reached where the selected
+    /// root does not exist. Only `bilinear_general` projective plans certify
+    /// these bounds, and only when the problem enables the option; every
+    /// other verifier rejects them. When the root does not exist at the cell
+    /// sample, the sample-specific isolation `lower`/`upper` strings are both
+    /// [`PROJECTIVE_INFINITY`].
+    PositiveOrInfinity,
 }
 impl RootIndexDomain {
     fn is_real(&self) -> bool {
         *self == Self::Real
     }
+    /// True for the opt-in projective selector (see
+    /// [`RootIndexDomain::PositiveOrInfinity`]).
+    pub fn is_projective(&self) -> bool {
+        *self == Self::PositiveOrInfinity
+    }
+}
+
+/// Isolation text of a [`RootIndexDomain::PositiveOrInfinity`] bound whose
+/// selected root does not exist at the cell sample (the section is +infinity
+/// there). It is deliberately not a rational number, so a consumer that does
+/// not know projective sections fails instead of reading a finite value.
+pub const PROJECTIVE_INFINITY: &str = "+inf";
+
+impl Cell {
+    /// Whether any axis bound uses the opt-in projective selector.
+    pub fn has_projective_bound(&self) -> bool {
+        self.axes.iter().any(|axis| {
+            [&axis.lower, &axis.upper]
+                .into_iter()
+                .flatten()
+                .any(|b| b.index_domain.is_projective())
+        })
+    }
+}
+
+/// Whether any raw or merged cell of a result uses a projective bound.
+pub fn has_projective_bounds(result: &SolveResult) -> bool {
+    result.cells.iter().any(Cell::has_projective_bound)
+        || result
+            .merged_cells
+            .iter()
+            .flatten()
+            .any(Cell::has_projective_bound)
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -35,6 +83,8 @@ pub struct RootBound {
     pub index: usize,
     /// Positive indices count strictly positive roots; zero is never included.
     /// RealDescending reverses real-root order and includes zero.
+    /// PositiveOrInfinity counts like Positive and selects +infinity where
+    /// the root does not exist (opt-in projective sections only).
     #[serde(default, skip_serializing_if = "RootIndexDomain::is_real")]
     pub index_domain: RootIndexDomain,
     pub lower: String,
@@ -189,6 +239,35 @@ mod root_selector_serialization_tests {
         let encoded = serde_json::to_value(&bound).unwrap();
         assert_eq!(encoded["index_domain"], "real_descending");
         assert_eq!(serde_json::from_value::<RootBound>(encoded).unwrap(), bound);
+
+        // The opt-in projective selector has its own explicit name, and its
+        // non-rational infinity isolation text survives a round trip.
+        for (lower, upper) in [("3/2", "3/2"), (PROJECTIVE_INFINITY, PROJECTIVE_INFINITY)] {
+            let projective = RootBound {
+                polynomial: 4,
+                index: 0,
+                index_domain: RootIndexDomain::PositiveOrInfinity,
+                lower: lower.into(),
+                upper: upper.into(),
+            };
+            let encoded = serde_json::to_value(&projective).unwrap();
+            assert_eq!(encoded["index_domain"], "positive_or_infinity");
+            assert_eq!(
+                serde_json::from_value::<RootBound>(encoded).unwrap(),
+                projective
+            );
+            let cell = Cell {
+                axes: vec![Axis {
+                    variable: "x".into(),
+                    sample: "1".into(),
+                    lower: None,
+                    upper: Some(projective),
+                }],
+                signs: vec![],
+            };
+            assert!(cell.has_projective_bound());
+        }
+        assert!(crate::algebra::rational(PROJECTIVE_INFINITY).is_err());
 
         let failed = SolveResult::failure(Problem::default(), Status::Incomplete, "old result");
         let encoded = serde_json::to_value(&failed).unwrap();

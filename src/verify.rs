@@ -27,10 +27,16 @@ fn check_root(
     level: usize,
     prefix: &[Rational],
 ) -> Result<(Rational, Rational)> {
-    ensure!(
-        root.index_domain == crate::output::RootIndexDomain::Real,
-        "ordinary global projection requires full-real root indices"
-    );
+    match root.index_domain {
+        crate::output::RootIndexDomain::Real => {}
+        crate::output::RootIndexDomain::PositiveOrInfinity => anyhow::bail!(
+            "projective (positive_or_infinity) sections are certified only by bilinear_general projective plans"
+        ),
+        crate::output::RootIndexDomain::Positive
+        | crate::output::RootIndexDomain::RealDescending => {
+            anyhow::bail!("ordinary global projection requires full-real root indices")
+        }
+    }
     let polynomial = polynomials
         .get(root.polynomial)
         .ok_or_else(|| anyhow!("invalid polynomial id"))?;
@@ -218,6 +224,13 @@ pub fn verify(result: &SolveResult) -> Result<Verification> {
     if let Some(evidence) = &result.bilinear_general {
         return crate::bilinear_general::verify(result, evidence);
     }
+    // Opt-in projective sections (`RootIndexDomain::PositiveOrInfinity`) are
+    // certified by bilinear_general projective plans only; every other
+    // engine's verifier rejects them before replaying its own evidence.
+    ensure!(
+        !crate::output::has_projective_bounds(result),
+        "projective (positive_or_infinity) sections are certified only by bilinear_general with projective_sections = true"
+    );
     if let Some(evidence) = &result.quadratic_ladder {
         return crate::quadratic_ladder::verify(result, evidence);
     }
@@ -245,6 +258,10 @@ pub(crate) fn verify_nonlocal(result: &SolveResult) -> Result<Verification> {
             && result.bilinear_general.is_none()
             && result.quadratic_ladder.is_none(),
         "unexpected fiber reduction coverage evidence"
+    );
+    ensure!(
+        !crate::output::has_projective_bounds(result),
+        "projective (positive_or_infinity) sections are certified only by bilinear_general with projective_sections = true"
     );
     if result.homogeneous.is_some() {
         return crate::homogeneity::verify_homogeneous(result);

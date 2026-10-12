@@ -269,6 +269,26 @@ impl OriginalEvaluator {
         Ok(self.constraints.len() * 2 + self.splits.len())
     }
 }
+/// Keep exactly the strictly positive roots, refining until each isolating
+/// interval is classified.
+fn positive_roots(mut roots: Vec<FiberRoot>) -> Result<Vec<FiberRoot>> {
+    for root in &mut roots {
+        for _ in 0..512 {
+            if root.interval.0 >= Rational::zero() || root.interval.1 <= Rational::zero() {
+                break;
+            }
+            refine_once(root);
+        }
+        ensure!(
+            root.interval.0 >= Rational::zero() || root.interval.1 <= Rational::zero(),
+            "positive-root classification refinement budget exhausted"
+        );
+    }
+    roots.retain(|r| r.interval.0 >= Rational::zero() && r.interval.1 > Rational::zero());
+    Ok(roots)
+}
+/// A finite boundary root at a fresh prefix. Projective sections, which may
+/// be +infinity, go through [`selected_section`].
 fn selected_root(
     a: &Algebra,
     polys: &[Poly],
@@ -285,27 +305,45 @@ fn selected_root(
         "boundary nullified or lost all roots at fresh prefix"
     );
     let mut roots = isolate_union(vec![(bound.polynomial, fiber)])?;
-    if bound.index_domain == RootIndexDomain::Positive {
-        for root in &mut roots {
-            for _ in 0..512 {
-                if root.interval.0 >= Rational::zero() || root.interval.1 <= Rational::zero() {
-                    break;
-                }
-                refine_once(root);
-            }
-            ensure!(
-                root.interval.0 >= Rational::zero() || root.interval.1 <= Rational::zero(),
-                "positive-root classification refinement budget exhausted"
-            );
+    match bound.index_domain {
+        RootIndexDomain::Real => {}
+        RootIndexDomain::Positive => roots = positive_roots(roots)?,
+        RootIndexDomain::RealDescending => roots.reverse(),
+        RootIndexDomain::PositiveOrInfinity => {
+            anyhow::bail!("projective sections are selected by selected_section")
         }
-        roots.retain(|r| r.interval.0 >= Rational::zero() && r.interval.1 > Rational::zero());
-    } else if bound.index_domain == RootIndexDomain::RealDescending {
-        roots.reverse();
     }
     roots
         .get(bound.index)
         .cloned()
         .context("declared boundary root does not exist at fresh prefix")
+}
+/// A boundary at a fresh prefix: Some(root), or None for +infinity, which only
+/// an opt-in projective section (`PositiveOrInfinity`, the index-th strictly
+/// positive root or +infinity where fewer exist) may select.
+fn selected_section(
+    a: &Algebra,
+    polys: &[Poly],
+    bound: &RootBound,
+    level: usize,
+    prefix: &[Rational],
+) -> Result<Option<FiberRoot>> {
+    if !bound.index_domain.is_projective() {
+        return selected_root(a, polys, bound, level, prefix).map(Some);
+    }
+    let p = polys
+        .get(bound.polynomial)
+        .context("boundary polynomial ID out of range")?;
+    let fiber = a.specialize_univariate(p, level, prefix)?;
+    ensure!(
+        !fiber.is_zero(),
+        "projective boundary nullified at fresh prefix"
+    );
+    if fiber.degree() == 0 {
+        return Ok(None);
+    }
+    let roots = positive_roots(isolate_union(vec![(bound.polynomial, fiber)])?)?;
+    Ok(roots.get(bound.index).cloned())
 }
 fn sample_axis(
     lower: &mut Option<FiberRoot>,
@@ -367,9 +405,15 @@ fn strict_membership(
         .get(bound.polynomial)
         .context("membership polynomial missing")?;
     let fiber = a.specialize_univariate(p, level, prefix)?;
+    // A projective section may lose every root (+infinity); it is still an
+    // upper bound only.
     ensure!(
-        !fiber.is_zero() && fiber.degree() > 0,
+        !fiber.is_zero() && (fiber.degree() > 0 || bound.index_domain.is_projective()),
         "membership boundary degenerated"
+    );
+    ensure!(
+        !(lower && bound.index_domain.is_projective()),
+        "projective sections may only be upper bounds"
     );
     ensure!(
         !fiber.evaluate(x).is_zero(),
@@ -389,10 +433,14 @@ fn strict_membership(
             roots_in_open_interval(&fiber, &(-cauchy).min(x.clone() - Rational::one()), x)
                 > bound.index
         }
-        RootIndexDomain::Positive if x > &Rational::zero() => {
+        // A missing projective root is +infinity: never below x, which the
+        // positive-root count already expresses.
+        RootIndexDomain::Positive | RootIndexDomain::PositiveOrInfinity
+            if x > &Rational::zero() =>
+        {
             roots_in_open_interval(&fiber, &Rational::zero(), x) > bound.index
         }
-        RootIndexDomain::Positive => false,
+        RootIndexDomain::Positive | RootIndexDomain::PositiveOrInfinity => false,
         RootIndexDomain::RealDescending => {
             roots_in_open_interval(&fiber, x, &cauchy.max(x.clone() + Rational::one()))
                 <= bound.index
@@ -445,16 +493,25 @@ fn check_point(
                 axis.variable == export.order[level],
                 "cell axis order differs from exported order"
             );
+            ensure!(
+                axis.lower
+                    .as_ref()
+                    .is_none_or(|b| !b.index_domain.is_projective()),
+                "projective sections may only be upper bounds"
+            );
             let mut lower = axis
                 .lower
                 .as_ref()
                 .map(|b| selected_root(a, polys, b, level, &prefix))
                 .transpose()?;
+            // An opt-in projective upper section may be +infinity (None) at
+            // this fresh prefix; the axis is then sampled as unbounded above.
             let mut upper = axis
                 .upper
                 .as_ref()
-                .map(|b| selected_root(a, polys, b, level, &prefix))
-                .transpose()?;
+                .map(|b| selected_section(a, polys, b, level, &prefix))
+                .transpose()?
+                .flatten();
             let mut forbidden = vec![rational(&axis.sample)?];
             for prior in previous {
                 if let Some(x) = prior.coordinates.get(&axis.variable) {
@@ -466,6 +523,9 @@ fn check_point(
                 match (bound, root) {
                     (Some(b), Some(r)) => {
                         json!({"polynomial":b.polynomial,"index":b.index,"index_domain":b.index_domain,"fresh_isolation":[r.interval.0.to_string(),r.interval.1.to_string()]})
+                    }
+                    (Some(b), None) => {
+                        json!({"polynomial":b.polynomial,"index":b.index,"index_domain":b.index_domain,"fresh_isolation":"+inf"})
                     }
                     _ => Value::Null,
                 }
@@ -868,6 +928,147 @@ mod tests {
         let r = selected_root(&a, &polys, &b(RootIndexDomain::RealDescending, 0), 0, &[])?;
         assert!(r.interval.0 <= Rational::from(5) && r.interval.1 >= Rational::from(5));
         assert!(selected_root(&a, &polys, &b(RootIndexDomain::Positive, 2), 0, &[]).is_err());
+        Ok(())
+    }
+    #[test]
+    fn projective_sections_select_positive_roots_or_infinity() -> Result<()> {
+        let a = Algebra::new(&["t".into(), "z".into()])?;
+        let polys = vec![a.parse("t*z+1")?, a.parse("(z-1)*(z-3)*(z+2)")?];
+        let b = |polynomial, index| RootBound {
+            polynomial,
+            index,
+            index_domain: RootIndexDomain::PositiveOrInfinity,
+            lower: "+inf".into(),
+            upper: "+inf".into(),
+        };
+        // t<0: the root -1/t; t>0: no positive root; t=0: constant fiber.
+        let r = selected_section(&a, &polys, &b(0, 0), 1, &[Rational::from(-2)])?.unwrap();
+        assert!(r.interval.0 <= Rational::from(1) / Rational::from(2));
+        assert!(r.interval.1 >= Rational::from(1) / Rational::from(2));
+        for t in [0, 2] {
+            assert!(selected_section(&a, &polys, &b(0, 0), 1, &[Rational::from(t)])?.is_none());
+        }
+        // Indices count distinct strictly positive roots; beyond them +inf.
+        let prefix = [Rational::one()];
+        let second = selected_section(&a, &polys, &b(1, 1), 1, &prefix)?.unwrap();
+        assert!(second.interval.0 <= Rational::from(3) && second.interval.1 >= Rational::from(3));
+        assert!(selected_section(&a, &polys, &b(1, 2), 1, &prefix)?.is_none());
+        // Finite selectors refuse to be read as projective and vice versa.
+        assert!(selected_root(&a, &polys, &b(0, 0), 1, &[Rational::from(-2)]).is_err());
+        // Membership below +infinity, below a finite section, never as lower.
+        let two = Rational::from(2);
+        assert!(
+            strict_membership(
+                &a,
+                &polys,
+                &b(0, 0),
+                1,
+                &[two.clone()],
+                &Rational::from(9),
+                false
+            )
+            .is_ok()
+        );
+        assert!(
+            strict_membership(
+                &a,
+                &polys,
+                &b(0, 0),
+                1,
+                &[Rational::zero()],
+                &Rational::from(9),
+                false
+            )
+            .is_ok()
+        );
+        assert!(
+            strict_membership(
+                &a,
+                &polys,
+                &b(0, 0),
+                1,
+                &[-two.clone()],
+                &Rational::from(9),
+                false
+            )
+            .is_err()
+        );
+        assert!(
+            strict_membership(&a, &polys, &b(0, 0), 1, &[two], &Rational::from(9), true).is_err()
+        );
+        Ok(())
+    }
+    #[test]
+    fn projective_bilinear_cells_sample_with_infinite_and_finite_sections() -> Result<()> {
+        // The Gluza-shaped synthetic corner chain of tests/bilinear_general.rs.
+        let target = "(u-3)*x*y+(u-3+(v-1)^2)*x+(u-3+(u-v)^2)*y+(u-3+(v-1)^2+(u-v)^2)";
+        let p = Problem::from_toml(&format!(
+            "name='projective chain'\nvariables=['u','v','y','x']\nconstraints=['u>0','v>0','y>0','x>0','({target})>0']\nsplit=[]\n[solver]\nengine='bilinear_general'\nordering='given'\nbilinear_general_guide='(x+1)*(y+1)'\nprojective_sections=true\n[limits]\nwall_time_secs=60.0"
+        ))?;
+        let result = symgcad::solver::solve(&p)?;
+        assert_eq!(result.status, Status::CompleteGeneric);
+        assert!(symgcad::verify::verify(&result)?.verified);
+        assert!(result.bilinear_general.as_ref().unwrap().plan.projective);
+        let export: Export = serde_json::from_value(serde_json::to_value(&result)?)?;
+        validate_original(&export, &p)?;
+        let a = Algebra::new(&export.order)?;
+        let polys = export
+            .polynomials
+            .iter()
+            .map(|p| a.parse(p))
+            .collect::<Result<Vec<_>>>()?;
+        let eval = OriginalEvaluator::new(&p)?;
+        let (mut infinite, mut finite) = (0, 0);
+        for (index, cell) in export.cells.iter().enumerate() {
+            let mut rng = Rng(20261010 + index as u64);
+            let mut previous: Vec<PointCheck> = vec![];
+            for i in 0..2 {
+                let q = check_point(
+                    &export,
+                    &a,
+                    &polys,
+                    &eval,
+                    cell,
+                    "raw",
+                    index,
+                    i,
+                    &previous,
+                    &mut rng,
+                    Instant::now(),
+                    30.,
+                )
+                .0;
+                assert!(q.passed, "cell {index}: {:?}", q.failures);
+                for axis in &q.interior_bounds[2..] {
+                    if axis["upper"]["fresh_isolation"] == "+inf" {
+                        infinite += 1;
+                    } else {
+                        finite += 1;
+                    }
+                }
+                previous.push(q);
+            }
+        }
+        assert!(infinite > 0 && finite > 0, "{infinite} {finite}");
+        // A projective lower bound is never accepted.
+        let mut forged = export.cells[0].clone();
+        forged.axes[3].lower = forged.axes[3].upper.clone();
+        let q = check_point(
+            &export,
+            &a,
+            &polys,
+            &eval,
+            &forged,
+            "raw",
+            0,
+            0,
+            &[],
+            &mut Rng(1),
+            Instant::now(),
+            30.,
+        )
+        .0;
+        assert!(!q.passed);
         Ok(())
     }
     #[test]

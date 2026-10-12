@@ -168,6 +168,19 @@ pub struct SolverOptions {
     /// selects among valid plans only; the verifier accepts any valid plan.
     #[serde(skip_serializing_if = "is_region_weighted")]
     pub bilinear_general_plan_objective: String,
+    /// OPT-IN CONTRACT EXTENSION (default false; `bilinear_general` only).
+    /// A cell boundary may go continuously to +infinity: an upper bound may
+    /// be a projective section (`RootIndexDomain::PositiveOrInfinity`), "the
+    /// index-th distinct strictly positive root of P, or +infinity where
+    /// fewer exist". Cells remain connected open cylindrical cells in the
+    /// compactified coordinates u=x/(1+x), with continuous sections into
+    /// (0,1]. With replayed corner-chain premises the bilinear_general
+    /// engine then needs a single base piece {d>0} (see
+    /// `bilinear_general`). When the premises are missing the ordinary strict
+    /// plan is used. Results using projective sections verify only with this
+    /// option on. Not combinable with `merge = "aggressive"`.
+    #[serde(skip_serializing_if = "is_false")]
+    pub projective_sections: bool,
     /// Batch tentative sibling discoveries in the experimental local engine.
     /// Omit the default to keep ordinary inputs readable by older workers.
     #[serde(skip_serializing_if = "is_true")]
@@ -366,6 +379,7 @@ impl Default for SolverOptions {
             bilinear_general_base_anchor: None,
             bilinear_general_base_block: vec![],
             bilinear_general_plan_objective: "region_weighted".into(),
+            projective_sections: false,
             local_batch_siblings: true,
             local_reuse_subtrees: true,
             local_reuse_learned_cuts: true,
@@ -651,6 +665,16 @@ impl Problem {
         ensure!(
             ["none", "aggressive"].contains(&self.solver.merge.as_str()),
             "unknown merge policy"
+        );
+        // The projective-section contract extension is opt-in, belongs to
+        // the engine that certifies it, and has no compatibility merge.
+        ensure!(
+            !self.solver.projective_sections || self.solver.engine == "bilinear_general",
+            "projective_sections is a bilinear_general contract extension"
+        );
+        ensure!(
+            !self.solver.projective_sections || self.solver.merge == "none",
+            "projective_sections cannot be combined with merge = \"aggressive\""
         );
         ensure!(
             self.solver.cache_memory_mib <= 65536,
