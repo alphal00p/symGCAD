@@ -543,7 +543,8 @@ pub fn verify(result: &SolveResult, evidence: &BilinearPositiveEvidence) -> Resu
             && result.monotone.is_none()
             && result.local.is_none()
             && result.sign_filter.is_none()
-            && result.linear_negative.is_none(),
+            && result.linear_negative.is_none()
+            && result.bilinear_general.is_none(),
         "mixed bilinear positive proof modes"
     );
     let input = input(&result.problem)?;
@@ -581,6 +582,7 @@ pub fn verify(result: &SolveResult, evidence: &BilinearPositiveEvidence) -> Resu
     );
     ensure!(
         evidence.base.bilinear_positive.is_none()
+            && evidence.base.bilinear_general.is_none()
             && evidence.base.homogeneous.is_none()
             && evidence.base.monotone.is_none()
             && evidence.base.sign_filter.is_none()

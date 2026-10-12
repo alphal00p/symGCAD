@@ -209,6 +209,9 @@ impl Checker<'_> {
 }
 
 pub fn verify(result: &SolveResult) -> Result<Verification> {
+    if let Some(evidence) = &result.bilinear_general {
+        return crate::bilinear_general::verify(result, evidence);
+    }
     if let Some(evidence) = &result.quadratic_ladder {
         return crate::quadratic_ladder::verify(result, evidence);
     }
@@ -233,6 +236,7 @@ pub(crate) fn verify_nonlocal(result: &SolveResult) -> Result<Verification> {
     ensure!(
         result.linear_negative.is_none()
             && result.bilinear_positive.is_none()
+            && result.bilinear_general.is_none()
             && result.quadratic_ladder.is_none(),
         "unexpected fiber reduction coverage evidence"
     );

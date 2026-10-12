@@ -146,6 +146,18 @@ pub struct SolverOptions {
     /// Engine for the lower-dimensional coefficient-sign decomposition.
     #[serde(skip_serializing_if = "is_optimized")]
     pub bilinear_positive_base_engine: String,
+    /// Proposed comparison polynomial U, affine in each of the last two axes,
+    /// for the exact multi-piece bilinear engine. Only its replayed square
+    /// identities and certified positive coefficients are used.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub bilinear_general_guide: Option<String>,
+    /// Engine for every lower-dimensional bilinear general piece.
+    #[serde(skip_serializing_if = "is_optimized")]
+    pub bilinear_general_base_engine: String,
+    /// Optional positive-scale anchor applied inside every piece. It must be
+    /// the first base variable; the scale block is every base variable.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub bilinear_general_base_anchor: Option<String>,
     /// Batch tentative sibling discoveries in the experimental local engine.
     /// Omit the default to keep ordinary inputs readable by older workers.
     #[serde(skip_serializing_if = "is_true")]
@@ -253,6 +265,9 @@ impl Default for SolverOptions {
             negative_linear_guide: None,
             bilinear_positive_guide: None,
             bilinear_positive_base_engine: "optimized".into(),
+            bilinear_general_guide: None,
+            bilinear_general_base_engine: "optimized".into(),
+            bilinear_general_base_anchor: None,
             local_batch_siblings: true,
             local_reuse_subtrees: true,
             local_reuse_learned_cuts: true,
@@ -442,6 +457,7 @@ impl Problem {
                 "local",
                 "linear_negative",
                 "bilinear_positive",
+                "bilinear_general",
                 "quadratic_ladder"
             ]
             .contains(&self.solver.engine.as_str()),
@@ -455,6 +471,18 @@ impl Problem {
             ["baseline", "optimized", "local"]
                 .contains(&self.solver.bilinear_positive_base_engine.as_str()),
             "bilinear_positive_base_engine must be baseline, optimized or local"
+        );
+        ensure!(
+            ["baseline", "optimized", "local"]
+                .contains(&self.solver.bilinear_general_base_engine.as_str()),
+            "bilinear_general_base_engine must be baseline, optimized or local"
+        );
+        ensure!(
+            self.solver
+                .bilinear_general_base_anchor
+                .as_ref()
+                .is_none_or(|a| names.contains(a)),
+            "bilinear_general_base_anchor must be a declared variable"
         );
         ensure!(
             ["none", "aggressive"].contains(&self.solver.merge.as_str()),
@@ -477,6 +505,7 @@ impl Problem {
                     "local",
                     "linear_negative",
                     "bilinear_positive",
+                    "bilinear_general",
                     "quadratic_ladder"
                 ]
                 .contains(&self.solver.engine.as_str()),

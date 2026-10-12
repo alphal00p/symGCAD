@@ -65,6 +65,11 @@ enum Command {
         #[arg(long)]
         core: Option<PathBuf>,
     },
+    /// Plan or assemble separately solved bilinear_general base pieces.
+    Pieces {
+        #[command(subcommand)]
+        command: PiecesCommand,
+    },
     #[command(name = "_worker", hide = true)]
     Worker {
         operation: String,
@@ -72,6 +77,95 @@ enum Command {
         #[arg(long)]
         output: PathBuf,
     },
+}
+
+#[derive(Subcommand)]
+enum PiecesCommand {
+    /// Write deterministic piece inputs (piece_NNN.toml) and plan.json.
+    Plan {
+        input: PathBuf,
+        #[arg(long)]
+        out_dir: PathBuf,
+    },
+    /// Assemble separately solved piece results into one original result.
+    Assemble {
+        input: PathBuf,
+        #[arg(long)]
+        plan: PathBuf,
+        #[arg(long, num_args = 1.., required = true)]
+        results: Vec<PathBuf>,
+        #[arg(short, long)]
+        output: PathBuf,
+    },
+}
+
+fn pieces(command: PiecesCommand) -> Result<()> {
+    match command {
+        PiecesCommand::Plan { input, out_dir } => {
+            let problem = Problem::from_toml(&fs::read_to_string(&input)?)?;
+            let planned = symgcad::bilinear_general::plan(&problem)?;
+            fs::create_dir_all(&out_dir)?;
+            let mut files = Vec::new();
+            for (i, piece) in planned.problems.iter().enumerate() {
+                let name = format!("piece_{i:03}.toml");
+                let text = toml::to_string(piece)?;
+                // The piece file is the exact problem the verifier re-derives.
+                anyhow::ensure!(
+                    serde_json::to_value(Problem::from_toml(&text)?)?
+                        == serde_json::to_value(piece)?,
+                    "piece TOML does not round-trip exactly"
+                );
+                fs::write(out_dir.join(&name), text)?;
+                let spec = &planned.plan.pieces[i];
+                files.push(
+                    json!({"index":i,"input":name,"conditions":spec.conditions,"split":spec.split}),
+                );
+            }
+            let document = json!({
+                "schema_version": 1,
+                "plan": planned.plan,
+                "planning_seconds": planned.planning_seconds,
+                "pieces": files,
+            });
+            emit(&document, Some(&out_dir.join("plan.json")))?;
+            emit(
+                &json!({"pieces":files,"empty_claims":planned.plan.empty.len(),"planning_seconds":planned.planning_seconds,"plan":out_dir.join("plan.json")}),
+                None,
+            )
+        }
+        PiecesCommand::Assemble {
+            input,
+            plan,
+            results,
+            output,
+        } => {
+            let problem = Problem::from_toml(&fs::read_to_string(&input)?)?;
+            let document: Value = serde_json::from_slice(&fs::read(&plan)?)?;
+            anyhow::ensure!(
+                document["schema_version"] == 1,
+                "unsupported bilinear general plan file"
+            );
+            let recorded: symgcad::bilinear_general::BilinearGeneralPlan =
+                serde_json::from_value(document["plan"].clone())?;
+            let planning_seconds = document["planning_seconds"].as_f64().unwrap_or(0.0);
+            let bases = results
+                .iter()
+                .map(|path| -> Result<SolveResult> {
+                    Ok(serde_json::from_reader(io::BufReader::new(
+                        fs::File::open(path)?,
+                    ))?)
+                })
+                .collect::<Result<Vec<_>>>()?;
+            let bases = symgcad::bilinear_general::order_piece_results(&problem, &recorded, bases)?;
+            let result =
+                symgcad::bilinear_general::assemble(&problem, recorded, bases, planning_seconds)?;
+            emit(&result, Some(&output))?;
+            emit(
+                &json!({"status":result.status,"cells":result.cells.len(),"diagnostic":result.diagnostic}),
+                None,
+            )
+        }
+    }
 }
 
 fn emit(value: &impl serde::Serialize, output: Option<&Path>) -> Result<()> {
@@ -600,6 +694,7 @@ fn main() -> Result<()> {
             input,
             output,
         } => worker(&operation, &input, &output),
+        Command::Pieces { command } => pieces(command),
         Command::Solve { input, output } => {
             let Some(mut problem) = read_problem(&input, output.as_deref())? else {
                 return Ok(());

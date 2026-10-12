@@ -135,6 +135,8 @@ pub struct SolveResult {
     pub bilinear_positive: Option<Box<crate::bilinear_positive::BilinearPositiveEvidence>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub quadratic_ladder: Option<Box<crate::quadratic_ladder::QuadraticLadderEvidence>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bilinear_general: Option<Box<crate::bilinear_general::BilinearGeneralEvidence>>,
 }
 
 impl SolveResult {
@@ -161,6 +163,7 @@ impl SolveResult {
             linear_negative: None,
             bilinear_positive: None,
             quadratic_ladder: None,
+            bilinear_general: None,
         }
     }
 }

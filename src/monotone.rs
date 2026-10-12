@@ -996,6 +996,7 @@ fn reconstruct(
         linear_negative: None,
         bilinear_positive: None,
         quadratic_ladder: None,
+        bilinear_general: None,
     })
 }
 
@@ -1191,7 +1192,8 @@ pub fn verify_monotone(result: &SolveResult) -> Result<Verification> {
             && result.local.is_none()
             && result.sign_filter.is_none()
             && result.linear_negative.is_none()
-            && result.bilinear_positive.is_none(),
+            && result.bilinear_positive.is_none()
+            && result.bilinear_general.is_none(),
         "unexpected alternate monotone coverage evidence"
     );
     if evidence.target.is_some() {

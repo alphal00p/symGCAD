@@ -1,6 +1,7 @@
 //! Exact generic cylindrical algebraic decomposition.
 pub mod algebra;
 pub mod benchmark;
+pub mod bilinear_general;
 pub mod bilinear_positive;
 pub mod campaign;
 pub mod comparison;
@@ -9,6 +10,7 @@ pub mod corpus;
 pub mod domain;
 pub mod fastsecdec;
 pub mod homogeneity;
+pub mod identity;
 pub mod linear_negative;
 pub mod local_projection;
 pub mod monotone;

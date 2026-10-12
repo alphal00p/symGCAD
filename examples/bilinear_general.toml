@@ -1,0 +1,13 @@
+name = "guided bilinear general pieces"
+variables = ["t", "y", "x"]
+constraints = ["t > 0", "y > 0", "x > 0", "(t-3)*x*y + (t-1)*x + (t-2)*y + t > 0"]
+
+[solver]
+engine = "bilinear_general"
+ordering = "given"
+bilinear_general_guide = "(x+1)*(y+1)"
+
+[limits]
+wall_time_secs = 30.0
+memory_mib = 1024
+workers = 1
