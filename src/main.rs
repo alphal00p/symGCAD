@@ -523,7 +523,7 @@ fn worker(operation: &str, input: &Path, output: &Path) -> Result<()> {
                 .get_mut("optimized_projection")
                 .and_then(Value::as_object_mut)
             {
-                for field in ["removals", "initial_removals"] {
+                for field in ["removals", "initial_removals", "pair_omissions"] {
                     if let Some(certificates) = report.remove(field) {
                         report.insert(
                             format!("{field}_count"),

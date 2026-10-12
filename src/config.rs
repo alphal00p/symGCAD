@@ -204,6 +204,12 @@ pub struct SolverOptions {
     /// separation. Every used identity and coordinate premise is checked.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub local_strict_bezout_hints: Vec<crate::local_projection::StrictBezoutHint>,
+    /// Optional identities p*L+q*M=k*S (S=H^2 or S>0, exactly certified on
+    /// the coordinate box) omitting Res(p,q) in certified global projection.
+    /// Requires positivity mode; every used identity is replayed on verify.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub projection_strict_bezout_hints:
+        Vec<crate::strict_bezout_projection::ProjectionBezoutHint>,
     /// Isolate the first-axis root union without constant projection algebra.
     #[serde(skip_serializing_if = "is_true")]
     pub local_base_point_projection: bool,
@@ -271,6 +277,7 @@ impl Default for SolverOptions {
             local_descartes_interval_template_limit: 2,
             local_positive_pair_witnesses: false,
             local_strict_bezout_hints: Vec::new(),
+            projection_strict_bezout_hints: Vec::new(),
             local_base_point_projection: true,
             local_base_univariate_basis: false,
             local_adjacent_pairs: false,
@@ -374,6 +381,10 @@ impl Problem {
         ensure!(
             !self.solver.local_base_univariate_basis || !self.solver.local_hint_archive,
             "local_base_univariate_basis does not permit local_hint_archive in v1"
+        );
+        ensure!(
+            self.solver.projection_strict_bezout_hints.is_empty() || self.solver.positivity,
+            "projection_strict_bezout_hints require certified projection (positivity = true)"
         );
         let names: BTreeSet<_> = self.variables.iter().collect();
         ensure!(names.len() == self.variables.len(), "duplicate variables");

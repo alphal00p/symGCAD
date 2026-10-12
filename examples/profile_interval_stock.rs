@@ -13,7 +13,7 @@ use symgcad::{
     roots::{isolate_union, refine_once, roots_in_open_interval, sector_sample},
 };
 #[cfg(not(test))]
-use symgcad::{algebra, domain, local_projection, roots, solver};
+use symgcad::{algebra, domain, local_projection, roots, solver, strict_bezout_projection};
 
 // The included producer also uses private configuration validation. Compile
 // that source unchanged instead of duplicating its resource limits here.

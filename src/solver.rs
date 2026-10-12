@@ -218,6 +218,7 @@ fn pruning_options(problem: &Problem) -> DomainPruningOptions {
         prune_input: problem.solver.input_positivity,
         prune_operations: problem.solver.prune_operations,
         certificates: problem.solver.certificate_options(),
+        strict_bezout_hints: problem.solver.projection_strict_bezout_hints.clone(),
         ..Default::default()
     }
 }

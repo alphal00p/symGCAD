@@ -28,6 +28,7 @@ use crate::{
     projection::{
         Projection, ProjectionStep, discriminant, exact_resultant, exact_resultant_with_statistics,
     },
+    strict_bezout_projection::{self, ProjectionBezoutHint, ProjectionPairOmission},
 };
 
 const CACHE_SCHEMA: u32 = 1;
@@ -108,6 +109,9 @@ pub struct CacheMetrics {
     pub invalid_checkpoints: usize,
     pub written_checkpoints: usize,
     pub skipped_degree_zero_pairs: usize,
+    /// Pair resultants not computed because a checked strict-Bezout identity
+    /// proves the pair has no common zero in the certified domain box.
+    pub omitted_pair_resultants: usize,
     pub evictions: usize,
     pub retained_bytes_estimate: usize,
     pub peak_retained_bytes_estimate: usize,
@@ -144,6 +148,20 @@ pub struct OptimizedProjectionReport {
     /// Whole raw projection obligations proved nonzero before factorization.
     #[serde(default)]
     pub operation_removals: Vec<ProjectionOperationRemoval>,
+    /// Pair resultants omitted by replayable strict-Bezout identities.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub pair_omissions: Vec<ProjectionPairOmission>,
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub pair_omission_hints_accepted: usize,
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub pair_omission_hints_rejected: usize,
+    /// At most eight rejection reasons, for diagnostics only.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub pair_omission_rejections: Vec<String>,
+}
+
+fn is_zero(value: &usize) -> bool {
+    *value == 0
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
@@ -156,6 +174,9 @@ pub struct DomainPruningOptions {
     pub prune_operations: bool,
     pub excluded_sign_constraints: Vec<usize>,
     pub certificates: CertificateOptions,
+    /// Proposed strict-Bezout identities; each used one is replayed.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub strict_bezout_hints: Vec<ProjectionBezoutHint>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -384,6 +405,12 @@ pub struct ProjectionCache<'a> {
     resultant_cache: HashMap<(usize, Poly, Poly), Poly>,
     discriminant_cache: HashMap<(usize, Poly), Poly>,
     prefix_cache: HashMap<String, Vec<Poly>>,
+    /// Checked strict-Bezout identities, keyed by their ordered canonical
+    /// pair. Only certified projection configures them.
+    pair_omissions: Vec<strict_bezout_projection::Prepared>,
+    pair_omission_index: HashMap<(Poly, Poly), usize>,
+    /// Part of every prefix key once identities are configured.
+    pair_omission_fingerprint: Option<String>,
     pub report: OptimizedProjectionReport,
 }
 
@@ -396,7 +423,12 @@ impl<'a> ProjectionCache<'a> {
             resultant_cache: HashMap::new(),
             discriminant_cache: HashMap::new(),
             prefix_cache: HashMap::new(),
+            pair_omissions: Vec::new(),
+            pair_omission_index: HashMap::new(),
+            pair_omission_fingerprint: None,
             report: OptimizedProjectionReport {
+                // newton-v2: exact integer images, Sylvester assignment degree
+                // bound and size-derived admission above degree 1024.
                 resultant_kernel: if options.binary_resultants {
                     "deterministic-ducos-bivariate-newton-v2-binary-segmentation-v1".into()
                 } else {
@@ -994,6 +1026,11 @@ impl<'a> ProjectionCache<'a> {
             variable,
             &input_hash,
         ))?;
+        // Historical keys are unchanged unless pair omissions are configured.
+        let key = match &self.pair_omission_fingerprint {
+            Some(fingerprint) => digest(&("pair-omissions-v1", key, fingerprint))?,
+            None => key,
+        };
         Ok((key, input_hash))
     }
 
@@ -1210,6 +1247,113 @@ impl<'a> ProjectionCache<'a> {
         self.save_progress()
     }
 
+    /// Check and certify proposed strict-Bezout identities on the original
+    /// coordinate box. Rejected proposals are counted, never assumed. Calling
+    /// again with the same accepted set is a no-op.
+    pub fn configure_pair_omissions(
+        &mut self,
+        original_constraints: &[Poly],
+        pruning: &DomainPruningOptions,
+    ) -> Result<()> {
+        if pruning.strict_bezout_hints.is_empty() {
+            return Ok(());
+        }
+        let domain = derive_domain(
+            self.algebra,
+            original_constraints,
+            &pruning.excluded_sign_constraints,
+        )?;
+        let mut prepared = Vec::new();
+        let mut rejections = Vec::new();
+        let mut rejected = 0usize;
+        if pruning.strict_bezout_hints.len() > strict_bezout_projection::MAX_HINTS {
+            rejected = pruning.strict_bezout_hints.len();
+            rejections.push("strict-Bezout hint inventory cap".to_string());
+        } else {
+            for hint in &pruning.strict_bezout_hints {
+                match strict_bezout_projection::prepare(
+                    self.algebra,
+                    &domain,
+                    &pruning.certificates,
+                    hint,
+                ) {
+                    Ok(p) => prepared.push(p),
+                    Err(error) => {
+                        rejected += 1;
+                        if rejections.len() < 8 {
+                            rejections.push(error.to_string());
+                        }
+                    }
+                }
+            }
+        }
+        let fingerprint = digest(&(
+            "strict-bezout-pair-omissions-v1",
+            prepared
+                .iter()
+                .map(|p| {
+                    (
+                        self.algebra.format(&p.pair[0]),
+                        self.algebra.format(&p.pair[1]),
+                    )
+                })
+                .collect::<Vec<_>>(),
+            &domain,
+        ))?;
+        if self.pair_omission_fingerprint.as_ref() == Some(&fingerprint) {
+            return Ok(());
+        }
+        self.pair_omission_index.clear();
+        for (index, p) in prepared.iter().enumerate() {
+            self.pair_omission_index
+                .entry((p.pair[0].clone(), p.pair[1].clone()))
+                .or_insert(index);
+        }
+        self.report.pair_omission_hints_accepted = prepared.len();
+        self.report.pair_omission_hints_rejected = rejected;
+        self.report.pair_omission_rejections = rejections;
+        self.pair_omissions = prepared;
+        self.pair_omission_fingerprint = (!self.pair_omissions.is_empty()).then_some(fingerprint);
+        Ok(())
+    }
+
+    fn omitted_pair(&self, p: &Poly, q: &Poly) -> Option<usize> {
+        if self.pair_omission_index.is_empty() {
+            return None;
+        }
+        let key = if p.internal_cmp(q).is_gt() {
+            (q.clone(), p.clone())
+        } else {
+            (p.clone(), q.clone())
+        };
+        self.pair_omission_index.get(&key).copied()
+    }
+
+    /// Evidence for every omitted pair of this level, in basis order.
+    fn pair_omission_evidence(
+        &self,
+        polynomials: &[Poly],
+        level: usize,
+        variable: usize,
+    ) -> Vec<ProjectionPairOmission> {
+        let mut evidence = Vec::new();
+        for (i, p) in polynomials.iter().enumerate() {
+            for q in &polynomials[i + 1..] {
+                if p.degree(variable) > 0
+                    && q.degree(variable) > 0
+                    && let Some(index) = self.omitted_pair(p, q)
+                {
+                    evidence.push(self.pair_omissions[index].evidence(
+                        self.algebra,
+                        level,
+                        variable,
+                    ));
+                }
+            }
+        }
+        evidence
+    }
+
     fn raw_projection(&mut self, polynomials: &[Poly], variable: usize) -> Result<Vec<Poly>> {
         let mut raw = Vec::new();
         for (i, p) in polynomials.iter().enumerate() {
@@ -1223,6 +1367,10 @@ impl<'a> ProjectionCache<'a> {
                     // Res(c,q)=c^deg(q): c is already present as a leading
                     // coefficient, so its irreducible factors are retained.
                     self.report.cache.skipped_degree_zero_pairs += 1;
+                } else if self.omitted_pair(p, other).is_some() {
+                    // No common zero in the certified box: see
+                    // strict_bezout_projection for the lifting argument.
+                    self.report.cache.omitted_pair_resultants += 1;
                 } else {
                     raw.push(self.resultant(p, other, variable)?);
                 }
@@ -1302,9 +1450,12 @@ impl<'a> ProjectionCache<'a> {
             original_constraints,
             &pruning.excluded_sign_constraints,
         )?;
+        // Ordering exploration then projects with the same checked omissions.
+        self.configure_pair_omissions(original_constraints, pruning)?;
         self.report.initial_removals.clear();
         self.report.operation_removals.clear();
         self.report.removals.clear();
+        self.report.pair_omissions.clear();
         let all = original_constraints
             .iter()
             .chain(split)
@@ -1339,9 +1490,14 @@ impl<'a> ProjectionCache<'a> {
     /// are remapped to the requested lifting order.
     pub fn project_ordered(&mut self, polynomials: &[Poly], order: &[usize]) -> Result<Projection> {
         validate_projection_input(self.algebra, polynomials, order)?;
+        ensure!(
+            self.pair_omissions.is_empty(),
+            "strict-Bezout pair omission requires certified projection"
+        );
         self.report.removals.clear();
         self.report.initial_removals.clear();
         self.report.operation_removals.clear();
+        self.report.pair_omissions.clear();
         if order.is_empty() {
             return Ok(Projection {
                 levels: vec![],
@@ -1374,9 +1530,11 @@ impl<'a> ProjectionCache<'a> {
             original_constraints,
             &pruning.excluded_sign_constraints,
         )?;
+        self.configure_pair_omissions(original_constraints, pruning)?;
         self.report.removals.clear();
         self.report.initial_removals.clear();
         self.report.operation_removals.clear();
+        self.report.pair_omissions.clear();
         if order.is_empty() {
             return Ok(Projection {
                 levels: vec![],
@@ -1393,6 +1551,9 @@ impl<'a> ProjectionCache<'a> {
             for position in (1..n).rev() {
                 let started = Instant::now();
                 let variable = order[position];
+                let omitted =
+                    self.pair_omission_evidence(&levels[position], position - 1, variable);
+                self.report.pair_omissions.extend(omitted);
                 let raw = self.raw_projection(&levels[position], variable)?;
                 let mut retained_raw = Vec::new();
                 for polynomial in raw {
@@ -1499,6 +1660,9 @@ impl<'a> ProjectionCache<'a> {
         for position in (1..n).rev() {
             let started = Instant::now();
             let variable = order[position];
+            // Empty unless certified projection configured checked identities.
+            let omitted = self.pair_omission_evidence(&levels[position], position - 1, variable);
+            self.report.pair_omissions.extend(omitted);
             let generated = self.project_one(&levels[position], variable)?;
             let output = retain(position - 1, variable, generated)?;
             steps.push(ProjectionStep {
@@ -1697,6 +1861,34 @@ pub fn replay_certified_projection_with_operations(
     removals: &[ProjectionRemoval],
     operation_removals: &[ProjectionOperationRemoval],
 ) -> Result<Projection> {
+    replay_certified_projection_with_omissions(
+        algebra,
+        original_constraints,
+        split,
+        order,
+        excluded_sign_constraints,
+        initial_removals,
+        removals,
+        operation_removals,
+        &[],
+    )
+}
+
+/// As above, additionally replaying strict-Bezout pair omissions: each named
+/// pair must be in that level's retained basis with positive degree in the
+/// eliminated variable, and its identity and certificate are rechecked.
+#[allow(clippy::too_many_arguments)]
+pub fn replay_certified_projection_with_omissions(
+    algebra: &Algebra,
+    original_constraints: &[Poly],
+    split: &[Poly],
+    order: &[usize],
+    excluded_sign_constraints: &[usize],
+    initial_removals: &[DomainCertificate],
+    removals: &[ProjectionRemoval],
+    operation_removals: &[ProjectionOperationRemoval],
+    pair_omissions: &[ProjectionPairOmission],
+) -> Result<Projection> {
     let all = original_constraints
         .iter()
         .chain(split)
@@ -1723,6 +1915,16 @@ pub fn replay_certified_projection_with_operations(
         ensure!(
             removal.eliminated_variable == order[removal.level + 1],
             "raw certificate names the wrong elimination variable"
+        );
+    }
+    for omission in pair_omissions {
+        ensure!(
+            omission.level < n.saturating_sub(1),
+            "pair omission names an invalid projection level"
+        );
+        ensure!(
+            omission.eliminated_variable == order[omission.level + 1],
+            "pair omission names the wrong elimination variable"
         );
     }
     if n == 0 {
@@ -1767,7 +1969,28 @@ pub fn replay_certified_projection_with_operations(
     for position in (1..n).rev() {
         let started = Instant::now();
         let variable = order[position];
-        let raw = if operation_removals.is_empty() {
+        let mut omitted_pairs = HashSet::new();
+        for omission in pair_omissions.iter().filter(|o| o.level == position - 1) {
+            let pair = strict_bezout_projection::verify(
+                algebra,
+                original_constraints,
+                excluded_sign_constraints,
+                omission,
+            )?;
+            ensure!(
+                pair.iter().all(|p| levels[position].contains(p)),
+                "pair omission names polynomials absent from this projection level"
+            );
+            ensure!(
+                pair.iter().all(|p| p.degree(variable) > 0),
+                "pair omission names a pair without a resultant obligation"
+            );
+            ensure!(
+                omitted_pairs.insert((pair[0].clone(), pair[1].clone())),
+                "duplicate pair omission"
+            );
+        }
+        let raw = if operation_removals.is_empty() && omitted_pairs.is_empty() {
             crate::projection::projection_polynomials(&levels[position], variable)?
         } else {
             // Independently reconstruct the optimized raw basis: degree-zero
@@ -1779,7 +2002,15 @@ pub fn replay_certified_projection_with_operations(
                     raw.push(discriminant(p, variable)?);
                 }
                 for q in &levels[position][i + 1..] {
-                    if p.degree(variable) > 0 && q.degree(variable) > 0 {
+                    let key = if p.internal_cmp(q).is_gt() {
+                        (q.clone(), p.clone())
+                    } else {
+                        (p.clone(), q.clone())
+                    };
+                    if p.degree(variable) > 0
+                        && q.degree(variable) > 0
+                        && !omitted_pairs.contains(&key)
+                    {
                         raw.push(exact_resultant(p, q, variable)?);
                     }
                 }

@@ -23,6 +23,7 @@ pub mod resultant_segmentation;
 pub mod roots;
 pub mod search;
 pub mod sign_filter;
+pub mod strict_bezout_projection;
 pub mod solver;
 pub mod verify;
 pub use config::{Limits, Problem, SolverOptions};
