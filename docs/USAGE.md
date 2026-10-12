@@ -181,8 +181,8 @@ The benchmark runner first freezes reference-completing cases and their orders, 
 
 ## Library certificate budgets
 
-`domain::CertificateOptions` lets a caller raise `work_limit` to 1,000,000,000
-and `bernstein_coefficients` to 262,144 for larger exact nonvanishing proofs.
+`domain::CertificateOptions` lets a caller raise `work_limit` to 16,000,000,000
+and `bernstein_coefficients` to 1,048,576 for larger exact nonvanishing proofs.
 Defaults remain 1,000,000 work units and 4,096 coefficients. Other portfolio,
 polynomial, depth and node limits are unchanged; solver defaults are unchanged.
 These are explicit finite allowances, not guarantees that a proof will finish.
@@ -192,3 +192,12 @@ The exact chosen options are serialized with each `DomainCertificate` and
 checked again by `verify_certificate`. Verification can perform the same costly
 exact arithmetic; lowering a stored allowance can make replay fail. A bounded
 discovery miss remains inconclusive and is never a sign or zero certificate.
+
+These ceilings are defensive API limits for both discovery and replay of saved
+options, not mathematical limits of Bernstein certificates. On a target with a
+smaller `usize`, the work allowance is also bounded by that type. Tensor size is
+checked before allocation, and arithmetic work is debited without wrapping.
+The coefficient count does not bound rational bit lengths or total process
+memory: callers must retain their external wall-time and memory limits when
+opting into larger allowances. Existing defaults and stored lower allowances
+keep their previous behavior.
