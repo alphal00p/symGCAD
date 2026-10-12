@@ -209,7 +209,7 @@ pub fn run_campaign(config_path: &Path, executable: &Path) -> Result<CampaignRep
         config.campaign_time_secs.is_finite()
             && config.campaign_time_secs > 0.0
             && config.campaign_time_secs <= crate::config::MAX_WALL_TIME_SECS,
-        "campaign budget must be in (0,7200]"
+        "campaign budget must be in (0,18000]"
     );
     ensure!(
         config.reference_timeout_secs.is_finite() && config.reference_timeout_secs > 0.0,

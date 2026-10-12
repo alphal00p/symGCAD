@@ -154,7 +154,7 @@ fn interrupted_worker_reports_its_elapsed_wall_time() {
 }
 
 #[test]
-fn explicit_two_hour_campaign_accepts_problem_and_verifies_result() {
+fn explicit_five_hour_campaign_accepts_problem_and_verifies_result() {
     let directory = directory();
     let input = directory.join("input.toml");
     let campaign = directory.join("campaign.toml");
@@ -163,23 +163,34 @@ fn explicit_two_hour_campaign_accepts_problem_and_verifies_result() {
         constraints: vec!["x>0".into()],
         split: vec!["x^2-2".into()],
         limits: Limits {
-            wall_time_secs: 7200.0,
+            wall_time_secs: 18000.0,
             memory_mib: 1024,
             ..Default::default()
         },
         ..Default::default()
     };
-    problem.validate().unwrap();
+    assert_eq!(Limits::default().wall_time_secs, 3600.0);
+    for valid in [7200.0, 17700.0, 18000.0] {
+        problem.limits.wall_time_secs = valid;
+        problem.validate().unwrap();
+    }
     fs::write(&input, toml::to_string(&problem).unwrap()).unwrap();
-    for invalid in [7200.1, f64::INFINITY, f64::NAN, 0.0, -1.0] {
+    for invalid in [
+        18000.1,
+        f64::INFINITY,
+        f64::NEG_INFINITY,
+        f64::NAN,
+        0.0,
+        -1.0,
+    ] {
         problem.limits.wall_time_secs = invalid;
         assert!(problem.validate().is_err());
     }
     fs::write(
         &campaign,
         "mode='completion'\ncases=['input.toml']\noutput_dir='results'\n\
-         campaign_time_secs=7200.0\nsolve_timeout_secs=7200.0\n\
-         verify_timeout_secs=7200.0\nmemory_mib=1024\nworkers=1\n",
+         campaign_time_secs=18000.0\nsolve_timeout_secs=18000.0\n\
+         verify_timeout_secs=18000.0\nmemory_mib=1024\nworkers=1\n",
     )
     .unwrap();
     let mut command = Command::new(env!("CARGO_BIN_EXE_symgcad"));

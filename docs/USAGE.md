@@ -201,3 +201,13 @@ The coefficient count does not bound rational bit lengths or total process
 memory: callers must retain their external wall-time and memory limits when
 opting into larger allowances. Existing defaults and stored lower allowances
 keep their previous behavior.
+
+## Explicit long-running solves
+
+A caller may explicitly set `limits.wall_time_secs` to any finite positive value
+up to 18,000 seconds (five hours). The default remains 3,600 seconds. The same
+ceiling bounds campaign solve and verification allowances; existing memory,
+worker and cell limits are unchanged. A separate caller-owned hard deadline
+should leave time for saving and verifying a result. Increasing the admission
+ceiling does not make eager native algebra cooperatively interruptible or turn
+a partial result into a complete verified decomposition.
