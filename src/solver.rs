@@ -29,6 +29,9 @@ pub fn selected_order(problem: &Problem) -> Result<Vec<String>> {
     if problem.solver.engine == "bilinear_positive" {
         return crate::bilinear_positive::selected_order(problem);
     }
+    if problem.solver.engine == "bilinear_general" {
+        return crate::bilinear_general::selected_order(problem);
+    }
     if problem.solver.engine == "linear_negative" {
         return crate::linear_negative::selected_order(problem);
     }
@@ -706,6 +709,9 @@ fn solve_impl(problem: &Problem) -> Result<SolveResult> {
     if problem.solver.engine == "bilinear_positive" {
         return crate::bilinear_positive::solve(problem);
     }
+    if problem.solver.engine == "bilinear_general" {
+        return crate::bilinear_general::solve(problem);
+    }
     if problem.solver.engine == "linear_negative" {
         return crate::linear_negative::solve(problem);
     }
@@ -891,6 +897,7 @@ fn solve_impl(problem: &Problem) -> Result<SolveResult> {
         linear_negative: None,
         bilinear_positive: None,
         quadratic_ladder: None,
+        bilinear_general: None,
     })
 }
 

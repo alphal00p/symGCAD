@@ -8,10 +8,11 @@
 
 use crate::{
     Problem,
-    algebra::{Poly, factor_polynomial, rational},
+    algebra::{Poly, rational},
     domain::{
         CertificateOptions, DomainCertificate, certify_nonzero, derive_domain, verify_certificate,
     },
+    identity::{check_square_identity, nonnegative_square_witness},
     output::{Axis, Cell, RootBound, RootIndexDomain, SolveResult, Statistics, Status},
     problem::{NormalizedProblem, normalize},
     solver::{evaluate, merge},
@@ -158,37 +159,6 @@ fn check_time(problem: &Problem, started: Option<Instant>) -> Result<()> {
     Ok(())
 }
 
-/// Bounded proposal only. Replay multiplies the supplied witness exactly and
-/// never trusts factorization output or a sampled nonnegative value.
-fn square_witness(p: &Poly) -> Result<Option<(Rational, Poly)>> {
-    if p.is_zero() {
-        return Ok(Some((Rational::zero(), p.one())));
-    }
-    if p.nterms() > 4096 || (0..p.nvars()).any(|i| p.degree(i) > 4096) {
-        return Ok(None);
-    }
-    let mut multiplier = Rational::one();
-    let mut square = p.one();
-    for (factor, count) in factor_polynomial(p, true)? {
-        if factor.is_constant() {
-            multiplier *= factor.pow(count).get_constant();
-        } else {
-            if count % 2 != 0 {
-                return Ok(None);
-            }
-            square = &square * &factor.pow(count / 2);
-        }
-    }
-    if multiplier < Rational::zero() {
-        return Ok(None);
-    }
-    ensure!(
-        &square.pow(2) * &p.constant(multiplier.clone()) == *p,
-        "nonnegative square reconstruction failed"
-    );
-    Ok(Some((multiplier, square)))
-}
-
 fn candidate(
     input: &Input,
     p: &Poly,
@@ -234,7 +204,10 @@ fn candidate(
             return Ok(None);
         }
         let residual = &(&b * &c) - &(&a * &d);
-        let Some((multiplier, square)) = square_witness(&residual)? else {
+        // Bounded proposal shared with bilinear_general (crate::identity).
+        // Replay multiplies the supplied witness exactly and never trusts
+        // factorization output or a sampled nonnegative value.
+        let Some((multiplier, square)) = nonnegative_square_witness(&residual)? else {
             return Ok(None);
         };
         LinearNegativeRule::PositiveGuide {
@@ -429,10 +402,8 @@ fn check_steps(
                         && removed.iter().all(|&i| square.degree(i) == 0),
                     "invalid nonnegative square witness"
                 );
-                ensure!(
-                    &(&b * &c) - &(&a * &d) == &square.pow(2) * &p.constant(multiplier),
-                    "negative linear nonnegative identity failed"
-                );
+                check_square_identity(&(&(&b * &c) - &(&a * &d)), &multiplier, &square, false)
+                    .map_err(|e| anyhow!("negative linear nonnegative identity failed: {e}"))?;
             }
         }
         p = a;
@@ -709,6 +680,7 @@ fn finish_base(
         })),
         bilinear_positive: None,
         quadratic_ladder: None,
+        bilinear_general: None,
     };
     // Keep a completed base and any reconstructed data for diagnostics while
     // preventing a late or empty reconstruction from escaping the wall cap.
@@ -731,7 +703,8 @@ pub fn verify(result: &SolveResult) -> Result<Verification> {
             && result.monotone.is_none()
             && result.local.is_none()
             && result.sign_filter.is_none()
-            && result.bilinear_positive.is_none(),
+            && result.bilinear_positive.is_none()
+            && result.bilinear_general.is_none(),
         "unexpected alternate negative linear coverage evidence"
     );
     let evidence = result
@@ -759,6 +732,7 @@ pub fn verify(result: &SolveResult) -> Result<Verification> {
     ensure!(
         evidence.base.linear_negative.is_none()
             && evidence.base.bilinear_positive.is_none()
+            && evidence.base.bilinear_general.is_none()
             && evidence.base.homogeneous.is_none()
             && evidence.base.monotone.is_none()
             && evidence.base.sign_filter.is_none()

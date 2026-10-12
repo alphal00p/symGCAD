@@ -468,6 +468,7 @@ fn reconstruct(
         linear_negative: None,
         bilinear_positive: None,
         quadratic_ladder: None,
+        bilinear_general: None,
     })
 }
 
@@ -577,7 +578,8 @@ pub fn verify_homogeneous(result: &SolveResult) -> Result<Verification> {
             && result.monotone.is_none()
             && result.sign_filter.is_none()
             && result.linear_negative.is_none()
-            && result.bilinear_positive.is_none(),
+            && result.bilinear_positive.is_none()
+            && result.bilinear_general.is_none(),
         "homogeneous coverage must use its reduced exhaustive certificate"
     );
     // A new positive-scale stack is inserted once per distinct reduced prefix

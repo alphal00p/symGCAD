@@ -101,6 +101,10 @@ pub struct Statistics {
     /// result file. This is neither local coverage evidence nor phase timing.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub interrupted_local_progress: Option<crate::local_projection::LocalReport>,
+    /// Planning, per-piece and assembly wall times of a bilinear_general
+    /// result, kept distinct because pieces may run as separate processes.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub bilinear_general_pieces: Option<crate::bilinear_general::PieceTimings>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -135,6 +139,8 @@ pub struct SolveResult {
     pub bilinear_positive: Option<Box<crate::bilinear_positive::BilinearPositiveEvidence>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub quadratic_ladder: Option<Box<crate::quadratic_ladder::QuadraticLadderEvidence>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bilinear_general: Option<Box<crate::bilinear_general::BilinearGeneralEvidence>>,
 }
 
 impl SolveResult {
@@ -161,6 +167,7 @@ impl SolveResult {
             linear_negative: None,
             bilinear_positive: None,
             quadratic_ladder: None,
+            bilinear_general: None,
         }
     }
 }
