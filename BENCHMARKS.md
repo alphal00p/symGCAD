@@ -2,6 +2,20 @@
 
 The all-corpus goal remains unfinished. Results below identify the measured subset; fixed and symbolic ZZ domains are separate obligations.
 
+## October 12 continuation: benchmark report
+
+The benchmark document [benchmark/benchmark.typ](benchmark/benchmark.typ) (rendered as [benchmark/benchmark.pdf](benchmark/benchmark.pdf)) was rewritten in the October 12 continuation. Its section headings are the authoritative structure; this file is not duplicated there. The inputs it draws on are machine-local under `artifacts/research/claude-2026-10-12/`:
+
+* `bench/`: a fresh, consistent rerun of all 331 original groups with the integration binary (`4dbe440`, sha256 `c8f2c62f…`). It uses one pinned CPU per group, cold per-run caches, and independent verification. It is paired with a new native-reference run, capped per the [reference budget policy](reference/REFERENCE_BUDGETS.md).
+* `flint-bench/`: the FLINT-versus-Symbolica algebra-kernel measurements. The campaign is described, and can be rerun, from [FLINT_vs_symbolica/](FLINT_vs_symbolica/).
+* `inventory/`: the categorized inventory of implemented improvements relative to the upstream GCAD baseline.
+
+**Reporting rules for the continuation:**
+
+* **Strict counts.** The strict-contract count stays **303/331**.
+* **Positive Gluza33 under the opt-in contract.** Its result is 2,372 cells; solve 0.42 s; verify 0.55 s; see [PROJECTIVE_SECTIONS.md](reference/PROJECTIVE_SECTIONS.md). It must be labelled as obtained under the opt-in `projective_sections` contract extension and must not be merged into the strict count.
+* **Pre-continuation sections.** The sections below are the October 11 record and keep their own measurement scopes.
+
 **Certification update:** the historical measurements below used Symbolica's automatic resultant dispatcher. Source review found probabilistic CRT early termination on sufficiently large operands. Production construction and verification now use deterministic integer Ducos and invalidate the old algebra caches. Historical reports retain their compatibility evidence and measured timings; fresh deterministic verification is required before those artifacts count toward exact all-corpus completion.
 
 ## M2: full reference-completing baseline passes

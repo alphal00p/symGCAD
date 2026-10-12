@@ -12,6 +12,19 @@ an unrelated test-feature fix. They are **not** applied by bootstrap or enabled
 in production. The linked note gives isolated setup, feature/environment flags,
 exact regression evidence and matched measurements.
 
+The three optional fixes in this directory each have an upstream pull request:
+
+| Patch | Defect | Upstream |
+|---|---|---|
+| `symbolica-linear-resultant-sign.patch` | wrong sign of resultants with a linear operand | [symbolica-dev/symbolica#69](https://github.com/symbolica-dev/symbolica/pull/69) |
+| `numerica-integer-left-shift.patch` | primitive `Integer` left shifts overflow silently | [symbolica-dev/symbolica#75](https://github.com/symbolica-dev/symbolica/pull/75) |
+| `symbolica-ducos-zero-subresultant.patch` | Lazard–Ducos panics when a subresultant vanishes (resultant zero) | [symbolica-dev/symbolica#76](https://github.com/symbolica-dev/symbolica/pull/76) |
+
+All three PRs were open on 2026-10-12. Production symGCAD depends on none of the
+patches: it avoids each affected path, as described below. Once a PR is merged
+and the Symbolica pin moves past it, drop the patch and its
+`scripts/bootstrap-deps.sh` entry.
+
 Fetch the pinned dependencies and apply the three fixes with
 `scripts/bootstrap-deps.sh --apply-patches`. Repeating that command is safe;
 `scripts/bootstrap-deps.sh --check --apply-patches` verifies them without
@@ -25,7 +38,8 @@ refresh its lock through `cargo metadata` as described in setup.
 
 `symbolica-linear-resultant-sign.patch` targets the local Symbolica revision
 `75f8350094b90254ee71dc2a391fde0d14b0204a` (`symbolica-v3.0.1-1-g75f83500`).
-It is **not applied** to the reference checkout.
+It is **not applied** to the reference checkout. Upstream:
+[symbolica-dev/symbolica#69](https://github.com/symbolica-dev/symbolica/pull/69).
 
 The homogeneous Horner formula in `resultant_with_linear_second` currently
 returns `b1^degree(f) * f(-b0/b1)`. This is `Res(b0+b1*x, f)`; the advertised
@@ -66,7 +80,9 @@ avoid that method; it remains available only in the profiling example.
 
 `numerica-integer-left-shift.patch` targets the same Symbolica revision, in
 `lib/numerica/src/domains/integer.rs`. It is **not applied** to the reference
-checkout or linked into symGCAD's production binaries.
+checkout or linked into symGCAD's production binaries. Upstream:
+[symbolica-dev/symbolica#75](https://github.com/symbolica-dev/symbolica/pull/75),
+opened 2026-10-12.
 
 `Integer::shl_usize` currently interprets primitive `checked_shl` as an arithmetic
 overflow check. Rust only checks whether the shift distance fits the primitive
@@ -114,8 +130,9 @@ not require modifying the reference checkout.
 `symbolica-ducos-zero-subresultant.patch` targets the same revision, in
 `src/poly/univariate.rs` and `src/poly/resultant.rs`. It applies to the pristine
 checkout and on top of the two patches above. It is **not applied** to the
-reference checkout or linked into symGCAD's production binaries; an upstream
-PR still has to be opened from a Symbolica fork.
+reference checkout or linked into symGCAD's production binaries. The upstream
+fix is [symbolica-dev/symbolica#76](https://github.com/symbolica-dev/symbolica/pull/76),
+opened 2026-10-12.
 
 `UnivariatePolynomial::mul_exp` turns the zero polynomial into a vector of
 explicit zero coefficients. In `ducos_next_subresultant`, a monomial regular
