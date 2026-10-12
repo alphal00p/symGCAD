@@ -267,7 +267,15 @@ Source: `order-screen/ranking_proxy.txt`, `ranking_precise.txt`.
   | proxy | 7.09·10⁵ | 1.0·10⁶ |
   | precise | 1.93·10⁶ | 2.89·10⁶ |
 * **Best per-piece orders:** R+− `[x4,x6,x1,x7,x2,x0]`, precise 6.3·10³ base
-  cells. R++ and R−− are best at `[x4,x7,x1,x2,x6,x0]`.
+  cells; R−+ (with the H split) `[x4,x7,x1,x2,x0,x6]`, 1.3·10⁴. In the
+  precise pass R++ (1.73·10⁶, 91% of the total) and R−− (1.50·10⁵) are best at
+  O1 itself; no screened order brings the strict total below about 2.9·10⁶
+  8-d cells.
+* **Without convex relevance:** the same estimator in an ordinary
+  local-projection mode (every adjacent-pair resultant root is a boundary)
+  gives 1.4·10⁸ base cells for R+− at O1 (exact) and roughly 10⁹–10¹⁰ for
+  R++ and R−− (extrapolated from sampled pairs), i.e. about 10¹⁰ in total.
+  This is why the existing local engine cannot reach a strict solve.
 * **Per-piece best precise sum:** 1.9·10⁶ base cells. Choosing a different
   order per piece does not change the order of magnitude: R++ is at least
   1.7·10⁶ in all three orders screened precisely, and its proxy best is
