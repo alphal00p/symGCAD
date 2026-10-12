@@ -80,8 +80,11 @@ pub use obstruction_observer::ObstructionReport;
 mod pair_witnesses;
 mod strict_bezout;
 pub use strict_bezout::{PositiveStrictBezout, StrictBezoutHint};
+mod sibling_pool;
 mod stack_samples;
 mod subtree_cache;
+mod thrash_diag;
+pub use thrash_diag::ThrashReport;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
@@ -108,6 +111,16 @@ pub struct LocalOptions {
     /// evaluations. A finite stock per pair prevents unbounded new templates.
     #[serde(default)]
     pub positive_pair_witnesses: bool,
+    /// Discovery-only: admit a new pair-witness template only when the dense
+    /// monomial bound of the replaced resultant exceeds this value (0: always,
+    /// which is also what historical evidence without the field recorded).
+    /// The solver configuration supplies 4096 whenever pair witnesses are on.
+    #[serde(default, skip_serializing_if = "is_zero_u64")]
+    pub pair_witness_min_resultant_terms: u64,
+    /// Discovery-only lifetime cap on new pair-witness templates per axis
+    /// (0: unlimited). Declines select the ordinary resultant.
+    #[serde(default, skip_serializing_if = "is_zero_count")]
+    pub pair_witness_axis_budget: usize,
     /// Use only explicitly proposed and independently checked strict polynomial
     /// combination identities; empty historical evidence retains resultants.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
@@ -132,6 +145,11 @@ pub struct LocalOptions {
     /// This only changes sample selection; children are visited and checked.
     #[serde(default)]
     pub stable_sector_samples: bool,
+    /// Keep completed sibling proofs across refinement rounds of one stack
+    /// visit and reuse a child whose exact sample lies strictly inside a new
+    /// sector. Requires stable samples; the checker replays every reused child.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub retain_sibling_proofs: bool,
     /// Defer stack projection until the child frontier is complete.
     /// Requires stable samples; old evidence preserves eager construction.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
@@ -208,6 +226,9 @@ fn two_interval_templates() -> usize {
 fn is_zero_count(value: &usize) -> bool {
     *value == 0
 }
+fn is_zero_u64(value: &u64) -> bool {
+    *value == 0
+}
 fn is_two_interval_templates(value: &usize) -> bool {
     *value == 2
 }
@@ -225,12 +246,15 @@ impl Default for LocalOptions {
             positive_ray: true,
             positive_pair_separation: true,
             positive_pair_witnesses: false,
+            pair_witness_min_resultant_terms: 0,
+            pair_witness_axis_budget: 0,
             strict_bezout: false,
             positive_pair_cancellations: 2,
             batch_sibling_discovery: true,
             reuse_completed_subtrees: true,
             reuse_learned_cuts: true,
             stable_sector_samples: false,
+            retain_sibling_proofs: false,
             defer_projection: false,
             observe_obstructions: false,
             descartes_one: true,
@@ -332,6 +356,12 @@ pub struct LocalReport {
     pub pair_witness_templates: usize,
     pub pair_witness_template_reuses: usize,
     pub pair_witness_budget_fallbacks: usize,
+    /// New templates declined because the replaced resultant is small.
+    #[serde(skip_serializing_if = "is_zero_count")]
+    pub pair_witness_cheap_resultant_declines: usize,
+    /// New templates declined by the per-axis lifetime budget.
+    #[serde(skip_serializing_if = "is_zero_count")]
+    pub pair_witness_axis_budget_declines: usize,
     pub strict_bezout_hints_accepted: usize,
     pub strict_bezout_hints_rejected: usize,
     pub strict_bezout_resultants_omitted: usize,
@@ -343,6 +373,10 @@ pub struct LocalReport {
     pub stable_sample_recorded: usize,
     pub stable_sample_evictions: usize,
     pub stable_sample_peak_bytes: usize,
+    /// Complete sibling proofs moved into a later refinement round of the
+    /// same stack visit (`retain_sibling_proofs`); each is still replayed.
+    #[serde(skip_serializing_if = "is_zero_count")]
+    pub retained_sibling_proofs: usize,
     pub second_cancellation_pairs_omitted: usize,
     pub subtree_cache_hits: usize,
     pub subtree_cache_misses: usize,
@@ -378,6 +412,9 @@ pub struct LocalReport {
     pub learned_cut_cache_id_limit: usize,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub hint_archive: Option<HintArchiveReport>,
+    /// Read-only refinement diagnostics (`SYMGCAD_LOCAL_THRASH_DIAG`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub thrash: Option<ThrashReport>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -745,6 +782,8 @@ struct CachedOperations<'a> {
     progress_context: Option<LocalReport>,
     last_captured_context: Option<(Option<usize>, Vec<String>)>,
     started: Instant,
+    /// Diagnostic-only record of discriminant/resultant outputs in one call.
+    diag_log: Option<Vec<(u16, Poly)>>,
 }
 impl CachedOperations<'_> {
     /// Captured large operations must have a matching prefix even when the
@@ -785,6 +824,9 @@ impl ProjectionOperations for CachedOperations<'_> {
         let started = Instant::now();
         let result = self.cache.discriminant(p, variable);
         self.phases.discriminant_seconds += started.elapsed().as_secs_f64();
+        if let (Some(log), Ok(output)) = (&mut self.diag_log, &result) {
+            log.push((thrash_diag::DISCRIMINANT, output.clone()));
+        }
         result
     }
     fn resultant(&mut self, p: &Poly, q: &Poly, variable: usize) -> Result<Poly> {
@@ -796,6 +838,9 @@ impl ProjectionOperations for CachedOperations<'_> {
         let started = Instant::now();
         let result = self.cache.resultant(p, q, variable);
         self.phases.resultant_seconds += started.elapsed().as_secs_f64();
+        if let (Some(log), Ok(output)) = (&mut self.diag_log, &result) {
+            log.push((thrash_diag::RESULTANT, output.clone()));
+        }
         result
     }
 }
@@ -1736,6 +1781,8 @@ struct Builder<'a> {
     base_records: Vec<BaseUnivariateSource>,
     base_typed: BTreeSet<usize>,
     base_retained_bits: u64,
+    /// Read-only refinement counters; `None` unless the diagnostic env is set.
+    thrash: Option<thrash_diag::ThrashDiag>,
 }
 #[derive(Serialize, Deserialize)]
 struct Built {
@@ -1773,6 +1820,7 @@ impl Builder<'_> {
             .obstruction_observer
             .as_ref()
             .map(obstruction_observer::Observer::snapshot);
+        report.thrash = self.thrash.as_ref().map(|diag| diag.report.clone());
         report
     }
     fn publish(&mut self, force: bool) -> Result<()> {
@@ -2243,6 +2291,74 @@ impl Builder<'_> {
         }
         Ok(index)
     }
+    /// Diagnostic only: attribute every factor of each raw obligation to the
+    /// projection rule that produced it. Factorization goes through the same
+    /// cache as `guard_basis`; no proof object or solver choice depends on it.
+    fn diag_tag_projection(
+        &mut self,
+        raw: &[Poly],
+        cuts: &[usize],
+        level: usize,
+        ray: Option<&PositiveRayProjection>,
+        log: Vec<(u16, Poly)>,
+    ) -> Work<()> {
+        let mut kinds: Vec<(u16, Poly)> = log;
+        for &id in cuts {
+            let p = &self.polynomials[id];
+            if highest(p) == Some(level) {
+                for (coefficient, _) in p.to_univariate_polynomial_list(level) {
+                    kinds.push((thrash_diag::COEFFICIENT, coefficient));
+                }
+            }
+        }
+        if let Some(ray) = ray {
+            for witness in &ray.pair_witnesses {
+                for separator in &witness.separators {
+                    let value = crate::algebra::rational(separator)?;
+                    for &id in &witness.polynomials {
+                        kinds.push((
+                            thrash_diag::PAIR_WITNESS,
+                            self.polynomials[id].replace(level, &value),
+                        ));
+                    }
+                }
+            }
+            for rule in &ray.rules {
+                if let PositiveRayCase::DescartesWitnesses { separators, .. } = &rule.case {
+                    for separator in separators {
+                        let value = crate::algebra::rational(separator)?;
+                        kinds.push((
+                            thrash_diag::DESCARTES_WITNESS,
+                            self.polynomials[rule.polynomial].replace(level, &value),
+                        ));
+                    }
+                }
+            }
+        }
+        for p in raw {
+            if p.is_constant() {
+                continue;
+            }
+            let bits = kinds
+                .iter()
+                .filter(|(_, known)| known == p)
+                .fold(0u16, |bits, (kind, _)| bits | kind);
+            let bits = if bits == 0 {
+                thrash_diag::OTHER_SEPARATOR
+            } else {
+                bits
+            };
+            // Never intern here: only factors already admitted by guard_basis
+            // are tagged, so the registry is identical with the diagnostic off.
+            let factors = self.operations.factors(std::slice::from_ref(p))?;
+            for factor in factors {
+                if let (Some(&id), Some(diag)) = (self.ids.get(&factor), &mut self.thrash) {
+                    diag.tag(id, bits);
+                }
+            }
+        }
+        Ok(())
+    }
     fn projection_requirements(&self, projection: &LocalProjectionCertificate) -> BTreeSet<usize> {
         let mut required: BTreeSet<_> = projection.guards.iter().copied().collect();
         for &index in &projection.removals {
@@ -2289,6 +2405,37 @@ impl Builder<'_> {
         level: usize,
         prefix: &[Rational],
     ) -> Work<LocalProjectionCertificate> {
+        if self.thrash.is_none() {
+            return self.project_inner(cuts, level, prefix);
+        }
+        let started = Instant::now();
+        let before = (
+            self.operations.phases.resultant_seconds,
+            self.operations.phases.discriminant_seconds,
+            self.operations.phases.factor_seconds,
+            self.report.projected_pairs,
+        );
+        let result = self.project_inner(cuts, level, prefix);
+        let phases = &self.operations.phases;
+        let costs = thrash_diag::ProjectionCost {
+            seconds: started.elapsed().as_secs_f64(),
+            resultant_seconds: phases.resultant_seconds - before.0,
+            discriminant_seconds: phases.discriminant_seconds - before.1,
+            factor_seconds: phases.factor_seconds - before.2,
+            pairs: self.report.projected_pairs - before.3,
+            cuts: cuts.len(),
+        };
+        if let Some(diag) = &mut self.thrash {
+            diag.projection(level, &costs);
+        }
+        result
+    }
+    fn project_inner(
+        &mut self,
+        cuts: &[usize],
+        level: usize,
+        prefix: &[Rational],
+    ) -> Work<LocalProjectionCertificate> {
         self.check_budget()?;
         self.report.current_level = Some(level);
         self.report.current_prefix = prefix.iter().map(ToString::to_string).collect();
@@ -2314,6 +2461,9 @@ impl Builder<'_> {
         }
         let mut pair_seconds = 0.0;
         let mut adjacent_pairs = None;
+        if self.thrash.is_some() {
+            self.operations.diag_log = Some(Vec::new());
+        }
         let ray_constraint = self
             .options
             .positive_ray
@@ -2439,7 +2589,11 @@ impl Builder<'_> {
                 self.report.nonadjacent_pairs_omitted += all - selection.selected_pairs.len();
             }
         }
+        let log = self.operations.diag_log.take();
         let mut guards = self.guard_basis(&raw)?;
+        if let Some(log) = log {
+            self.diag_tag_projection(&raw, cuts, level, positive_ray.as_ref(), log)?;
+        }
         self.guard_nonzero(&guards, prefix)?;
         let mut removals = Vec::new();
         for guard in guards.iter().copied().collect::<Vec<_>>() {
@@ -2448,6 +2602,11 @@ impl Builder<'_> {
                 guards.remove(&guard);
                 removals.push(index);
                 self.report.certified_guard_removals += 1;
+                if let Some(diag) = &mut self.thrash {
+                    for &id in &self.guard_certificates[index].supporting_factors {
+                        diag.tag(id, thrash_diag::DOMAIN_SUPPORT);
+                    }
+                }
             }
         }
         removals.sort_unstable();
@@ -2489,14 +2648,23 @@ impl Builder<'_> {
         if let Some(leaf) = self.leaf(prefix)? {
             return Ok(leaf);
         }
+        if let Some(diag) = &mut self.thrash {
+            diag.stack_visit(prefix.len());
+        }
         if self.options.reuse_completed_subtrees {
             if let Some(built) = self.completed_subtrees.get(prefix)? {
                 // The key includes every exact rational coordinate. The tree
                 // remains a conditional proof: return all its obligations so
                 // changed ancestor cuts must still discharge them. No proof
                 // is reused at a different sample or across Builder instances.
+                if let Some(diag) = &mut self.thrash {
+                    diag.subtree_hit(prefix.len());
+                }
                 self.check_budget()?;
                 return Ok(built);
+            }
+            if let Some(diag) = &mut self.thrash {
+                diag.subtree_miss(prefix);
             }
         }
         let level = prefix.len();
@@ -2508,9 +2676,7 @@ impl Builder<'_> {
         self.observe_archive(prefix, &cuts);
         if self.options.defer_projection {
             if let Some(built) = self.visit_deferred(prefix, &mut cuts)? {
-                if self.options.reuse_completed_subtrees {
-                    self.completed_subtrees.insert(prefix, &built);
-                }
+                self.remember_subtree(prefix, &built);
                 return Ok(built);
             }
         }
@@ -2521,9 +2687,23 @@ impl Builder<'_> {
             .options
             .stable_sector_samples
             .then(stack_samples::StackSamples::new);
-        loop {
+        // Completed conditional children of earlier rounds of THIS visit. One
+        // is moved into a later round only at its exact visited sample, and its
+        // obligations are then merged exactly as for a freshly visited child.
+        let mut siblings = (self.options.retain_sibling_proofs
+            && self.options.stable_sector_samples)
+            .then(sibling_pool::SiblingPool::default);
+        // Diagnostic-only memory of earlier-round samples and their outcome.
+        let mut diag_samples: Option<HashMap<Rational, bool>> =
+            self.thrash.as_ref().map(|_| HashMap::new());
+        let mut rounds = 0usize;
+        let built = loop {
             self.check_budget()?;
+            rounds += 1;
             let cut_list: Vec<_> = cuts.iter().copied().collect();
+            if let Some(diag) = &mut self.thrash {
+                diag.cuts(level, cut_list.len());
+            }
             let projection = self.project(&cut_list, level, prefix)?;
             self.report.active_phase = "root_isolation".into();
             self.publish(level == 0 && cut_list.len() > 64)?;
@@ -2555,7 +2735,11 @@ impl Builder<'_> {
             self.operations.phases.root_isolation_seconds += root_started.elapsed().as_secs_f64();
             self.publish(false)?;
             let mut required = self.projection_requirements(&projection);
-            let mut sectors = Vec::new();
+            // Each sector keeps its exact sample and whole conditional child.
+            let mut sectors: Vec<(Rational, Built)> = Vec::new();
+            // Complete children of a round that cannot be emitted.
+            let mut completed: Vec<(Rational, Built)> = Vec::new();
+            let mut round_samples: Vec<(Rational, bool)> = Vec::new();
             let mut cells = 0usize;
             let mut additions = BTreeSet::new();
             let mut discovery_siblings = 0usize;
@@ -2567,17 +2751,33 @@ impl Builder<'_> {
                 }
                 let lower = if i > 0 { roots.get(i - 1) } else { None };
                 let upper = roots.get(i);
-                let retained = sample_pool
-                    .as_ref()
-                    .and_then(|pool| pool.choose(lower, upper));
-                if sample_pool.is_some() {
-                    self.report.stable_sample_hits += usize::from(retained.is_some());
-                    self.report.stable_sample_misses += usize::from(retained.is_none());
-                }
-                let sample = retained.unwrap_or_else(|| sector_sample(lower, upper));
-                prefix.push(sample.clone());
-                let child = if i == 0 {
-                    if let Some(ray) = &projection.positive_ray {
+                let negative_ray = i == 0 && projection.positive_ray.is_some();
+                let reused = if negative_ray {
+                    None
+                } else {
+                    siblings
+                        .as_mut()
+                        .and_then(|pool| pool.take_inside(lower, upper))
+                };
+                let (sample, child) = if let Some((sample, built)) = reused {
+                    self.report.retained_sibling_proofs += 1;
+                    if let Some(diag) = &mut self.thrash {
+                        diag.report.retained_sibling_reuses += 1;
+                        diag.report.retained_sibling_cells += built.cells;
+                    }
+                    (sample, Ok(built))
+                } else {
+                    let retained = sample_pool
+                        .as_ref()
+                        .and_then(|pool| pool.choose(lower, upper));
+                    if sample_pool.is_some() {
+                        self.report.stable_sample_hits += usize::from(retained.is_some());
+                        self.report.stable_sample_misses += usize::from(retained.is_none());
+                    }
+                    let sample = retained.unwrap_or_else(|| sector_sample(lower, upper));
+                    let child = if let Some(ray) =
+                        projection.positive_ray.as_ref().filter(|_| negative_ray)
+                    {
                         Ok(Built {
                             node: LocalNode::Rejected {
                                 constraint: ray.constraint,
@@ -2586,19 +2786,33 @@ impl Builder<'_> {
                             cells: 0,
                         })
                     } else {
-                        self.visit(prefix)
-                    }
-                } else {
-                    self.visit(prefix)
+                        prefix.push(sample.clone());
+                        let child = self.visit(prefix);
+                        prefix.pop();
+                        child
+                    };
+                    (sample, child)
                 };
-                prefix.pop();
-                if !(i == 0 && projection.positive_ray.is_some()) {
+                if !negative_ray {
                     if let Some(pool) = &mut sample_pool {
                         let (recorded, evictions) = pool.remember(&sample);
                         self.report.stable_sample_recorded += usize::from(recorded);
                         self.report.stable_sample_evictions += evictions;
                         self.report.stable_sample_peak_bytes =
                             self.report.stable_sample_peak_bytes.max(pool.bytes());
+                    }
+                    if let (Some(seen), Some(diag)) = (&diag_samples, &mut self.thrash) {
+                        if rounds > 1 {
+                            match seen.get(&sample) {
+                                Some(&done) => {
+                                    diag.report.restart_samples_repeated += 1;
+                                    diag.report.restart_samples_repeated_completed +=
+                                        usize::from(done);
+                                }
+                                None => diag.report.restart_samples_fresh += 1,
+                            }
+                        }
+                        round_samples.push((sample.clone(), child.is_ok()));
                     }
                 }
                 match child {
@@ -2608,7 +2822,11 @@ impl Builder<'_> {
                                 "nongeneric sample remained on an existing stack cut".into(),
                             ));
                         }
-                        additions.insert(id);
+                        if additions.insert(id) {
+                            if let Some(diag) = &mut self.thrash {
+                                diag.addition(id, true);
+                            }
+                        }
                     }
                     Err(stop) => {
                         if self.options.reuse_learned_cuts && !additions.is_empty() {
@@ -2619,11 +2837,13 @@ impl Builder<'_> {
                         return Err(stop);
                     }
                     Ok(child) => {
-                        for id in child.required {
+                        for &id in &child.required {
                             match highest(&self.polynomials[id]) {
                                 Some(i) if i == level => {
-                                    if !cuts.contains(&id) {
-                                        additions.insert(id);
+                                    if !cuts.contains(&id) && additions.insert(id) {
+                                        if let Some(diag) = &mut self.thrash {
+                                            diag.addition(id, false);
+                                        }
                                     }
                                 }
                                 Some(i) if i < level => {
@@ -2643,10 +2863,9 @@ impl Builder<'_> {
                             if self.problem.limits.max_cells.is_some_and(|max| cells > max) {
                                 return Err(Stop::Resource("local projection cell limit".into()));
                             }
-                            sectors.push(LocalSector {
-                                sample: sample.to_string(),
-                                child: child.node,
-                            });
+                            sectors.push((sample, child));
+                        } else if !negative_ray {
+                            completed.push((sample, child));
                         }
                     }
                 }
@@ -2655,51 +2874,90 @@ impl Builder<'_> {
                     // changed. Discard them now while collecting a bounded
                     // number of additional same-axis obligations. Earlier-axis
                     // guards and all failures still return immediately above.
-                    sectors.clear();
-                    if !self.options.batch_sibling_discovery
-                        || additions.len() >= 8
-                        || discovery_siblings >= 32
+                    // Retained siblings keep the complete proofs for reuse.
+                    let positive = projection.positive_ray.is_some();
+                    completed.extend(
+                        sectors
+                            .drain(..)
+                            .filter(|(sample, _)| !positive || *sample > Rational::zero()),
+                    );
+                    // A retained complete sibling is never wasted work, so the
+                    // round finishes and collects every discovery at once.
+                    if siblings.is_none()
+                        && (!self.options.batch_sibling_discovery
+                            || additions.len() >= 8
+                            || discovery_siblings >= 32)
                     {
                         break;
                     }
                 }
             }
-            if !additions.is_empty() {
-                self.report.refinement_cuts += additions.len();
-                self.report.multi_cut_refinements += usize::from(additions.len() > 1);
-                self.report.max_refinement_cuts =
-                    self.report.max_refinement_cuts.max(additions.len());
-                let before = cuts.len();
-                cuts.extend(additions);
-                if cuts.len() == before {
-                    return Err(Stop::Unsupported(
-                        "nongeneric sample remained on an existing stack cut".into(),
-                    ));
-                }
-                if self.options.reuse_learned_cuts {
-                    self.learned_cuts.remember(prefix, &cuts);
-                }
-                self.observe_archive(prefix, &cuts);
-                self.report.refinements += 1;
-                continue;
+            if additions.is_empty() {
+                self.guard_nonzero(&required, prefix)?;
+                let root_bounds = local_bounds(&roots, projection.positive_ray.as_ref())?;
+                break Built {
+                    node: LocalNode::Stack {
+                        cuts: cut_list,
+                        projection,
+                        roots: root_bounds,
+                        sectors: sectors
+                            .into_iter()
+                            .map(|(sample, child)| LocalSector {
+                                sample: sample.to_string(),
+                                child: child.node,
+                            })
+                            .collect(),
+                        required_below: required.iter().copied().collect(),
+                    },
+                    required,
+                    cells,
+                };
             }
-            self.guard_nonzero(&required, prefix)?;
-            let root_bounds = local_bounds(&roots, projection.positive_ray.as_ref())?;
-            let built = Built {
-                node: LocalNode::Stack {
-                    cuts: cut_list,
-                    projection,
-                    roots: root_bounds,
-                    sectors,
-                    required_below: required.iter().copied().collect(),
-                },
-                required,
-                cells,
-            };
-            if self.options.reuse_completed_subtrees {
-                self.completed_subtrees.insert(prefix, &built);
+            if let (Some(seen), Some(diag)) = (&mut diag_samples, &mut self.thrash) {
+                for (sample, done) in round_samples {
+                    *seen.entry(sample).or_insert(false) |= done;
+                }
+                if siblings.is_none() {
+                    diag.report.discarded_completed_children += completed.len();
+                    diag.report.discarded_completed_cells +=
+                        completed.iter().map(|(_, child)| child.cells).sum::<usize>();
+                }
+                diag.refinement(level, additions.len(), cuts.len() + additions.len());
             }
-            return Ok(built);
+            if let Some(pool) = &mut siblings {
+                for (sample, child) in completed {
+                    pool.retain(sample, child);
+                }
+            }
+            self.report.refinement_cuts += additions.len();
+            self.report.multi_cut_refinements += usize::from(additions.len() > 1);
+            self.report.max_refinement_cuts = self.report.max_refinement_cuts.max(additions.len());
+            let before = cuts.len();
+            cuts.extend(additions);
+            if cuts.len() == before {
+                return Err(Stop::Unsupported(
+                    "nongeneric sample remained on an existing stack cut".into(),
+                ));
+            }
+            if self.options.reuse_learned_cuts {
+                self.learned_cuts.remember(prefix, &cuts);
+            }
+            self.observe_archive(prefix, &cuts);
+            self.report.refinements += 1;
+        };
+        if let Some(diag) = &mut self.thrash {
+            diag.rounds(rounds);
+        }
+        self.remember_subtree(prefix, &built);
+        Ok(built)
+    }
+    fn remember_subtree(&mut self, prefix: &[Rational], built: &Built) {
+        if !self.options.reuse_completed_subtrees {
+            return;
+        }
+        self.completed_subtrees.insert(prefix, built);
+        if let Some(diag) = &mut self.thrash {
+            diag.subtree_insert(prefix, self.completed_subtrees.contains(prefix));
         }
     }
 }
@@ -2865,6 +3123,10 @@ pub fn solve_local(problem: &Problem, options: &LocalOptions) -> Result<LocalSol
         "deferred projection requires stable sector samples"
     );
     ensure!(
+        !options.retain_sibling_proofs || options.stable_sector_samples,
+        "retained sibling proofs require stable sector samples"
+    );
+    ensure!(
         !options.base_univariate_basis || options.base_point_projection,
         "base-univariate support requires base-point projection"
     );
@@ -2952,6 +3214,7 @@ pub fn solve_local(problem: &Problem, options: &LocalOptions) -> Result<LocalSol
             progress_context: None,
             last_captured_context: None,
             started,
+            diag_log: None,
         },
         progress_path: std::env::var_os("SYMGCAD_PROGRESS_PATH").map(PathBuf::from),
         last_progress: started,
@@ -2987,13 +3250,19 @@ pub fn solve_local(problem: &Problem, options: &LocalOptions) -> Result<LocalSol
             options.descartes_interval_max_terms,
             options.descartes_interval_max_total_terms,
         )?,
-        pair_witness_stock: pair_witnesses::WitnessStock::default(),
+        pair_witness_stock: pair_witnesses::WitnessStock::with_policy(
+            pair_witnesses::AdmissionPolicy {
+                min_resultant_terms: options.pair_witness_min_resultant_terms,
+                axis_budget: options.pair_witness_axis_budget,
+            },
+        ),
         bezout_registry,
         obstruction_observer,
         base_sources: base_univariate::SourceIndex::default(),
         base_records: Vec::new(),
         base_typed: BTreeSet::new(),
         base_retained_bits: 0,
+        thrash: thrash_diag::ThrashDiag::enabled().then(thrash_diag::ThrashDiag::default),
     };
     builder.report.active_phase = "input_factorization".into();
     builder.publish(true)?;
@@ -3009,6 +3278,11 @@ pub fn solve_local(problem: &Problem, options: &LocalOptions) -> Result<LocalSol
         builder.input_factors.push(input);
     }
     builder.protected = builder.input_factors.iter().flatten().copied().collect();
+    if let Some(diag) = &mut builder.thrash {
+        for &id in &builder.protected {
+            diag.tag(id, thrash_diag::INPUT);
+        }
+    }
     let built = match builder.visit(&mut Vec::new()) {
         Ok(built) => built,
         Err(Stop::Resource(reason)) => {
