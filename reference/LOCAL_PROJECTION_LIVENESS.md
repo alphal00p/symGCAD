@@ -257,3 +257,62 @@ An independent source review found no soundness blocker. Full-suite validation
 and any hard-case pilot are separate steps. The implementation targets a
 structural source of excess work; the captured octic's dispensability remains
 an untested hypothesis.
+
+## Refinement thrash: sibling retention and separator admission (2026-10-12)
+
+`SYMGCAD_LOCAL_THRASH_DIAG=1` adds a read-only `thrash` section to the local
+report: restarts, additions and cut sizes per level, the projection rule that
+first produced every newly requested cut (attributed by cached per-obligation
+factorization, never interned), completed children discarded by restarts,
+repeated versus fresh restart samples, subtree-cache miss causes and per-level
+projection seconds. It changes no solver choice.
+
+Measured causes (one pinned core each; data and scripts under
+`artifacts/research/claude-2026-10-12/local-thrash/`):
+
+* **Re-exploration (H1) and cache thrash (H3).** Every refinement discarded all
+  completed siblings. In 60 s of the Gluza33 base piece `{a>0}` with pair
+  witnesses, 337,116 completed children (1,854,802 cells) were discarded and
+  297,891 restart samples repeated an earlier, completed sample; subtree misses
+  were 370,162 after FIFO eviction and 190,911 never admitted (entries above
+  128 nodes are not cached). The plain Gluza33 piece `R+-` showed 3,097,220
+  evictions in 30 min while still in its first `x7` sector.
+* **Sample-dependent separators (H2).** In the same 60 s, 239,602 additions
+  came from coefficients of separator-generated cuts and 44,588 directly from
+  pair-witness separator guards, versus 1,197 from pair resultants. All
+  polynomials there have resultant monomial bounds below 200; every template
+  only added sample-dependent guards (the base stack reached 283-674 cuts).
+
+Fixes, all checked by the unchanged independent replay:
+
+* `local_retain_siblings` (opt-in, requires `local_stable_samples`): a stack
+  visit keeps every complete child across its rounds and moves it into the new
+  sector that strictly contains its unchanged sample (the conditional extension
+  lemma above; new sectors are subsets of old ones because cuts only grow).
+  Obligations are merged exactly as for a fresh child, rounds finish their
+  siblings before restarting, and the deferred discovery loop does the same.
+  Retained pools share a node budget of about a quarter of `memory_mib`;
+  declined children are merely revisited. Without the budget, retention plus
+  the historical witness policy exhausted 8 GiB after 169 s.
+* Pair-witness admission: a new template needs a dense resultant monomial
+  bound above `local_pair_witness_min_resultant_terms` (default 4096 when
+  witnesses are on, 0 = historical); `local_pair_witness_axis_budget` caps new
+  templates per axis. A decline selects the resultant, always admissible.
+
+Effect: `{a>0}` with witnesses completes in 0.02 s (178 verified cells; it was
+incomplete after 20.4M nodes/570 s). On 20 corpus cases run with the slow-suite
+local recipe (pair and Descartes witnesses, 60 s each) all 12 previously
+solved cases stay solved and verified with no more speculative nodes; nine are
+1.2-1796x faster and the three 1-8 ms cases are unchanged within timer noise.
+Six of the 8 previously incomplete cases now complete and verify by default,
+a seventh with retention.
+
+Remaining root cause for the Gluza33 region pieces: with retention the plain
+`R+-` piece leaves its first `x7` sector, but the level-1 (`x2`) stacks hold
+263-355 cuts (777 with Descartes witnesses/intervals), one level-1 projection
+returned 2,580 new base cuts, and single level-1 discriminants of bivariate
+cuts of degree about 40 in `x2` (about 1,000 terms) run for more than 25 min.
+This is cut-set inflation from sample-dependent rule choices (coefficient
+versus discriminant guards, separation remainders versus resultants, interval
+covers) rather than traversal; consistent rule selection that prefers guards
+already present in ancestor cut sets needs checker support and is not done.
