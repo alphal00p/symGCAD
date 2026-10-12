@@ -3,8 +3,8 @@ use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 
-/// Explicit long-running campaigns may request two hours; defaults stay at one.
-pub(crate) const MAX_WALL_TIME_SECS: f64 = 7200.0;
+/// Explicit long-running campaigns may request five hours; defaults stay at one.
+pub(crate) const MAX_WALL_TIME_SECS: f64 = 18000.0;
 
 pub(crate) const DEFAULT_DESCARTES_WITNESS_MAX_TERMS: usize = 4096;
 pub(crate) const MAX_DESCARTES_WITNESS_SOURCE_TERMS: usize = 65_536;
@@ -390,7 +390,7 @@ impl Problem {
             self.limits.wall_time_secs.is_finite()
                 && self.limits.wall_time_secs > 0.0
                 && self.limits.wall_time_secs <= MAX_WALL_TIME_SECS,
-            "wall_time_secs must be in (0,7200]"
+            "wall_time_secs must be in (0,18000]"
         );
         ensure!(
             self.limits.memory_mib > 0 && self.limits.memory_mib <= 65536,
