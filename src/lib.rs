@@ -9,6 +9,7 @@ pub mod corpus;
 pub mod domain;
 pub mod fastsecdec;
 pub mod homogeneity;
+pub mod kinematic_portfolio;
 pub mod linear_negative;
 pub mod local_projection;
 pub mod monotone;

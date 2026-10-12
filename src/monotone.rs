@@ -380,6 +380,12 @@ fn plan(problem: &Problem) -> Result<Plan> {
     finish_plan(problem, &normalized, steps, &endpoint, false)
 }
 
+/// The endpoint problem that `solve_monotone` delegates after peeling. Used
+/// only by heuristic projection probes; reconstruction re-plans exactly.
+pub(crate) fn planned_base(problem: &Problem) -> Result<Problem> {
+    Ok(plan(problem)?.base)
+}
+
 /// Reconstruct the exact target-free domain used for coefficient proofs.
 /// The original inequality cannot justify its own monotonicity obligations.
 fn target_problem(problem: &Problem, target: &MonotoneTarget) -> Result<Problem> {

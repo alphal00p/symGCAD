@@ -181,6 +181,15 @@ pub fn selected_order(problem: &Problem) -> Result<Vec<String>> {
     choose_original_order(problem, &prepare(problem)?)
 }
 
+/// The exact reduced problem that `solve_homogeneous` delegates, with its
+/// order fixed. Used only by heuristic projection probes, which never yield
+/// coverage evidence; the solver and verifier rebuild it independently.
+pub(crate) fn planned_reduction(problem: &Problem) -> Result<Problem> {
+    let reduction = prepare(problem)?;
+    let order = choose_original_order(problem, &reduction)?;
+    Ok(fixed_reduced_problem(reduction, &order))
+}
+
 fn fixed_reduced_problem(mut reduction: Reduction, order: &[String]) -> Problem {
     reduction.reduced.solver.order = order
         .iter()
