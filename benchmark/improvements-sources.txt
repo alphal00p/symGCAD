@@ -16,7 +16,8 @@ DO_NOT_PUSH_REFERENCES/gcad/gcad/gcad.py: GPROJ, RSFC, greedy_{mods,sotd,t1}_ord
 
 Intro / tags
   test counts: reference/COMBINED_FAST_VALIDATION.md (662 @ 81d9ac5); [res]runs/bin/integration.txt (744 @ 4dbe440);
-    [res]projective-sections/measurements.json fast_suite (753 @ 9baf91c); [res]finalize/test-fast.log (753 @ final)
+    [res]projective-sections/measurements.json fast_suite (753 @ 9baf91c); [res]finalize/test-fast.log (753 @ final);
+    [res]all-in-main/test_fast.log (759 / 2 ignored / 59 targets @ claude/all-in-main)
 
 == Exact algebra and kernels
 A1  Rust + Symbolica backend, parity 0.1466 / 0.0620: src/algebra.rs, src/projection.rs; BENCHMARKS.md (M2 section);
@@ -94,6 +95,12 @@ C6  caller certificate budgets (symGCAD PR #2): src/domain.rs (CertificateOption
 C7  early abandonment from samples: src/domain.rs; docs/USAGE.md (subtree paragraph); examples/profile_certificate_rejection.rs
 C8  certified local guards (A446 436 occurrences, 0.427 s): src/local_projection.rs, src/domain.rs;
     BENCHMARKS.md "Deterministic completion checkpoint" (local guard reduction paragraph)
+
+C9  larger explicit certificate allowances (2,097,152 coefficients, 64e9 work units): src/domain.rs
+    (CertificateOptions::validate, budget_tests::larger_work_allowance_is_checked_without_wrapping);
+    tests/domain_budgets.rs (263,169- and 1,115,370-coefficient replays, work allowances up to 64e9);
+    docs/USAGE.md "Library certificate budgets"; public commits 73decf4, 48f8123 (codex/certificate-tensor-allowance,
+    codex/certificate-tensor2m-work64b), merged in the all-in-main consolidation
 
 == Composite engines
 E1  homogeneous scale (2.409->1.326 s; 1.032->1.445 s): src/homogeneity.rs; tests/homogeneity.rs; BENCHMARKS.md release ablation table
@@ -225,7 +232,7 @@ V11 original-identity audit (303/331): examples/aggregate_completion.rs; referen
 R1  killable workers / limits: src/main.rs (_worker), src/benchmark.rs, src/campaign.rs, src/config.rs (Limits);
     HANDOFF.md "Ordering, caches, deadlines and checkpoint semantics"
 R2  campaign and slow-suite runners: src/campaign.rs, src/benchmark.rs, scripts/test.sh; reference/SLOW_SUITE.md
-R3  fast suite (662 -> 744 -> 753; final integration 753 passed / 2 ignored / 58 targets): scripts/test.sh;
+R3  fast suite (662 -> 744 -> 753 -> 759; final integration 753 passed / 2 ignored / 58 targets; all-in-main 759 / 2 / 59): scripts/test.sh;
     reference/COMBINED_FAST_VALIDATION.md; [res]runs/bin/integration.txt; [res]finalize/test-fast.log
 R4  operand capture: src/solver.rs (SYMGCAD_CAPTURE_DIR, line ~106); examples/profile_operation.rs; docs/USAGE.md;
     capture-all: src/optimized_projection.rs (SYMGCAD_CAPTURE_ALL, feature flint-bench-hooks)
@@ -239,6 +246,11 @@ R9  supervised portfolio/pieces (19.1 s / 1.97 GB -> 3.08 s / 491-518 MB): [int]
     [res]wf2-fix-bilinear-general.txt (finding 5)
 R10 reproducible environment / public deps (symGCAD PR #1): flake.nix, flake.lock, Cargo.toml, Cargo.lock, PROVENANCE.toml,
     docs/SETUP.md, reference/SETUP_VALIDATION.md; HANDOFF.md (PR #1 paragraph)
+
+R11 explicit five-hour budgets (wall_time_secs and campaign/solve/verify up to 18,000 s): src/config.rs
+    (MAX_WALL_TIME_SECS), src/benchmark.rs, src/campaign.rs; tests/cli.rs
+    (explicit_five_hour_campaign_accepts_problem_and_verifies_result); docs/USAGE.md "Explicit long-running solves";
+    public commit 056f6e3 (codex/caller-five-hour-limit), merged in the all-in-main consolidation
 
 == Interfaces
 I1  library + TOML CLI: src/lib.rs, src/main.rs, src/config.rs; README.md; docs/USAGE.md "Problem format"

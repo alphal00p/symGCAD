@@ -17,7 +17,7 @@ The detailed [HANDOFF.md](HANDOFF.md) covers the complete implementation, failed
 Requires Git and Nix with flakes enabled. Cargo fetches the public dependencies at the locked revisions; no source bootstrap or private checkout is required.
 
 ```sh
-git clone --branch codex/symgcad git@github.com:alphal00p/symGCAD.git
+git clone --branch main git@github.com:alphal00p/symGCAD.git
 cd symGCAD
 nix develop
 cargo build --release --locked
@@ -91,7 +91,7 @@ Optional improvements include:
 * `local_retain_siblings`, which keeps completed local child proofs across refinements ([thrash note](reference/LOCAL_ENGINE_THRASH.md));
 * `projection_strict_bezout_hints`, which gives replayed omission of pair resultants in certified global projection.
 
-Each retains its mathematical checks and explicit resource limits. Exact binary segmentation (`binary_resultants`) is on by default since 2026-10-12, alongside proved-degree interpolation with a second-route spot check ([kernel note](reference/ALGEBRA_KERNELS_2026_10_12.md)). [Detailed usage](docs/USAGE.md) describes the switches; the [handoff](HANDOFF.md) records measured benefits, failed trials and promotion requirements.
+Each retains its mathematical checks and explicit resource limits. Library callers may explicitly raise the exact nonvanishing certificate budgets (`domain::CertificateOptions`) up to 2,097,152 Bernstein coefficients and 64,000,000,000 work units (defaults 4,096 and 1,000,000); the chosen limits are recorded in each certificate and enforced again on replay ([library certificate budgets](docs/USAGE.md#library-certificate-budgets)). Exact binary segmentation (`binary_resultants`) is on by default since 2026-10-12, alongside proved-degree interpolation with a second-route spot check ([kernel note](reference/ALGEBRA_KERNELS_2026_10_12.md)). [Detailed usage](docs/USAGE.md) describes the switches; the [handoff](HANDOFF.md) records measured benefits, failed trials and promotion requirements.
 
 A `complete_generic` result covers full-dimensional open cells outside its recorded algebraic exceptional set. Lower-dimensional sections are excluded. The verifier reconstructs exact projection/reduction identities, root bounds and exhaustive coverage; an incomplete result cannot pass. Exceptional parameter specializations require a new solve after substitution.
 
@@ -103,7 +103,7 @@ The deterministic matched-baseline study covers all **331 groups / 579 sign-expa
 
 New reference comparisons are capped at `max(300 s, 3 × symGCAD solve time)`, with shorter campaign limits respected. Native timeouts receive no exact ratio; see the [reference budget policy](reference/REFERENCE_BUDGETS.md).
 
-Later certified reductions complete fixed A381/Ax381 with 836 cells each, negative Gluza30/Gluza33 with one/three cells, and positive Gluza30 with 80,980 cells. Discovery costs, verification costs, failed attempts and exact original-domain checks are recorded separately.
+Later certified reductions complete fixed A381/Ax381 with 836 cells each, negative Gluza30/Gluza33 with one/three cells, and positive Gluza30 with 80,980 cells. Discovery costs, verification costs, failed attempts and exact original-domain checks are recorded separately. The same quadratic reductions also complete A381 at a colleague's alternate point `mz2=1/2` (836 verified cells, median solve 0.148 s; [note](reference/A381_MZ2_HALF.md)); this specialization is not counted among the 331 original groups.
 
 The quadratic ladder also gives five verified cells for the crossed A446 chamber `t < 4`, retaining the original interior `F=0` sheet. Its [conditional proof and supplemental check](reference/QUADRATIC_LADDER_VALIDATION.md) leave the unrestricted symbolic problem unresolved. [Release ablations](reference/QUADRATIC_RELEASE_ABLATION.md) report all 66 fresh solve-and-verify trials, including certificate overhead and cell-count reductions.
 
@@ -126,4 +126,4 @@ A [supplemental seeded sanity check](reference/SUPPLEMENTAL_SANITY.md) sampled t
 - [Reference reproduction](reference/README.md): corpus extraction, native adapter and audit protocols.
 - [Implementation plan](SYMGCAD_PLAN.MD) and [algorithm research](ALGORITHM_RESEARCH.md): design, evidence and remaining work.
 
-Run the fast regression suite with `scripts/test.sh fast --locked`. The separate [slow corpus runner](reference/SLOW_SUITE.md) is `scripts/test.sh slow --help`; it gives each unresolved original up to one hour, with explicit memory limits and independent verification. For longer individual investigations, problem (`limits.wall_time_secs`) and campaign budgets accept up to 18,000 seconds (five hours) explicitly; solve and verification share the campaign deadline. Defaults remain one hour, with a 64 GiB / 16-worker ceiling. The classification distinguishes historical verified completions from unresolved workloads; it does not promise that all historically completed cases run quickly. Research helpers under `examples/` have additional focused tests. Large proof files, private licenses and external source checkouts remain ignored by Git.
+Run the fast regression suite with `scripts/test.sh fast --locked`. The separate [slow corpus runner](reference/SLOW_SUITE.md) is `scripts/test.sh slow --help`; it gives each unresolved original up to one hour, with explicit memory limits and independent verification. For longer individual investigations, problem (`limits.wall_time_secs`) and campaign budgets accept up to 18,000 seconds (five hours) explicitly ([long-running solves](docs/USAGE.md#explicit-long-running-solves)); solve and verification share the campaign deadline. Defaults remain one hour, with a 64 GiB / 16-worker ceiling. The classification distinguishes historical verified completions from unresolved workloads; it does not promise that all historically completed cases run quickly. Research helpers under `examples/` have additional focused tests. Large proof files, private licenses and external source checkouts remain ignored by Git.

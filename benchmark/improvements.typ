@@ -7,8 +7,10 @@
 // code, tests, reference notes, commits and session reports it is based on.
 // State described: the final integration claude/final-2026-10-12 (codex/symgcad 81d9ac5, the
 // 2026-10-12 session integrated at 9baf91c, plus the documentation, benchmark-report and
-// FLINT-vs-Symbolica branches). The corpus-usage table and the X1 numbers are read from
-// report-data.json, i.e. from the cold runs of the report binary.
+// FLINT-vs-Symbolica branches), plus C9 and R11 from the all-in-main consolidation (public
+// branches codex/certificate-tensor2m-work64b and codex/caller-five-hour-limit; library and
+// limit options only, not exercised by the corpus runs). The corpus-usage table and the X1
+// numbers are read from report-data.json, i.e. from the cold runs of the report binary.
 
 #let inv-data = json("report-data.json")
 #let inv-tag(fill, ink, body) = box(
@@ -129,9 +131,10 @@ The `monotone` rows include the unsplit problems handled by its sign filter (E5)
 - #inv-id[C3] *Square plus positive residual.* Writes a polynomial as an exact square (of a monomial or an affine form, also after a homogeneous scale is fixed) plus a strictly positive residual, with oriented bounds. #inv-on (inside C1)
 - #inv-id[C4] *Weighted-square certificates.* Sums of binomial squares with positive monomial weights plus a positive residual, for polynomials that are positive but have mixed-sign coefficients. #inv-eff "positive endpoint" case: 20 → 1 cell, 37.2 → 9.3 ms solver time. #inv-opt (`weighted_square_positivity`)
 - #inv-id[C5] *Positive-semidefinite quadratic components.* Exact rational LDL elimination of quadratic subforms plus a strictly positive residual; no floating-point eigenvalues. #inv-eff full quadratic constant 8 → 1 cell (18.3 → 7.6 ms); local linear split 12 → 2 cells, with the interior zero sheet kept. #inv-opt (`quadratic_component_positivity`)
-- #inv-id[C6] *Caller-chosen certificate budgets.* Library callers may raise the limits to 262,144 Bernstein coefficients and 10#super[9] work units (defaults 4,096 and 10#super[6]); the chosen limits are written into the proof and used again by the verifier (symGCAD PR \#2). #inv-opt (library `CertificateOptions`)
+- #inv-id[C6] *Caller-chosen certificate budgets.* Library callers may raise the limits above the defaults of 4,096 Bernstein coefficients and 10#super[6] work units (symGCAD PR \#2 allowed up to 262,144 and 10#super[9]\; C9 raises these ceilings); the chosen limits are written into the proof and used again by the verifier. #inv-opt (library `CertificateOptions`)
 - #inv-id[C7] *Early abandonment from exact samples.* An exact zero or a sign change found at a sample point ends a hopeless certificate attempt immediately. Samples only ever stop a search; they never prove anything. #inv-on
 - #inv-id[C8] *Certified local guards.* In the local engine, a certificate can replace a generated guard polynomial; the certificate's own premises become protected obligations of the ancestor cell. #inv-eff fixed A446 local: 8 certificates replaced 436 guard occurrences; 35 cells in 0.427 s, where the unreduced run timed out at 60 s. #inv-opt (`positivity` with `engine = "local"`)
+- #inv-id[C9] *Larger explicit certificate allowances.* The C6 ceilings rise to 2,097,152 Bernstein coefficients and 6.4 × 10#super[10] work units (defaults unchanged). The tensor size is checked before allocation, and the work allowance is validated and debited without overflow. #inv-eff regression tensors of 263,169 (two variables) and 1,115,370 coefficients (eight variables), refused under the earlier ceilings, now give exact certificates that replay from their saved options; lowered saved limits are rejected. #inv-new #inv-opt (library `CertificateOptions`)
 
 == Composite engines
 
@@ -209,9 +212,9 @@ The `monotone` rows include the unsplit problems handled by its sign filter (E5)
 
 == Robustness and supervision
 
-- #inv-id[R1] *Killable worker processes and limits.* Solves, verifications and probes run in separate process groups with hard wall-time and memory limits (defaults 1 h, 64 GiB, 16 workers; up to 2 h on request) and an optional cell cap, so a blocking native call cannot hang a run and a timeout is reported, not lost. #inv-on (`[limits]`: `wall_time_secs`, `memory_mib`, `workers`, `max_cells`)
+- #inv-id[R1] *Killable worker processes and limits.* Solves, verifications and probes run in separate process groups with hard wall-time and memory limits (defaults 1 h, 64 GiB, 16 workers; up to 5 h on request, R11) and an optional cell cap, so a blocking native call cannot hang a run and a timeout is reported, not lost. #inv-on (`[limits]`: `wall_time_secs`, `memory_mib`, `workers`, `max_cells`)
 - #inv-id[R2] *Campaign and slow-suite runners.* `symgcad bench` and the resumable one-hour slow queue record wall, CPU and RSS; timeouts stay incomplete. #inv-on
-- #inv-id[R3] *Fast regression suite.* 753 tests in 58 test targets pass on the final integration (0 failed, 2 expensive tests ignored, 348 s summed test time); they include exact rationals and signs, proof mutations, same-sign seams, repeated and nearby roots, degree drops and worker termination. #inv-eff grew from 662 at `81d9ac5` (October 11) to 753 at `9baf91c` with the 2026-10-12 work. #inv-on (`scripts/test.sh fast --locked`)
+- #inv-id[R3] *Fast regression suite.* 759 tests in 59 test targets pass after the all-in-main consolidation (0 failed, 2 expensive tests ignored, 350 s summed test time); they include exact rationals and signs, proof mutations, same-sign seams, repeated and nearby roots, degree drops and worker termination. #inv-eff grew from 662 at `81d9ac5` (October 11) to 753 at `9baf91c` with the 2026-10-12 work, then to 759 with the C9 tests and the A381 `mz2=1/2` regression. #inv-on (`scripts/test.sh fast --locked`)
 - #inv-id[R4] *Operand capture and replay.* `SYMGCAD_CAPTURE_DIR` saves the exact operand of the latest uncached operation (16 MiB cap) for offline profiling; with the `flint-bench-hooks` feature, `SYMGCAD_CAPTURE_ALL` keeps every operation (used for Section 3). #inv-diag
 - #inv-id[R5] *Throttled progress reporting.* Progress files are written at a bounded rate. #inv-eff an unthrottled report had cost 17.505 s of system CPU in a 60 s C470 trial; now 1.282 s. #inv-on
 - #inv-id[R6] *Buffered result export.* Large proofs are written through one buffered writer. #inv-eff an A286 run that failed through 392,791 tiny writes completes 3,308 cells in 1.354 s. #inv-on
@@ -219,6 +222,7 @@ The `monotone` rows include the unsplit problems handled by its sign filter (E5)
 - #inv-id[R8] *Bounded parsing of untrusted hint text.* Size, degree and coefficient bounds are checked on the parse tree before Symbolica expands anything. #inv-eff `(x+y+z+1)^300` was rejected after 6.9 s, now in < 0.5 s; `7^(3^20)`, which never returned, is rejected. #inv-new #inv-on
 - #inv-id[R9] *Fully supervised portfolio and pieces.* Portfolio enumeration, probes and `pieces plan/assemble` run in bounded workers; any failure falls back to MODS with the reason recorded. #inv-eff a 3 s wall test stops at 3.08 s with 491–518 MB peak (before: 19.1 s, 1.97 GB). #inv-new #inv-on
 - #inv-id[R10] *Reproducible environment.* Nix flake and Cargo lock with a pinned public Symbolica revision; no private checkout needed (symGCAD PR \#1); CPU-affinity tools for pinned measurements. #inv-on
+- #inv-id[R11] *Explicit five-hour budgets.* `wall_time_secs` and the campaign, solve and verification budgets accept up to 18,000 s (previously 7,200 s). The one-hour default and the memory, worker and cell limits are unchanged. A longer budget does not make a blocking native call interruptible or turn a partial result into a complete one. #inv-new #inv-opt (`[limits] wall_time_secs`; campaign `campaign_time_secs`, `solve_timeout_secs`, `verify_timeout_secs`)
 
 == Interfaces
 
