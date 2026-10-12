@@ -109,10 +109,10 @@ pub struct CertificateOptions {
     pub polya_order: u32,
     pub bernstein_depth: usize,
     pub bernstein_nodes: usize,
-    /// Caller-selected tensor size, up to 262144 coefficients. Defaults stay
+    /// Caller-selected tensor size, up to 1048576 coefficients. Defaults stay
     /// small; larger proofs also need caller-owned wall-time and memory caps.
     pub bernstein_coefficients: usize,
-    /// Caller-selected exact arithmetic allowance, up to one billion units.
+    /// Caller-selected exact arithmetic allowance, up to sixteen billion units.
     /// The allowance is recorded in the certificate and enforced on replay.
     pub work_limit: usize,
     /// Zero disables this independent portfolio member for ablations.
@@ -193,12 +193,12 @@ impl CertificateOptions {
             "Bernstein subdivision is capped at depth eight and 511 nodes"
         );
         ensure!(
-            self.bernstein_coefficients > 0 && self.bernstein_coefficients <= 262_144,
-            "Bernstein coefficient budget must be in 1..=262144"
+            self.bernstein_coefficients > 0 && self.bernstein_coefficients <= 1_048_576,
+            "Bernstein coefficient budget must be in 1..=1048576"
         );
         ensure!(
-            self.work_limit > 0 && self.work_limit <= 1_000_000_000,
-            "certificate arithmetic budget must be in 1..=1000000000"
+            self.work_limit > 0 && (self.work_limit as u128) <= 16_000_000_000,
+            "certificate arithmetic budget must be in 1..=16000000000"
         );
         Ok(())
     }
@@ -1938,6 +1938,22 @@ mod affine_identity_tests {
 #[cfg(test)]
 mod budget_tests {
     use super::*;
+
+    #[test]
+    #[cfg(target_pointer_width = "64")]
+    fn larger_work_allowance_is_checked_without_wrapping() {
+        let options = CertificateOptions {
+            work_limit: 16_000_000_000,
+            ..Default::default()
+        };
+        options.validate().unwrap();
+        let mut budget = ProofBudget::new(&options);
+        assert!(budget.spend(1_000_000_001));
+        assert_eq!(budget.work, 14_999_999_999);
+        assert!(!budget.spend(usize::MAX));
+        assert_eq!(budget.work, 0);
+        assert!(!budget.spend(1));
+    }
 
     #[test]
     fn overflowing_tensor_count_refuses_before_allocation() {

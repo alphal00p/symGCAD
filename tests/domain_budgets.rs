@@ -93,8 +93,7 @@ fn certificate_budget_defaults_and_validation_stay_explicit() {
     for (work, coefficients) in [
         (0, 4096),
         (1_000_000, 0),
-        (1_000_000_001, 4096),
-        (1_000_000, 262_145),
+        (1_000_000, 1_048_577),
         (usize::MAX, usize::MAX),
     ] {
         let options = CertificateOptions {
@@ -105,6 +104,77 @@ fn certificate_budget_defaults_and_validation_stay_explicit() {
         assert!(certify_nonzero(&algebra, &polynomial, &domain, &options).is_err());
         let mut changed = certificate.clone();
         changed.limits = options;
+        assert!(verify_certificate(&algebra, &polynomial, &constraints, &[], &changed).is_err());
+    }
+}
+
+#[test]
+fn tensor_above_previous_ceiling_has_exact_positive_replay() {
+    // Exactly 513^2 = 263169 Bernstein coefficients. The polynomial is at
+    // least one on the closed unit square; its negative coefficient rules
+    // out the earlier coefficient-sign shortcut.
+    let algebra = Algebra::new(&["x".into(), "y".into()]).unwrap();
+    let polynomial = algebra.parse("2-(x*y)^512").unwrap();
+    let constraints = ["x", "1-x", "y", "1-y"].map(|p| algebra.parse(p).unwrap());
+    let domain = derive_domain(&algebra, &constraints, &[]).unwrap();
+    let options = CertificateOptions {
+        bernstein_coefficients: 1_048_576,
+        work_limit: 1_000_000_000,
+        bernstein_depth: 0,
+        bernstein_nodes: 1,
+        square_residual_candidates: 0,
+        quadratic_no_real_roots_candidates: 0,
+        ..Default::default()
+    };
+    let mut previous_limit = options.clone();
+    previous_limit.bernstein_coefficients = 262_144;
+    assert!(
+        certify_nonzero(&algebra, &polynomial, &domain, &previous_limit)
+            .unwrap()
+            .is_none()
+    );
+    let certificate = certify_nonzero(&algebra, &polynomial, &domain, &options)
+        .unwrap()
+        .unwrap();
+    assert_eq!(certificate.sign, 1);
+    assert_eq!(certificate.limits, options);
+    assert!(matches!(
+        certificate.method,
+        CertificateMethod::Bernstein {
+            proof: BernsteinProof::Leaf
+        }
+    ));
+    verify_certificate(&algebra, &polynomial, &constraints, &[], &certificate).unwrap();
+    let bytes = serde_json::to_vec(&certificate).unwrap();
+    let restored = serde_json::from_slice(&bytes).unwrap();
+    verify_certificate(&algebra, &polynomial, &constraints, &[], &restored).unwrap();
+    let mut changed = certificate.clone();
+    changed.limits = previous_limit;
+    assert!(verify_certificate(&algebra, &polynomial, &constraints, &[], &changed).is_err());
+    changed = certificate;
+    changed.limits.work_limit = 1;
+    assert!(verify_certificate(&algebra, &polynomial, &constraints, &[], &changed).is_err());
+}
+
+#[test]
+#[cfg(target_pointer_width = "64")]
+fn work_allowances_above_previous_ceiling_validate_and_replay() {
+    let algebra = Algebra::new(&["x".into()]).unwrap();
+    let polynomial = algebra.parse("1+x").unwrap();
+    let constraints = [algebra.parse("x").unwrap(), algebra.parse("1-x").unwrap()];
+    let domain = derive_domain(&algebra, &constraints, &[]).unwrap();
+    for work_limit in [1_000_000_001, 16_000_000_000] {
+        let options = CertificateOptions {
+            work_limit,
+            ..Default::default()
+        };
+        let certificate = certify_nonzero(&algebra, &polynomial, &domain, &options)
+            .unwrap()
+            .unwrap();
+        verify_certificate(&algebra, &polynomial, &constraints, &[], &certificate).unwrap();
+        let mut changed = certificate;
+        changed.limits.work_limit = 16_000_000_001;
+        assert!(certify_nonzero(&algebra, &polynomial, &domain, &changed.limits).is_err());
         assert!(verify_certificate(&algebra, &polynomial, &constraints, &[], &changed).is_err());
     }
 }
