@@ -5,7 +5,9 @@
 //! discard signs, and bound the permanent by the product of row l1 norms.
 //! Its degree in parameter y is bounded both by n deg_y(p)+m deg_y(q) and by
 //! n max(e_x+e_y in p)+m max(e_x+e_y in q)-mn. The latter follows because
-//! every determinant monomial has total eliminated-axis weight mn.
+//! every determinant monomial has total eliminated-axis weight mn. The exact
+//! Sylvester assignment bound (see resultant_interpolation) is never larger
+//! and, when enabled, narrows each parameter's box independently.
 //!
 //! Widening that box to include input support gives an injective mixed-radix
 //! monomial code. Evaluate its digits at B=2^k with B>2 times both the output
@@ -45,6 +47,8 @@ pub struct Options {
     pub max_output_bits: usize,
     pub max_total_input_bits: usize,
     pub max_output_terms: usize,
+    /// Narrow each parameter's degree box by the exact assignment bound.
+    pub assignment_bound: bool,
 }
 impl Default for Options {
     fn default() -> Self {
@@ -66,6 +70,7 @@ impl Default for Options {
             max_output_bits: 256_000_000,
             max_total_input_bits: 512_000_000,
             max_output_terms: 65536,
+            assignment_bound: true,
         }
     }
 }
@@ -225,8 +230,14 @@ fn prepare(
         let Some((rectangular, diagonal)) = rectangular.zip(diagonal) else {
             return Ok(None);
         };
+        let assignment = if options.assignment_bound {
+            crate::resultant_interpolation::assignment_degree_bound(p, q, x, i)? as u64
+        } else {
+            u64::MAX
+        };
         let d = rectangular
             .min(diagonal)
+            .min(assignment)
             .max(u64::from(p.degree(i)))
             .max(u64::from(q.degree(i)));
         if d > MAX_DEGREE {
@@ -380,7 +391,7 @@ fn encode(
     Ok(result)
 }
 
-fn integer_resultant(p: &UnivariatePolynomial<Z>, q: &UnivariatePolynomial<Z>) -> Integer {
+pub(crate) fn integer_resultant(p: &UnivariatePolynomial<Z>, q: &UnivariatePolynomial<Z>) -> Integer {
     fn linear_second(p: &UnivariatePolynomial<Z>, q: &UnivariatePolynomial<Z>) -> Integer {
         let neg_constant = -q.coefficients()[0].clone();
         let leading = &q.coefficients()[1];

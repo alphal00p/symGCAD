@@ -11,7 +11,9 @@ fn algebra(names: &[&str]) -> Algebra {
 #[test]
 fn signed_binomial_discriminants_preserve_rational_scale_and_leading_coefficients() {
     // Disc(a*x^n+c)=(-1)^(n(n-1)/2)n^n*a^(n-1)*c^(n-1).
-    // These have interpolation bounds >1024 but fit the unchanged bit caps.
+    // These have interpolation bounds >1024. The size-derived interpolation
+    // admission now takes them first (it measured faster than segmentation
+    // on one-parameter discriminants); segmentation must agree exactly.
     for (names, x) in [(vec!["x", "s", "unused"], 0), (vec!["unused", "s", "x"], 2)] {
         let a = algebra(&names);
         for (n, k, sign) in [(9, 130, 1), (10, 120, -1)] {
@@ -24,12 +26,41 @@ fn signed_binomial_discriminants_preserve_rational_scale_and_leading_coefficient
                     k * (n - 1)
                 ))
                 .unwrap();
+            let derivative = p.derivative(x);
+            let interpolation = symgcad::resultant_interpolation::plan(
+                &p,
+                &derivative,
+                x,
+                &symgcad::resultant_interpolation::Options::default(),
+            )
+            .unwrap()
+            .expect("size-derived interpolation admission");
+            assert!(interpolation.size_admitted && interpolation.degree_bound > 1024);
             let (actual, stats) = discriminant_with_binary_statistics(&p, x).unwrap();
-            let stats = stats.expect("the measured default discriminant envelope must be used");
+            assert!(stats.is_none(), "interpolation has priority");
+            assert_eq!(actual, expected);
+            let (resultant, stats) = symgcad::resultant_segmentation::try_resultant(
+                &p,
+                &derivative,
+                x,
+                &symgcad::resultant_segmentation::Options {
+                    min_parameters: 1,
+                    ..Default::default()
+                },
+                || Ok(()),
+            )
+            .unwrap()
+            .expect("the measured default segmentation envelope must admit it");
             assert_eq!(stats.plan.parameters, vec![1]);
             assert!(stats.plan.degree_bounds[1] > 1024);
             assert!(stats.plan.output_bit_bound <= 96_000_000);
-            assert_eq!(actual, expected);
+            let (mut segmented, remainder) =
+                resultant.quot_rem(&p.univariate_lcoeff(x), false);
+            assert!(remainder.is_zero());
+            if n % 4 == 2 || n % 4 == 3 {
+                segmented = -segmented;
+            }
+            assert_eq!(segmented, expected);
             assert_eq!(actual.variables(), p.variables());
             assert_eq!(actual.degree(x), 0);
             // The parameter-dependent leading coefficient may vanish later.
@@ -47,9 +78,25 @@ fn signed_binomial_discriminants_preserve_rational_scale_and_leading_coefficient
 fn repeated_factor_gives_exact_zero_without_division_artifacts() {
     let a = algebra(&["s", "x"]);
     let p = a.parse("(x^5+(s+1)^70)^2").unwrap();
+    // One parameter: size-admitted interpolation now has priority.
     let (actual, stats) = discriminant_with_binary_statistics(&p, 1).unwrap();
-    assert!(stats.is_some());
+    assert!(stats.is_none());
     assert!(actual.is_zero());
+    assert_eq!(actual.variables(), p.variables());
+    let (segmented, stats) = symgcad::resultant_segmentation::try_resultant(
+        &p,
+        &p.derivative(1),
+        1,
+        &symgcad::resultant_segmentation::Options {
+            min_parameters: 1,
+            ..Default::default()
+        },
+        || Ok(()),
+    )
+    .unwrap()
+    .unwrap();
+    assert_eq!(stats.plan.parameters, vec![0]);
+    assert!(segmented.is_zero());
 }
 
 #[test]
@@ -139,9 +186,10 @@ fn low_degree_interpolation_and_other_parameter_counts_keep_their_backends() {
 
 #[test]
 fn discriminant_cache_counts_kernel_separately_and_reuses_exact_values() {
-    let a = algebra(&["s", "x"]);
-    let p = a.parse("x^9+(s+1)^130").unwrap();
-    let expected = a.parse("9^9*(s+1)^1040").unwrap();
+    // Two parameters: interpolation is not applicable, segmentation is.
+    let a = algebra(&["s", "x", "t"]);
+    let p = a.parse("x^9+(s+t+1)^10").unwrap();
+    let expected = a.parse("9^9*(s+t+1)^80").unwrap();
     let mut cache = ProjectionCache::new(
         &a,
         &OptimizedProjectionOptions {

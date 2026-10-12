@@ -398,9 +398,9 @@ impl<'a> ProjectionCache<'a> {
             prefix_cache: HashMap::new(),
             report: OptimizedProjectionReport {
                 resultant_kernel: if options.binary_resultants {
-                    "deterministic-ducos-bivariate-newton-v1-binary-segmentation-v1".into()
+                    "deterministic-ducos-bivariate-newton-v2-binary-segmentation-v1".into()
                 } else {
-                    "deterministic-ducos-bivariate-newton-v1".into()
+                    "deterministic-ducos-bivariate-newton-v2".into()
                 },
                 ..Default::default()
             },

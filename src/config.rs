@@ -110,10 +110,12 @@ pub struct SolverOptions {
     pub search_local_progress: bool,
     pub checkpoint_dir: Option<PathBuf>,
     pub cache_memory_mib: usize,
-    /// Experimental exact binary segmentation of bounded two-parameter pairs
-    /// and one- or two-parameter discriminants after interpolation declines. Static
-    /// declines retain the ordinary exact backend.
-    #[serde(skip_serializing_if = "is_false")]
+    /// Exact binary segmentation of bounded two-parameter pairs and one- or
+    /// two-parameter discriminants after interpolation declines. Static
+    /// declines retain the ordinary exact backend. Default on since the
+    /// 2026-10-12 kernel measurements; `binary_resultants = false` opts out.
+    /// Only the opt-out is serialized, so it survives worker hand-off.
+    #[serde(skip_serializing_if = "is_true")]
     pub binary_resultants: bool,
     /// Experimental exact affine preconditioning of projection factorizations
     /// and their independent verification. Coordinate maps remain unchanged.
@@ -241,7 +243,7 @@ impl Default for SolverOptions {
             search_local_progress: false,
             checkpoint_dir: None,
             cache_memory_mib: 128,
-            binary_resultants: false,
+            binary_resultants: true,
             affine_factorization: false,
             positivity: false,
             input_positivity: false,

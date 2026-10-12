@@ -142,7 +142,7 @@ fn interpolation_metrics_and_exact_v2_operation_caches_survive_restart() {
     assert!(cache.report.cache.interpolation_images > 1);
     assert_eq!(
         cache.report.resultant_kernel,
-        "deterministic-ducos-bivariate-newton-v1"
+        "deterministic-ducos-bivariate-newton-v2"
     );
     assert_eq!(
         result,
