@@ -31,6 +31,7 @@ import re
 import tomllib
 
 HERE = pathlib.Path(__file__).resolve().parent
+REPO = HERE.parent
 RESEARCH = pathlib.Path("/common/dev/gcad/artifacts/research/claude-2026-10-12")
 SOURCES = {}
 
@@ -43,9 +44,18 @@ def sha256_file(path):
     return h.hexdigest()
 
 
+def rel(path):
+    """Repository-relative path for files inside the checkout (any worktree), else absolute."""
+    p = pathlib.Path(path).resolve()
+    try:
+        return str(p.relative_to(REPO))
+    except ValueError:
+        return str(p)
+
+
 def load_json(path):
     path = pathlib.Path(path)
-    SOURCES[str(path)] = sha256_file(path)
+    SOURCES[rel(path)] = sha256_file(path)
     return json.loads(path.read_text())
 
 
@@ -99,7 +109,7 @@ def load_runs(directories):
         path = d / "records.jsonl"
         if not path.exists():
             continue
-        SOURCES[str(path)] = sha256_file(path)
+        SOURCES[rel(path)] = sha256_file(path)
         if (d / "launches.jsonl").exists():
             for line in (d / "launches.jsonl").read_text().splitlines():
                 if line.strip():
@@ -190,7 +200,14 @@ def load_native(run):
     provenance = []
     for path in sorted(run.glob("provenance-*.json")):
         p = load_json(path)
-        provenance.append(dict(file=str(path), launched_utc=p.get("launched_utc"),
+        if "native" not in p:
+            # partial re-launch of a few cases with the same runner (e.g. the 2026-10-12 re-run of two
+            # sign cases that hit std::bad_alloc under the 8 GiB cap, repeated with 24 GiB)
+            provenance.append(dict(file=str(path), launched_utc=p.get("launched_utc"), kind="rerun",
+                                   purpose=p.get("purpose"), command=p.get("command"),
+                                   runner_sha256=p.get("runner_sha256"), cpus=p.get("cpus")))
+            continue
+        provenance.append(dict(file=str(path), launched_utc=p.get("launched_utc"), kind="launch",
                                upstream_revision=p["native"].get("upstream_revision"),
                                upstream_author=p["native"].get("upstream_author"),
                                extension_sha256=p["native"].get("extension_sha256"),
@@ -285,7 +302,7 @@ def main():
     ap.add_argument("--projective-evidence", default=str(RESEARCH / "projective-sections/measurements.json"))
     ap.add_argument("--native", required=True)
     ap.add_argument("--unresolved", default=str(RESEARCH / "unresolved/v1-nopw-retain"))
-    ap.add_argument("--flint-dir", help="default: FLINT_vs_symbolica/results if present, else flint-draft")
+    ap.add_argument("--flint-dir", help="default: benchmark/FLINT_vs_symbolica/results (committed campaign results)")
     ap.add_argument("--output", default=str(HERE / "report-data.json"))
     args = ap.parse_args()
 
@@ -415,10 +432,20 @@ def main():
                 g33 = evidence.get("gluza33_positive", {}).get("x5last", {})
                 san = g33.get("sanity") or {}
                 track_binary = ((evidence.get("binaries") or {}).get("symgcad") or {}).get("sha256")
+                # The check ran on the track's result.json; when this run's cells are exactly the
+                # same (samples, bounds, signs), the check applies to this run's decomposition too.
+                checked = pathlib.Path(args.projective_evidence).parent / (g33.get("input") or "g33_x5last/input.toml")
+                checked = checked.parent / "result.json"
+                ours = pathlib.Path(rec["_root"]) / rec.get("run_dir", "") / "result.json"
+                identical = None
+                if checked.exists() and ours.exists():
+                    identical = json.loads(ours.read_text()).get("cells") == json.loads(checked.read_text()).get("cells")
+                    SOURCES[rel(checked)] = sha256_file(checked)
                 entry["sanity"] = dict(points=san.get("points_checked"), failures=san.get("failures"),
                                        seed=san.get("seed"), wall_s=san.get("wall_s"),
                                        cells_checked=san.get("cells_checked"), binary_sha256=track_binary,
                                        same_binary=track_binary == cell["provenance"].get("binary_sha256"),
+                                       checked_result=str(checked), cells_identical_to_checked=identical,
                                        evidence=args.projective_evidence)
         opt_in.append(entry)
 
@@ -488,15 +515,17 @@ def main():
                                           if not r["verified"] and r["native"]["status"] == "complete"]))
 
     # Symbolica vs FLINT
-    flint_dir = pathlib.Path(args.flint_dir) if args.flint_dir else (
-        HERE / "FLINT_vs_symbolica/results" if (HERE / "FLINT_vs_symbolica/results/table.typ").exists()
-        else HERE / "flint-draft")
+    flint_dir = (pathlib.Path(args.flint_dir) if args.flint_dir else HERE / "FLINT_vs_symbolica/results").resolve()
     flint = None
-    if (flint_dir / "summary.json").exists():
+    if (flint_dir / "summary.json").exists() and (flint_dir / "table.typ").exists():
         fs = load_json(flint_dir / "summary.json")
-        SOURCES[str(flint_dir / "table.typ")] = sha256_file(flint_dir / "table.typ")
-        flint = dict(table=str((flint_dir / "table.typ").relative_to(HERE)), summary=str(flint_dir / "summary.json"),
-                     draft=flint_dir.name == "flint-draft", n_ops=fs.get("n_ops"),
+        SOURCES[rel(flint_dir / "table.typ")] = sha256_file(flint_dir / "table.typ")
+        states = fs.get("job_states") or {}
+        flint = dict(table=str((flint_dir / "table.typ").relative_to(HERE)), summary=rel(flint_dir / "summary.json"),
+                     draft=False, n_ops=fs.get("n_ops"), n_jobs=fs.get("jobs"),
+                     jobs_run=sum(v for k, v in states.items() if k != "pending"),
+                     jobs_pending=states.get("pending", 0), jobs_capped=states.get("timeout", 0),
+                     ops_pending=fs.get("ops_pending"),
                      outputs_compared=fs.get("outputs_compared"), mismatches=len(fs.get("mismatches") or []),
                      ratio_definition=fs.get("ratio_definition"),
                      by_kind=[dict(kind=k["kind"], n=k["n"], n_ratio=k["n_ratio"],
@@ -527,7 +556,7 @@ def main():
         summary=summary,
         provenance=dict(symgcad_launches=launches, projective_launches=proj_launches, native=native_prov,
                         native_run=str(args.native), unresolved_attempts=args.unresolved,
-                        manifest=args.manifest, history=args.history),
+                        manifest=rel(args.manifest), history=rel(args.history)),
         rows=ordered, opt_in=opt_in, flint=flint, sources=SOURCES)
     pathlib.Path(args.output).write_text(json.dumps(doc, indent=1, ensure_ascii=False) + "\n")
     print(json.dumps(dict(summary=summary, flint=flint and {k: flint[k] for k in ("table", "draft", "n_ops")}),

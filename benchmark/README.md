@@ -6,13 +6,20 @@
    fresh process with cold caches and re-checked by `symgcad verify`, next to the original GCAD
    by Vitaly Magerya (300 s cap per sign case). Per row: status, engine and ordering policy, the
    variable order that was picked (with the homogeneous anchor), verified cells, solve and verify
-   seconds, native seconds or `timeout`/`not run`, and the time ratio. Rows that complete only
-   under the opt-in projective contract (`solver.projective_sections = true`) are in a separate
-   table and never count towards the strict total.
-2. **Improvements over the original GCAD**: `improvements.typ`, one line per item with its effect
-   and whether it is on by default. `improvements-sources.txt` maps each item ID to code, tests,
-   reference notes and session reports.
-3. **Symbolica vs FLINT** on captured resultants, discriminants, factorizations and GCDs.
+   seconds, the cache tag (`cold` for every row measured by the report run), native seconds or
+   `timeout`, and the time ratio. Rows that complete only under the opt-in projective contract
+   (`solver.projective_sections = true`) are in a separate, labelled table (section 1.2) and never
+   count towards the strict total.
+2. **Improvements over the original GCAD**: `improvements.typ`, an exhaustive list (engines,
+   certificates, kernels, local-engine mechanisms, ordering, caching, verification, supervision,
+   interfaces, upstream fixes, opt-in contracts, investigated ideas). Each item has a plain-language
+   explanation, its default/opt-in status with the option name, and its measured effect where one
+   exists. `improvements-sources.txt` maps each item ID to code, tests, reference notes and session
+   reports. This section replaces the earlier rule of at most two pages of notes after the table.
+3. **Symbolica vs FLINT** on captured resultants, discriminants, factorizations and GCDs: summary
+   cards, measurement status, interpretation, reproduction pointer, and the per-operation tables of
+   `FLINT_vs_symbolica/results/table.typ`. The full campaign is documented in
+   [`FLINT_vs_symbolica/README.md`](FLINT_vs_symbolica/README.md).
 
 `ordering-mcts.typ`/`.pdf` is a separate, independently authored companion and is not generated.
 
@@ -29,7 +36,7 @@
 | `campaign/symgcad_runner.py` | Cold runner: fresh checkpoint directory and `TMPDIR` per run, one pinned CPU, `prlimit`, GNU `time`, solve then independent verify; resumable `records.jsonl`. |
 | `campaign/native_runner.py` | Native GCAD runner: sign expansion as in `src/benchmark.rs`, unmodified `.reference/gcad` through `reference/adapter.py`, 300 s / 8 GiB per case. |
 | `campaign/build_manifest.py`, `campaign/symgcad_summarize.py` | How `groups.json` was built; per-group summary of runner output. |
-| `flint-draft/` | Snapshot of the still-running Symbolica-vs-FLINT campaign; used only while `FLINT_vs_symbolica/results/` does not exist. |
+| `FLINT_vs_symbolica/` | Reproducible Symbolica-vs-FLINT kernel campaign (harness, operands, `results/summary.json` and `results/table.typ` read by the report); see its README. |
 | `data.json`, `followups.json` | Frozen 2026-10-10 audit snapshot (from `examples/benchmark_report.rs`); read for history (earlier measurements, longest earlier attempts of unresolved problems). |
 
 The campaign scripts are verbatim copies of the ones used on 2026-10-12 (they assume this host:
@@ -42,14 +49,21 @@ Prerequisites: Nix, the Symbolica license environment in `/common/dev/gcad/.symg
 (override with `SYMGCAD_ENV=...`), and a release `symgcad` binary of the commit being reported.
 
 ```sh
-benchmark/run_final.sh /path/to/release/symgcad --cpus 376,377 --parallel 2
+benchmark/run_final.sh /path/to/release/symgcad --cpus 360,361,362,363,364,365 --parallel 6 \
+    [--out DIR] [--native DIR]
 ```
+
+Check that the chosen CPUs are idle first (e.g. `mpstat -P 360-365 5 1`); `--parallel` must not
+exceed the number of CPUs. The published report was produced this way on 2026-10-12 (binary
+sha256 and run directory on the title page and in `report-data.json`).
 
 This runs, in order:
 
 1. all 303 groups verified in the 2026-10-10 audit, cold, `--timeout 600` s each, into
-   `artifacts/bench-report/symgcad-<sha12>/symgcad/` (about 7 minutes at parallel 2);
-   add `--attempt-unresolved 300` to also give the 28 unresolved groups a cold 300 s attempt;
+   `artifacts/bench-report/symgcad-<sha12>/symgcad/` (about 7 minutes at parallel 2, a few minutes
+   at parallel 6); add `--attempt-unresolved 300` to also give the 28 unresolved groups a cold
+   300 s attempt (about 70 minutes; not done for the published report, whose unresolved rows show
+   the recorded one-hour attempts with their cache tags);
 2. the two opt-in projective rows into `.../projective/`;
 3. `build_report.py` → `benchmark/report-data.json`;
 4. `typst compile benchmark/benchmark.typ benchmark/benchmark.pdf` (Typst from `flake.lock`, 0.15.1).
@@ -57,7 +71,7 @@ This runs, in order:
 Every stage is resumable (records are keyed by binary sha256). `--skip-runs` only rebuilds the
 data and the PDF; `--out DIR` chooses the run directory; `--native DIR` points to the native run.
 The title page lists every reason the report is still a draft (groups without a cold run, mixed
-binaries, native run incomplete, FLINT snapshot, opt-in rows not run); a final report has none.
+binaries, native run incomplete, no FLINT results, opt-in rows not run); a final report has none.
 
 Direct use of the builder:
 
@@ -86,14 +100,23 @@ nix develop .#reference --command python3 -I benchmark/campaign/native_runner.py
 It needs the isolated upstream copy `.reference/gcad` (built by `reference/build_reference.py`,
 revision pinned in `PROVENANCE.toml`). `build_report.py` reads `cases/*/*/record.json` directly and
 accepts a partial run: a group is `complete` only when all its sign cases completed, `timeout` or
-`memory` as soon as one case failed that way, and `not run` otherwise.
+`memory` as soon as one case failed that way, and `not run` otherwise. The 2026-10-12 run is
+complete (579/579 sign cases: 486 complete, 93 timeout; 278 groups complete, 53 timeout). Two
+sign cases (`finiteA_6_159…/symbolic` and `finiteAx12_6_159…/symbolic`, signs `+`) first failed
+with `std::bad_alloc` under the 8 GiB cap and were re-run with 24 GiB
+(`provenance-rerun-*.json`); both then timed out at 300 s, and the failed attempts are kept.
 
 ## Symbolica vs FLINT section
 
-`build_report.py` uses `FLINT_vs_symbolica/results/{table.typ,summary.json}` when that directory
-exists (committed by the FLINT_vs_symbolica campaign), otherwise the snapshot in `flint-draft/`;
-`--flint-dir` overrides both. `table.typ` is included verbatim; the summary cards and the verdicts
-are computed from `summary.json` (`by_kind`, `best_for_symbolica`, `best_for_flint`).
+`build_report.py` reads the committed campaign results `FLINT_vs_symbolica/results/summary.json`
+and `table.typ` (`--flint-dir` overrides the directory; both files are required). `table.typ` is
+included verbatim; the summary cards, the verdicts and the measurement-status line are computed
+from `summary.json` (`by_kind`, `job_states`, `ops_pending`, `best_for_symbolica`,
+`best_for_flint`). The committed results are a snapshot (2026-10-12, 12:57 UTC) of a campaign that
+kept running afterwards: 30 large-tier operands (126 of 772 jobs) were not measured and are shown
+as pending, never as timeouts. To refresh them, resume the campaign and re-run
+`FLINT_vs_symbolica/scripts/collect.py` as described in `FLINT_vs_symbolica/README.md`, then
+re-run `run_final.sh ... --skip-runs`.
 
 ## Definitions used in the tables
 
@@ -106,5 +129,9 @@ are computed from `summary.json` (`by_kind`, `best_for_symbolica`, `best_for_fli
   (`rows[].native.internal_s`).
 * **ratio**: symGCAD solve / native time, only where both complete; the summary gives geometric
   means overall and for groups where native needs ≥ 1 s or ≥ 10 s of internal time.
-* **unresolved rows**: the solve column is the longest attempt (lower bound): 2026-10-10 audit (h),
-  2026-10-12 one-hour attempt with a warm shared cache (w), or a cold attempt of this run (c).
+* **cache**: `cold` = measured by the report run (fresh process, fresh checkpoint directory and
+  `TMPDIR`); every verified row is cold. Unresolved rows were not re-attempted and carry the tag of
+  the attempt shown.
+* **unresolved rows**: the solve column is the longest attempt (lower bound): 2026-10-10 audit (h,
+  `hist.`), 2026-10-12 one-hour attempt with a warm shared cache (w, `warm`), or a cold attempt of
+  this run (c, `cold`; only with `--attempt-unresolved`).

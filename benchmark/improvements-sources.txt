@@ -14,7 +14,7 @@ DO_NOT_PUSH_REFERENCES/gcad/gcad/gcad.py: GPROJ, RSFC, greedy_{mods,sotd,t1}_ord
 
 Intro / tags
   test counts: reference/COMBINED_FAST_VALIDATION.md (662 @ 81d9ac5); [res]runs/bin/integration.txt (744 @ 4dbe440);
-    [res]projective-sections/measurements.json fast_suite (753 @ 9baf91c)
+    [res]projective-sections/measurements.json fast_suite (753 @ 9baf91c); [res]finalize/test-fast.log (753 @ final)
 
 == Exact algebra and kernels
 A1  Rust + Symbolica backend, parity 0.1466 / 0.0620: src/algebra.rs, src/projection.rs; BENCHMARKS.md (M2 section);
@@ -208,8 +208,10 @@ V11 original-identity audit (303/331): examples/aggregate_completion.rs; referen
 R1  killable workers / limits: src/main.rs (_worker), src/benchmark.rs, src/campaign.rs, src/config.rs (Limits);
     HANDOFF.md "Ordering, caches, deadlines and checkpoint semantics"
 R2  campaign and slow-suite runners: src/campaign.rs, src/benchmark.rs, scripts/test.sh; reference/SLOW_SUITE.md
-R3  fast suite (662 -> 744): scripts/test.sh; reference/COMBINED_FAST_VALIDATION.md; [res]runs/bin/integration.txt
-R4  operand capture: src/solver.rs (SYMGCAD_CAPTURE_DIR, line ~106); examples/profile_operation.rs; docs/USAGE.md
+R3  fast suite (662 -> 744 -> 753; final integration 753 passed / 2 ignored / 58 targets): scripts/test.sh;
+    reference/COMBINED_FAST_VALIDATION.md; [res]runs/bin/integration.txt; [res]finalize/test-fast.log
+R4  operand capture: src/solver.rs (SYMGCAD_CAPTURE_DIR, line ~106); examples/profile_operation.rs; docs/USAGE.md;
+    capture-all: src/optimized_projection.rs (SYMGCAD_CAPTURE_ALL, feature flint-bench-hooks)
 R5  progress throttle (17.505 -> 1.282 s system CPU): src/local_projection.rs, src/local_projection/base_univariate.rs (commit f5a2e8b); reference/BASE_PROGRESS_THROTTLE.md
 R6  buffered export (392,791 writes; 3,308 cells 1.354 s): src/main.rs (BufWriter, lines ~83-84); BENCHMARKS.md "Symbolic export regression"
 R7  interrupted-worker accounting: src/main.rs, src/output.rs, tests/cli.rs; commit c881148 "fix: retain interrupted worker time and typed local diagnostics"
@@ -232,7 +234,9 @@ I6  benchmark document: benchmark/build_report.py, benchmark/run_final.sh, bench
     benchmark/README.md; earlier snapshot generator examples/benchmark_report.rs + benchmark/data.json
 I7  full-corpus campaign: benchmark/campaign/ (groups.json, symgcad_inputs/, symgcad_runner.py, native_runner.py,
     build_manifest.py, projective/); [res]bench/README.txt, [res]bench/COORDINATION.txt, [res]bench/native_300s_run/
-I8  Symbolica vs FLINT harness: benchmark/FLINT_vs_symbolica/ (branch claude/flint-vs-symbolica); [res]flint-bench/
+I8  Symbolica vs FLINT harness: benchmark/FLINT_vs_symbolica/ (branch claude/flint-vs-symbolica 2434906, merged into
+    claude/final-2026-10-12); Cargo.toml feature flint-bench-hooks + [[example]] flint_vs_symbolica;
+    src/resultant_segmentation.rs (bench_hooks), src/optimized_projection.rs (SYMGCAD_CAPTURE_ALL); [res]flint-bench/
 
 == Upstream dependency fixes
 U1  Symbolica PR #69 (linear resultant sign): patches/symbolica-linear-resultant-sign.patch, patches/README.md; src/projection.rs
@@ -273,9 +277,23 @@ N5  earlier research lines: reference/CFF_KINEMATIC_PROJECTION.md, reference/TRO
     reference/LINEAR_PREFIX_RESEARCH.md, reference/QUADRATIC_FLAG_IDENTITIES_RESEARCH.md, reference/CROSSING_TRANSPORT_DESIGN.md,
     reference/DETERMINISTIC_CRT_PRIME_IMAGE.md, reference/FAST_TAYLOR_SHIFT_RESEARCH.md; HANDOFF.md "Physics, graph structure,
     CFF and tropical research"
+N6  unresolved-case campaign (24 of 28 re-run 1 h, none completed): reference/UNRESOLVED_CAMPAIGN_2026_10_12.md;
+    [res]unresolved/v1-nopw-retain/
+N7  earlier algebra research: reference/DETERMINISTIC_CRT_PRIME_IMAGE.md, reference/FAST_TAYLOR_SHIFT_RESEARCH.md,
+    reference/CENTERED_DISCRIMINANT_RESEARCH.md, reference/ITERATED_RESULTANT_RESEARCH.md,
+    reference/THREE_PARAMETER_SEGMENTATION_RESEARCH.md, reference/TRIANGULAR_KINEMATIC_SHIFT.md,
+    reference/RATIONAL_KINEMATIC_PAIR_MAP.md, reference/QUADRATIC_BLOCK_FACE_DIAGNOSTIC.md,
+    reference/MULTIVARIATE_SQF_DIAGNOSTIC.md; HANDOFF.md (factorial-convolution shift 0.671435 s vs 0.266245 s)
+N8  local-engine proposals: reference/SCALED_DESCARTES_SECTIONS.md, reference/FULL_REAL_ROOT_COVER.md,
+    reference/TRANSLATED_LOWER_RAY_PROPOSAL.md, reference/SELECTED_POSITIVE_ROOT_DELINEABILITY.md,
+    reference/POSITIVE_ROOT_REMAINDER_INTERFACE.md, reference/TWO_COORDINATE_CHART_AUDIT.md
+
+Engine / ordering usage table ("Where the strict completions come from")
+  computed in improvements.typ from report-data.json (rows[].symgcad.engine / .ordering of verified rows), i.e. from
+  the cold runs of the report binary; recipes benchmark/campaign/symgcad_inputs/
 
 Other files in this directory
-  improvements.typ  the inventory (Typst content, no page setup)
-  preview.typ       render check only: imports /benchmark/style.typ and includes improvements.typ in two columns;
-                    compile with: nix develop --command typst compile --root /common/dev/gcad \
-                      artifacts/research/claude-2026-10-12/inventory/preview.typ <out.pdf>   (5 landscape pages, no warnings)
+  improvements.typ  the inventory (Typst content, no page setup; reads report-data.json for the usage table and X1)
+  preview.typ       (not committed) render check only: imports /benchmark/style.typ and includes improvements.typ in
+                    two columns; the report itself is compiled with: nix develop --command typst compile
+                    benchmark/benchmark.typ benchmark/benchmark.pdf

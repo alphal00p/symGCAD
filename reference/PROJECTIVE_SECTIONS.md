@@ -171,8 +171,8 @@ Beyond `check_projective`:
 * **Unit tests:** the brute-force fiber check, comparison with infinite
   sections, the merge refusal, and serde of the new domain.
 * **`cargo test --example sanity_sample`:** 9 passed (2 new).
-* **Fast suite on `9baf91c`:** 753 passed, 0 failed, 2 ignored, over 71
-  targets.
+* **Fast suite on `9baf91c`:** 753 passed, 0 failed, 2 ignored, over 58 test
+  targets (an earlier draft of this note said 71; the log has 58 test binaries). The final integration `claude/final-2026-10-12` measures the same: 753 passed, 0 failed, 2 ignored, 58 targets.
 
 ## Measured results
 

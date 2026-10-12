@@ -6,7 +6,7 @@ Under the default strict contract, the audited checkpoint solves **303/331 disti
 
 **Positive Gluza33 under the projective contract (2026-10-12).** Positive Gluza33 completes under the opt-in [projective-sections contract extension](reference/PROJECTIVE_SECTIONS.md), in which upper cell sections may reach +infinity. It gives 2,372 independently verified cells, with a 0.42 s solve and a 0.55 s verification. A fresh-point check of the original inequalities found 0 failures in 4,744 points. Under the same option, positive Gluza30 drops from 80,980 cells to 1. The extension does not apply to the sign-split symbolic ZZ problems, and none of them closes.
 
-The [benchmark](benchmark/benchmark.pdf) reports every original problem, including unresolved attempts. The fast suite passes **753 tests** at `9baf91c`, with two expensive tests ignored. Completed algebra is retained between bounded campaigns; timeouts and conditional chambers receive no original-completion credit.
+The [benchmark](benchmark/benchmark.pdf) reports every original problem, including unresolved attempts: in its final cold run all 303 strict completions re-verify, and on the 278 groups that both complete, the geometric-mean time ratio against the original GCAD is 0.058. It also contains an exhaustive list of improvements over GCAD and a Symbolica-vs-FLINT kernel comparison. The fast suite passes **753 tests** (58 test targets) at the final integration, with two expensive tests ignored. Completed algebra is retained between bounded campaigns; timeouts and conditional chambers receive no original-completion credit.
 
 The [implementation checkpoint](reference/FINAL_CHECKPOINT.md) records the certified reductions, measured improvements and remaining work. The latest optional [factorization-axis experiment](reference/GLUZA33_FINAL_FACTOR_PUSH.md) clears a captured Gluza33 obstruction: its 1,731-term component factors in 0.280 seconds, and the full 2,867-term source in 1.951 seconds, with exact signed reconstruction. These are isolated algebra measurements; the production dependency is unchanged.
 
@@ -111,10 +111,10 @@ The [handoff](HANDOFF.md) covers CFF threshold chambers, graph-derived quadratic
 
 A [supplemental seeded sanity check](reference/SUPPLEMENTAL_SANITY.md) sampled two fresh interior points in each fixed A446 cell: all 8 cells, 16 exact F evaluations and 112 original-constraint checks passed. This check recomputes boundaries at each new prefix and is excluded from benchmark timings; it does not replace the coverage proof.
 
-- [Benchmark document](benchmark/benchmark.pdf) and [Typst source](benchmark/benchmark.typ): per-problem comparison and methodology.
+- [Benchmark document](benchmark/benchmark.pdf) and [Typst source](benchmark/benchmark.typ): (1) all 331 problems against native GCAD plus the separately labelled opt-in projective rows, (2) the exhaustive improvements over GCAD, (3) Symbolica vs FLINT; [how to regenerate it](benchmark/README.md).
 - [Ordering and MCTS companion](benchmark/ordering-mcts.pdf): search mechanics and evidence.
 - [Validation record](BENCHMARKS.md): measured milestones, limits, artifact hashes and unresolved cases.
-- [FLINT versus Symbolica](FLINT_vs_symbolica/): the reproducible algebra-kernel comparison campaign.
+- [FLINT versus Symbolica](benchmark/FLINT_vs_symbolica/README.md): the reproducible algebra-kernel comparison campaign (results in [benchmark/FLINT_vs_symbolica/results/](benchmark/FLINT_vs_symbolica/results/summary.md)); Section 3 of the benchmark document summarizes it.
 - October 12 notes:
   - [projective sections](reference/PROJECTIVE_SECTIONS.md)
   - [bilinear_general](reference/BILINEAR_GENERAL.md)
