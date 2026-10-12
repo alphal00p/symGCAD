@@ -102,6 +102,10 @@ impl CompletedSubtrees {
             evictions: 0,
         }
     }
+    /// Diagnostic membership test; changes no counter or FIFO position.
+    pub(super) fn contains(&self, prefix: &[Rational]) -> bool {
+        self.entries.contains_key(prefix)
+    }
     pub(super) fn get(&mut self, prefix: &[Rational]) -> Result<Option<Built>> {
         let Some(entry) = self.entries.get(prefix) else {
             self.misses += 1;
@@ -224,6 +228,7 @@ mod tests {
             },
             required: BTreeSet::from([7, 9]),
             cells: children,
+            nodes: children + 1,
         }
     }
     #[test]

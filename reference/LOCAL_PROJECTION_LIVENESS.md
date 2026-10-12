@@ -257,3 +257,113 @@ An independent source review found no soundness blocker. Full-suite validation
 and any hard-case pilot are separate steps. The implementation targets a
 structural source of excess work; the captured octic's dispensability remains
 an untested hypothesis.
+
+## Refinement thrash: sibling retention and separator admission (2026-10-12)
+
+`SYMGCAD_LOCAL_THRASH_DIAG=1` adds a read-only `thrash` section to the local
+report: restarts, additions and cut sizes per level, addition events and
+distinct cuts by origin, completed children that were discarded or not kept,
+repeated versus fresh restart samples, subtree-cache miss causes and per-level
+projection seconds. An origin label is the union of every projection rule that
+had produced the polynomial anywhere in the solve by then (bits accumulate; a
+combined label does not mean one rule derived it from the other);
+`coefficient_of_separator_cut` marks coefficients of a cut that itself carried
+a separator origin. Factor bases are only looked up in the in-memory operation
+cache: the diagnostic never factors, interns or changes a cache counter
+(`tests/local_thrash_diag.rs`), so unfactored base-univariate sources stay
+unattributed instead of being factored.
+
+Measured causes (one pinned core each; data and scripts under
+`artifacts/research/claude-2026-10-12/local-thrash/`, review fixes in `fix/`):
+
+* **Re-exploration (H1) and cache thrash (H3).** Every refinement discarded all
+  completed siblings. In 60 s of the Gluza33 base piece `{a>0}` with pair
+  witnesses, 337,116 completed children (1,854,802 cells) were discarded and
+  297,891 restart samples repeated an earlier, completed sample; subtree misses
+  were 370,162 after FIFO eviction and 190,911 never admitted (entries above
+  128 nodes are not cached). The plain Gluza33 piece `R+-` showed 3,097,220
+  evictions in 30 min while still in its first `x7` sector.
+* **Sample-dependent separators (H2).** Counting distinct cuts (60 s rerun with
+  the corrected diagnostic): 281 new cuts were pair-witness separator guards
+  and 53 more were coefficients of separator-produced cuts, against 24 pair
+  resultants and 13 coefficients of other cuts. Addition events are a
+  different measure: 247,565 of them (239,602 in the first run) were requests
+  for those 13 ordinary coefficients, re-requested after restarts, so they
+  belong to H1, not to separators; 46,245 events were separator guards.
+  All polynomials there have resultant monomial bounds below 200, and the
+  base stack reached 283 cuts.
+
+Changes, all checked by the unchanged independent replay:
+
+* `local_retain_siblings` (opt-in, requires `local_stable_samples`): a stack
+  visit keeps every complete child across its rounds and moves it into the new
+  sector that strictly contains its unchanged sample (the conditional extension
+  lemma above; new sectors are subsets of old ones because cuts only grow).
+  A candidate inside a root's coarse isolating interval is still compared
+  exactly with the root before reuse (unit and fixture tests fail if this
+  check is reduced to the interval hull). Obligations are merged exactly as
+  for a fresh child, and the deferred discovery loop retains in the same way.
+  Retained pools share a node budget (a quarter of `memory_mib` counted at
+  4 KiB per node, 524,288 nodes at 8 GiB; about 5 KiB of resident memory per
+  retained node was measured). A round keeps collecting siblings past the
+  ordinary discovery thresholds only while their proofs are actually kept;
+  after a budget or count refusal the early break applies again. Declined
+  children are merely revisited. Without the budget, retention plus the
+  historical witness policy exhausted 8 GiB after 169 s; with the final
+  budget the same run peaked at 4,500,512 KiB over 300 s.
+* Pair-witness admission (opt-in): `local_pair_witness_min_resultant_terms`
+  admits a new template only above a dense resultant monomial bound;
+  `local_pair_witness_axis_budget` caps new templates per axis. Both default
+  to 0, the historical policy, so existing inputs run and serialize as before.
+  A decline selects the resultant, always admissible.
+
+Effects and limits of these changes:
+
+* The gate at 4096 completes `{a>0}` with witnesses in 0.02 s (178 verified
+  cells; incomplete after 20.4M nodes/570 s with the historical policy), but
+  it admits no template there and reproduces the witness-free search exactly
+  (696 nodes); it admitted none on 19 of 20 corpus cases either (identical
+  nodes and cells to witnesses off where checked). Where it does admit
+  templates it was not better than disabling witnesses: `Ax12_6_190` symbolic
+  completes in 0.03 s (67 verified cells) without witnesses but is incomplete
+  after 300 s both with the gate (2 templates reused for 62,341 omitted
+  resultants) and without it; on symbolic A446 it admitted 2,164 of the 2,225
+  templates and on positive Gluza33 (campaign order) 37 instead of 5,557,
+  with progress equal to the witness-free run. Hence it stays opt-in.
+* Retention on 200 random problems with a binding 64-node budget (same
+  `memory_mib` for both runs): fewer speculative nodes than stable samples
+  alone on 181, more on 2 (at most 1.10x; 10 seeds and 1.76x before the early
+  break was restored). On fixed B6_469 with a binding 262,144-node budget it
+  needs 308,993 nodes in 13.5 s (616,404 nodes in 24.4 s before), against
+  249,574 nodes in 11.4 s when the budget does not bind; stable samples alone
+  are incomplete after 60 s.
+* The early break is a trade-off, not a dominant policy. On 200 problems with
+  randomized discovery options (batch, subtree reuse, witnesses) and the same
+  tiny budget, finishing every round despite refusals needed 180,591 nodes on
+  the 184 seeds all variants complete versus 297,736 with the early break
+  (190 versus 185 completions within 20 s; stable alone 450,799), but it was
+  2.07x slower on B6_469. Falling back to the batch thresholds even when
+  `local_batch_siblings = false` gave 217,307 there and matched the early
+  break elsewhere. The committed rule (after a refusal behave exactly like the
+  configured non-retaining discovery) keeps retention within 1.10x of stable
+  samples on every measured seed; budgets at realistic sizes were only
+  observed to bind on B6_469 and the Gluza33 pieces.
+* Gluza33 region pieces (plain options plus stable samples, 30 min each,
+  final budget, one core; inputs `Ppm`/`Ppp` in the research directory):
+  retention does not change the outcome, neither completes. `Ppm`: stable
+  samples alone 12,798,020 nodes, with retention 1,381,853 nodes, 322,104
+  reuses and a binding budget (peak 524,288, 4,161 refusals, 1.11 GB RSS);
+  both are still at the same `x7` sample 1/1835008 with about 1,670 base
+  cuts. `Ppp`: stable samples alone 5,804,029 nodes reached `x7 = 3/2`;
+  with retention 774,046 nodes by 202 s, then the remaining time in one
+  projection at `x7 = 2/3, x2 = 257`.
+
+Remaining root cause for the Gluza33 region pieces: with unbudgeted retention the plain
+`R+-` piece left its first `x7` sector, but the level-1 (`x2`) stacks hold
+263-355 cuts (777 with Descartes witnesses/intervals), one level-1 projection
+returned 2,580 new base cuts, and single level-1 discriminants of bivariate
+cuts of degree about 40 in `x2` (about 1,000 terms) run for more than 25 min.
+This is cut-set inflation from sample-dependent rule choices (coefficient
+versus discriminant guards, separation remainders versus resultants, interval
+covers) rather than traversal; consistent rule selection that prefers guards
+already present in ancestor cut sets needs checker support and is not done.

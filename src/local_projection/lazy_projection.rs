@@ -153,6 +153,13 @@ impl Builder<'_> {
             .then(|| positive_coordinate(self.normalized, level))
             .flatten();
         let mut pool = stack_samples::StackSamples::new();
+        // Deferred construction already uses the strict-interior sample policy.
+        // Complete children of discarded discovery rounds are kept at their
+        // exact samples and moved into the strictly containing new sector.
+        let mut retained = self
+            .options
+            .retain_sibling_proofs
+            .then(|| sibling_pool::SiblingPool::new(self.retention_budget.clone()));
         let mut frontier = loop {
             self.check_budget()?;
             if cuts.len() > MAX_CUTS {
@@ -167,6 +174,8 @@ impl Builder<'_> {
             let mut siblings = 0usize;
             let mut requirements = 0usize;
             let mut cells = 0usize;
+            // Past the ordinary thresholds only while proofs are retained.
+            let mut retaining = retained.as_ref().is_some_and(|pool| pool.accepting());
             for i in 0..=roots.len() {
                 self.check_budget()?;
                 if !additions.is_empty() {
@@ -175,21 +184,36 @@ impl Builder<'_> {
                 }
                 let lower = i.checked_sub(1).and_then(|j| roots.get(j));
                 let upper = roots.get(i);
-                let retained = pool.choose(lower, upper);
-                self.report.stable_sample_hits += usize::from(retained.is_some());
-                self.report.stable_sample_misses += usize::from(retained.is_none());
-                let sample = retained.unwrap_or_else(|| sector_sample(lower, upper));
-                prefix.push(sample.clone());
-                let child = if let Some(constraint) = ray.filter(|_| i == 0) {
-                    Ok(Built {
-                        node: LocalNode::Rejected { constraint },
-                        required: self.input_factors[constraint].iter().copied().collect(),
-                        cells: 0,
-                    })
+                let negative_ray = i == 0 && ray.is_some();
+                let reused = if negative_ray {
+                    None
                 } else {
-                    self.visit(prefix)
+                    retained
+                        .as_mut()
+                        .and_then(|children| children.take_inside(lower, upper))
                 };
-                prefix.pop();
+                let (sample, child) = if let Some((sample, built)) = reused {
+                    self.report.retained_sibling_proofs += 1;
+                    (sample, Ok(built))
+                } else {
+                    let hint = pool.choose(lower, upper);
+                    self.report.stable_sample_hits += usize::from(hint.is_some());
+                    self.report.stable_sample_misses += usize::from(hint.is_none());
+                    let sample = hint.unwrap_or_else(|| sector_sample(lower, upper));
+                    prefix.push(sample.clone());
+                    let child = if let Some(constraint) = ray.filter(|_| i == 0) {
+                        Ok(Built {
+                            node: LocalNode::Rejected { constraint },
+                            required: self.input_factors[constraint].iter().copied().collect(),
+                            cells: 0,
+                            nodes: 1,
+                        })
+                    } else {
+                        self.visit(prefix)
+                    };
+                    prefix.pop();
+                    (sample, child)
+                };
                 if !(i == 0 && ray.is_some()) {
                     let (recorded, evictions) = pool.remember(&sample);
                     self.report.stable_sample_recorded += usize::from(recorded);
@@ -244,14 +268,22 @@ impl Builder<'_> {
                                 return Err(Stop::Resource("local projection cell limit".into()));
                             }
                             frontier.push(Child { sample, built });
+                        } else if !negative_ray {
+                            retaining &= self.set_aside(retained.as_mut(), sample, built);
                         }
                     }
                 }
                 if !additions.is_empty() {
-                    frontier.clear();
-                    if !self.options.batch_sibling_discovery
-                        || additions.len() >= 8
-                        || siblings >= 32
+                    for child in std::mem::take(&mut frontier) {
+                        if ray.is_none() || child.sample > Rational::zero() {
+                            retaining &=
+                                self.set_aside(retained.as_mut(), child.sample, child.built);
+                        }
+                    }
+                    if !retaining
+                        && (!self.options.batch_sibling_discovery
+                            || additions.len() >= 8
+                            || siblings >= 32)
                     {
                         break;
                     }
@@ -340,8 +372,10 @@ impl Builder<'_> {
         }
         let mut required = self.projection_requirements(&projection);
         let mut cells = 0usize;
+        let mut nodes = 1usize;
         let mut sectors = Vec::with_capacity(frontier.len());
         for child in frontier {
+            nodes = nodes.saturating_add(child.built.nodes);
             for id in child.built.required {
                 match highest(&self.polynomials[id]) {
                     Some(axis) if axis == level => {
@@ -382,6 +416,7 @@ impl Builder<'_> {
             },
             required,
             cells,
+            nodes,
         }))
     }
 }
@@ -537,6 +572,7 @@ mod tests {
                 },
                 required: BTreeSet::from([sample.unsigned_abs() as usize]),
                 cells: 0,
+                nodes: 1,
             },
         }
     }

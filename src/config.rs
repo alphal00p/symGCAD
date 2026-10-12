@@ -165,6 +165,11 @@ pub struct SolverOptions {
     /// Retain bounded rational sampling hints across refinements of one stack.
     #[serde(skip_serializing_if = "is_false")]
     pub local_stable_samples: bool,
+    /// Reuse completed sibling proofs across refinements of one stack visit.
+    /// Requires local_stable_samples; every reused child is replayed by the
+    /// independent checker at its exact retained sample.
+    #[serde(skip_serializing_if = "is_false")]
+    pub local_retain_siblings: bool,
     /// Experimental deferred stack projection with stable rational samples.
     #[serde(skip_serializing_if = "is_false")]
     pub local_deferred_projection: bool,
@@ -200,6 +205,16 @@ pub struct SolverOptions {
     /// rational-section guards, retaining resultant fallback.
     #[serde(skip_serializing_if = "is_false")]
     pub local_positive_pair_witnesses: bool,
+    /// Discovery-only: admit a new pair-witness template only if the dense
+    /// monomial bound of the replaced resultant exceeds this value (default 0:
+    /// the historical always-attempt policy, so existing inputs and evidence
+    /// are unchanged).
+    #[serde(skip_serializing_if = "is_zero_u64")]
+    pub local_pair_witness_min_resultant_terms: u64,
+    /// Discovery-only lifetime cap on new pair-witness templates per axis
+    /// (0: unlimited). A decline selects the ordinary resultant.
+    #[serde(skip_serializing_if = "is_zero_usize")]
+    pub local_pair_witness_axis_budget: usize,
     /// Optional strict polynomial-combination proposals for positive pair
     /// separation. Every used identity and coordinate premise is checked.
     #[serde(skip_serializing_if = "Vec::is_empty")]
@@ -270,6 +285,7 @@ impl Default for SolverOptions {
             local_reuse_learned_cuts: true,
             local_hint_archive: false,
             local_stable_samples: false,
+            local_retain_siblings: false,
             local_deferred_projection: false,
             local_pair_cancellations: 2,
             local_descartes_one: true,
@@ -280,6 +296,8 @@ impl Default for SolverOptions {
             local_descartes_interval_max_total_terms: DEFAULT_DESCARTES_INTERVAL_MAX_TOTAL_TERMS,
             local_descartes_interval_template_limit: 2,
             local_positive_pair_witnesses: false,
+            local_pair_witness_min_resultant_terms: 0,
+            local_pair_witness_axis_budget: 0,
             local_strict_bezout_hints: Vec::new(),
             projection_strict_bezout_hints: Vec::new(),
             local_base_point_projection: true,
@@ -330,6 +348,12 @@ fn is_eight(value: &usize) -> bool {
 fn is_two(value: &usize) -> bool {
     *value == 2
 }
+fn is_zero_usize(value: &usize) -> bool {
+    *value == 0
+}
+fn is_zero_u64(value: &u64) -> bool {
+    *value == 0
+}
 fn is_optimized(value: &str) -> bool {
     value == "optimized"
 }
@@ -377,6 +401,10 @@ impl Problem {
         ensure!(
             !self.solver.local_deferred_projection || self.solver.local_stable_samples,
             "local_deferred_projection requires local_stable_samples"
+        );
+        ensure!(
+            !self.solver.local_retain_siblings || self.solver.local_stable_samples,
+            "local_retain_siblings requires local_stable_samples"
         );
         ensure!(
             !self.solver.local_base_univariate_basis || self.solver.local_base_point_projection,

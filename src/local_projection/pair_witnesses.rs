@@ -24,9 +24,70 @@ pub(super) struct WitnessStock {
     admitted: usize,
     reused: usize,
     budget_fallbacks: usize,
+    /// Discovery-only admission policy; replay never consults it.
+    policy: AdmissionPolicy,
+    admitted_by_axis: HashMap<usize, usize>,
+    cheap_resultant_declines: usize,
+    axis_budget_declines: usize,
+}
+
+/// Separator guards p(s), q(s) are NEW sample-dependent polynomials. Each one
+/// must be projected at lower levels and can pair with other cuts, so admitting
+/// templates where the sample-independent resultant is small multiplies the cut
+/// sets instead of saving work. Declining a template only selects the ordinary
+/// resultant, which is always an admissible (stronger) certificate.
+#[derive(Clone, Copy, Debug, Default)]
+pub(super) struct AdmissionPolicy {
+    /// Admit a new template only if the dense monomial bound of Res(p,q)
+    /// exceeds this value. Zero admits every eligible pair (historical).
+    pub min_resultant_terms: u64,
+    /// Lifetime cap on newly admitted templates per lifting axis. Zero means
+    /// unlimited (historical); the per-pair stock of two always applies.
+    pub axis_budget: usize,
+}
+
+/// Dense upper bound on the number of monomials of Res_x(p,q), from the
+/// Bezout-type total-degree bound deg_x(p)*tdeg'(q) + deg_x(q)*tdeg'(p), where
+/// tdeg' ignores x, over the variables other than x that occur in p or q.
+/// This is only a scheduling estimate; it never enters a certificate.
+pub(super) fn resultant_term_bound(p: &Poly, q: &Poly, variable: usize) -> u64 {
+    let rest = |f: &Poly| {
+        f.exponents_iter()
+            .map(|e| {
+                e.iter()
+                    .enumerate()
+                    .filter(|&(i, _)| i != variable)
+                    .map(|(_, &d)| u64::from(d))
+                    .sum::<u64>()
+            })
+            .max()
+            .unwrap_or(0)
+    };
+    let degree = u128::from(p.degree(variable))
+        .saturating_mul(u128::from(rest(q)))
+        .saturating_add(u128::from(q.degree(variable)).saturating_mul(u128::from(rest(p))));
+    let others = (0..p.nvars())
+        .filter(|&i| i != variable && (p.degree(i) > 0 || q.degree(i) > 0))
+        .count() as u128;
+    // binomial(degree + others, others), saturating at u64::MAX.
+    let mut bound: u128 = 1;
+    for k in 1..=others {
+        bound = bound.saturating_mul(degree.saturating_add(k)) / k;
+        if bound >= u128::from(u64::MAX) {
+            return u64::MAX;
+        }
+    }
+    bound as u64
 }
 
 impl WitnessStock {
+    pub(super) fn with_policy(policy: AdmissionPolicy) -> Self {
+        Self {
+            policy,
+            ..Self::default()
+        }
+    }
+
     pub(super) fn attempt(
         &mut self,
         algebra: &Algebra,
@@ -50,11 +111,24 @@ impl WitnessStock {
             self.budget_fallbacks += 1;
             return Ok(None);
         }
+        if self.policy.min_resultant_terms > 0
+            && resultant_term_bound(&polynomials[ids[0]], &polynomials[ids[1]], variable)
+                <= self.policy.min_resultant_terms
+        {
+            self.cheap_resultant_declines += 1;
+            return Ok(None);
+        }
+        let axis_admitted = self.admitted_by_axis.entry(variable).or_default();
+        if self.policy.axis_budget > 0 && *axis_admitted >= self.policy.axis_budget {
+            self.axis_budget_declines += 1;
+            return Ok(None);
+        }
         let proof = discover(algebra, polynomials, ids, variable, prefix)?;
         if let Some((proof, _)) = &proof {
             // Consume the slot before a caller attempts lower-level guards.
             templates.push(proof.clone());
             self.admitted += 1;
+            *axis_admitted += 1;
         }
         Ok(proof)
     }
@@ -63,6 +137,8 @@ impl WitnessStock {
         report.pair_witness_templates = self.admitted;
         report.pair_witness_template_reuses = self.reused;
         report.pair_witness_budget_fallbacks = self.budget_fallbacks;
+        report.pair_witness_cheap_resultant_declines = self.cheap_resultant_declines;
+        report.pair_witness_axis_budget_declines = self.axis_budget_declines;
     }
 }
 

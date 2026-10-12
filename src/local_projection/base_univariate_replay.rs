@@ -142,6 +142,7 @@ fn replay(
             progress_context: None,
             last_captured_context: None,
             started,
+            diag_log: None,
         },
         progress_path: None,
         last_progress: started,
@@ -168,6 +169,8 @@ fn replay(
         base_records: Vec::new(),
         base_typed: BTreeSet::new(),
         base_retained_bits: 0,
+        thrash: None,
+        retention_budget: sibling_pool::RetentionBudget::new(usize::MAX),
     };
     stage(
         output,
