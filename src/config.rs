@@ -207,6 +207,10 @@ pub struct SolverOptions {
     /// Optional identities p*L+q*M=k*S (S=H^2 or S>0, exactly certified on
     /// the coordinate box) omitting Res(p,q) in certified global projection.
     /// Requires positivity mode; every used identity is replayed on verify.
+    /// Used by the optimized engine (directly or as the linear_negative or
+    /// monotone base); other engines refuse them. Under `homogeneous_anchor`
+    /// projection runs on the reduced problem (anchor = 1, other variables
+    /// keep their names), so hints are written in those coordinates.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub projection_strict_bezout_hints:
         Vec<crate::strict_bezout_projection::ProjectionBezoutHint>,
@@ -385,6 +389,19 @@ impl Problem {
         ensure!(
             self.solver.projection_strict_bezout_hints.is_empty() || self.solver.positivity,
             "projection_strict_bezout_hints require certified projection (positivity = true)"
+        );
+        // Engines without certified global projection would silently ignore
+        // the proposals; refuse them instead.
+        ensure!(
+            self.solver.projection_strict_bezout_hints.is_empty()
+                || match self.solver.engine.as_str() {
+                    "optimized" | "linear_negative" => true,
+                    "monotone" => self.solver.monotone_base_engine == "optimized",
+                    _ => false,
+                },
+            "projection_strict_bezout_hints are only used by certified global projection \
+             (engine optimized, linear_negative, or monotone with monotone_base_engine = \
+             \"optimized\"); the local engine takes local_strict_bezout_hints"
         );
         let names: BTreeSet<_> = self.variables.iter().collect();
         ensure!(names.len() == self.variables.len(), "duplicate variables");

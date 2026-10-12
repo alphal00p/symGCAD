@@ -92,6 +92,7 @@ fetch_repo() {
 symbolica_patches=(
     "$repo_root/patches/symbolica-linear-resultant-sign.patch"
     "$repo_root/patches/numerica-integer-left-shift.patch"
+    "$repo_root/patches/symbolica-ducos-zero-subresultant.patch"
 )
 
 validate_symbolica() {

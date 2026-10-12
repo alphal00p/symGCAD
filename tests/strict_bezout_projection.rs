@@ -331,3 +331,145 @@ fn forged_or_mutated_omission_evidence_is_rejected() {
         assert!(verify(&forged).is_err(), "{name}");
     }
 }
+
+#[test]
+fn hint_text_is_bounded_before_symbolica_expands_or_evaluates_it() {
+    use symgcad::algebra::ExpansionCaps;
+    let algebra = Algebra::new(&["x".into(), "y".into(), "z".into()]).unwrap();
+    let caps = ExpansionCaps {
+        max_terms: 16_384,
+        max_degree: 64,
+        max_coefficient_bits: 65_536,
+    };
+    // Each was either expanded in full (6.9 s for the first) or evaluated
+    // during Symbolica's normalization (the numeric powers) before any cap.
+    for text in [
+        "(x+y+z+1)^300",
+        "(x+y+z+1)^60",
+        "((x+y)^8)^9",
+        "7^(3^20)",
+        "2^99999999",
+        "(2^9999)^9999",
+        "f(x)",
+        "x^-1",
+        "x/y",
+        "1.5*x",
+        "w+1",
+    ] {
+        let started = std::time::Instant::now();
+        assert!(
+            algebra.parse_with_expansion_caps(text, caps).is_err(),
+            "{text}"
+        );
+        assert!(started.elapsed().as_secs_f64() < 0.5, "{text}");
+    }
+    // Ordinary hint syntax parses exactly as before.
+    for text in [
+        "-2/3*x^2*y+x*(y+z)^2-7",
+        "(x+y+z+1)^4",
+        "2^4090*x",
+        "x**2-(y-1)/5",
+    ] {
+        assert_eq!(
+            algebra.parse_with_expansion_caps(text, caps).unwrap(),
+            algebra.parse(text).unwrap(),
+            "{text}"
+        );
+    }
+    // Through the hint and evidence path, oversized texts fail fast.
+    let two = Algebra::new(&["x".into(), "y".into()]).unwrap();
+    let constraints = vec![two.parse("x").unwrap(), two.parse("y").unwrap()];
+    let domain = symgcad::domain::derive_domain(&two, &constraints, &[]).unwrap();
+    let options = symgcad::domain::CertificateOptions::default();
+    let prepared =
+        symgcad::strict_bezout_projection::prepare(&two, &domain, &options, &square_hint())
+            .unwrap();
+    let good = prepared.evidence(&two, 0, 1);
+    for (field, text) in [(0, "(x+y+1)^300"), (1, "7^(3^20)")] {
+        let mut hint = square_hint();
+        let mut evidence = good.clone();
+        if field == 0 {
+            hint.multipliers[0] = text.into();
+            evidence.hint.multipliers[0] = text.into();
+        } else {
+            hint.multiplier = text.into();
+            evidence.hint.multiplier = text.into();
+        }
+        let started = std::time::Instant::now();
+        assert!(
+            symgcad::strict_bezout_projection::prepare(&two, &domain, &options, &hint).is_err()
+        );
+        assert!(
+            symgcad::strict_bezout_projection::verify(&two, &constraints, &[], &evidence).is_err()
+        );
+        assert!(started.elapsed().as_secs_f64() < 0.5, "{text}");
+    }
+}
+
+#[test]
+fn hint_configuration_is_proved_once_and_an_empty_list_clears_it() {
+    use symgcad::optimized_projection::{
+        DomainPruningOptions, OptimizedProjectionOptions, ProjectionCache,
+    };
+    let algebra = Algebra::new(&["x".into(), "y".into()]).unwrap();
+    let constraints = vec![algebra.parse("x").unwrap(), algebra.parse("y").unwrap()];
+    let all: Vec<Poly> = constraints
+        .iter()
+        .cloned()
+        .chain([algebra.parse(P).unwrap(), algebra.parse(Q).unwrap()])
+        .collect();
+    let options = OptimizedProjectionOptions::default();
+    let mut cache = ProjectionCache::new(&algebra, &options);
+    let both = DomainPruningOptions {
+        strict_bezout_hints: vec![square_hint(), positive_hint()],
+        ..Default::default()
+    };
+    // Ordering exploration and projection configure repeatedly.
+    for _ in 0..3 {
+        cache.configure_pair_omissions(&constraints, &both).unwrap();
+    }
+    assert_eq!(cache.report.pair_omission_hint_checks, 2);
+    assert_eq!(cache.report.pair_omission_hints_accepted, 2);
+    // Configured omissions are refused by uncertified projection ...
+    assert!(cache.project_ordered(&all, &[0, 1]).is_err());
+    // ... and an empty list clears them on the reused cache.
+    cache
+        .configure_pair_omissions(&constraints, &DomainPruningOptions::default())
+        .unwrap();
+    assert_eq!(cache.report.pair_omission_hints_accepted, 0);
+    assert!(cache.project_ordered(&all, &[0, 1]).is_ok());
+    // A changed list is proved again.
+    let one = DomainPruningOptions {
+        strict_bezout_hints: vec![square_hint()],
+        ..Default::default()
+    };
+    cache.configure_pair_omissions(&constraints, &one).unwrap();
+    cache.configure_pair_omissions(&constraints, &one).unwrap();
+    assert_eq!(cache.report.pair_omission_hint_checks, 3);
+    assert_eq!(cache.report.pair_omission_hints_accepted, 1);
+}
+
+#[test]
+fn engines_without_certified_global_projection_refuse_projection_hints() {
+    let mut p = problem(vec![square_hint()], false);
+    p.validate().unwrap();
+    for (engine, base) in [("local", "optimized"), ("monotone", "local")] {
+        p.solver.engine = engine.into();
+        p.solver.monotone_base_engine = base.into();
+        let error = p.validate().unwrap_err().to_string();
+        assert!(
+            error.contains("certified global projection"),
+            "{engine}: {error}"
+        );
+    }
+    p.solver.engine = "monotone".into();
+    p.solver.monotone_base_engine = "optimized".into();
+    assert!(
+        !p.validate()
+            .is_err_and(|e| e.to_string().contains("certified global projection"))
+    );
+    // Without hints the local engine is unaffected.
+    let mut local = problem(vec![], false);
+    local.solver.engine = "local".into();
+    local.validate().unwrap();
+}

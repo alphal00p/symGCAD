@@ -11,14 +11,26 @@
 //! parameter degree is at most the maximum over permutations of the summed
 //! entry degrees, a maximum-weight perfect assignment. A permutation through a
 //! structurally zero entry contributes nothing. This bound never exceeds the
-//! two closed-form bounds and is computed exactly by the Hungarian method.
+//! two closed-form bounds. The Hungarian method proposes LP potentials and the
+//! bound is their checked dual value, so it does not rely on that search.
 //!
-//! Admission is size-derived. Bounds up to `unconditional_degree_bound` keep
-//! the historical static caps. A larger bound is admitted only when an a-priori
-//! bit bound of every image (Hadamard: |Res| <= ||p(k)||_1^n ||q(k)||_1^m after
-//! clearing denominators) fits the per-image cap and, times the image count,
-//! the total image cap, so the dynamic resource stops cannot fire afterwards.
-//! The degree bound itself is always proved; nothing here is probabilistic.
+//! Admission: a plan whose closed-form bound is at most
+//! `unconditional_degree_bound` lies in the historical envelope and keeps the
+//! historical static caps (and their dynamic image stops). Every other plan,
+//! including one brought under that value only by the assignment bound, is
+//! admitted only when an a-priori bit bound of every image (Hadamard:
+//! |Res| <= ||p(k)||_1^n ||q(k)||_1^m after clearing denominators) fits the
+//! per-image cap and, times the image count, the total image cap, so the
+//! dynamic resource stops cannot fire for it. The degree bound itself is always
+//! proved; nothing here is probabilistic.
+//!
+//! Images are exact integer specializations followed by the deterministic
+//! integer resultant, which decides a vanishing image by an exact gcd test
+//! before Lazard-Ducos (see `resultant_segmentation::integer_resultant`). The
+//! interpolated result is then checked at one further point through a
+//! different route: Symbolica's own specialization and its Brown subresultant
+//! resultant over Q (`spot_check`). The check adds no premise; a mismatch is an
+//! error.
 //!
 //! The callback is checked between exact algebra calls; an individual Symbolica
 //! call cannot be preempted here. CLI workers retain their supervisor's hard
@@ -84,8 +96,8 @@ pub struct Plan {
     pub assignment_bound: Option<usize>,
     /// A-priori bound on the bits of every image (numerator plus denominator).
     pub image_bit_bound: u64,
-    /// True when admission needed the size-derived rule above the
-    /// unconditional bound.
+    /// True when the plan lies outside the historical closed-form envelope
+    /// and was admitted by the a-priori image size check.
     pub size_admitted: bool,
 }
 
@@ -102,6 +114,100 @@ pub struct Statistics {
     pub closed_form_bound: usize,
     #[serde(default)]
     pub size_admitted: bool,
+    /// Whether the independent spot check found a full-degree point.
+    #[serde(default)]
+    pub spot_checked: bool,
+}
+
+/// Independent exact spot check of a kernel result `result` = Res_x(p, q).
+///
+/// Candidate points put parameter j (the j-th active variable other than x)
+/// at first+(j+1)*t+j for t = 0, 1, ...; the first point where both formal
+/// leading coefficients in x stay nonzero is used, so resultant and
+/// specialization commute there. At that point Symbolica's own `replace`
+/// specializes p and q and its Brown subresultant resultant over Q computes
+/// the value; the interpolation and segmentation kernels use neither. A
+/// mismatch is an error. Returns false when no candidate in a bounded
+/// sequence keeps both degrees (nothing is then claimed), or when an operand
+/// is linear: those use the explicit signed identity elsewhere.
+pub(crate) fn spot_check(
+    p: &Poly,
+    q: &Poly,
+    variable: usize,
+    first: i64,
+    result: &Poly,
+) -> Result<bool> {
+    ensure!(
+        p.variables() == q.variables() && result.variables() == p.variables(),
+        "spot check variable maps differ"
+    );
+    let (m, n) = (p.degree(variable), q.degree(variable));
+    if m < 2 || n < 2 {
+        return Ok(false);
+    }
+    let parameters: Vec<usize> = (0..p.nvars())
+        .filter(|&v| v != variable && (p.degree(v) > 0 || q.degree(v) > 0))
+        .collect();
+    ensure!(
+        (0..result.nvars()).all(|v| parameters.contains(&v) || result.degree(v) == 0),
+        "spot check result has extra support"
+    );
+    let leading = [p.univariate_lcoeff(variable), q.univariate_lcoeff(variable)];
+    // Along the candidate line each leading coefficient is a univariate
+    // polynomial of at most its total degree: unless it vanishes on the
+    // whole line, this many candidates contain a full-degree point.
+    let total = |c: &Poly| {
+        c.exponents_iter()
+            .map(|e| e.iter().map(|&d| u64::from(d)).sum::<u64>())
+            .max()
+            .unwrap_or(0)
+    };
+    let candidates = (total(&leading[0]) + total(&leading[1]) + 1).min(256);
+    let specialize = |f: &Poly, point: &[(usize, Rational)]| -> Poly {
+        point
+            .iter()
+            .fold(f.clone(), |acc, (v, value)| acc.replace(*v, value))
+    };
+    for t in 0..candidates as i64 {
+        let point = parameters
+            .iter()
+            .enumerate()
+            .map(|(j, &v)| {
+                let j = j as i64;
+                let value = first
+                    .checked_add(t.checked_mul(j + 1).unwrap_or(i64::MAX / 4))
+                    .and_then(|x| x.checked_add(j))
+                    .ok_or_else(|| anyhow::anyhow!("spot check point overflow"))?;
+                Ok((v, Rational::from(value)))
+            })
+            .collect::<Result<Vec<_>>>()?;
+        if leading.iter().any(|c| specialize(c, &point).is_zero()) {
+            continue;
+        }
+        let left = specialize(p, &point);
+        let right = specialize(q, &point);
+        ensure!(
+            left.degree(variable) == m && right.degree(variable) == n,
+            "spot check specialization lost the formal degree"
+        );
+        let expected = left
+            .to_univariate_from_univariate(variable)
+            .resultant_brown(&right.to_univariate_from_univariate(variable));
+        let value = specialize(result, &point);
+        ensure!(value.is_constant(), "spot check value is not constant");
+        let value = if value.is_zero() {
+            Rational::zero()
+        } else {
+            value.get_constant()
+        };
+        ensure!(
+            value == expected,
+            "independent resultant spot check failed at {:?}",
+            point.iter().map(|(_, v)| v.to_string()).collect::<Vec<_>>()
+        );
+        return Ok(true);
+    }
+    Ok(false)
 }
 
 /// A resource or caller cancellation must propagate, never start a fallback.
@@ -159,33 +265,49 @@ pub fn degree_bound(p: &Poly, q: &Poly, variable: usize, parameter: usize) -> Re
     Ok(usize::try_from(bound.0.min(bound.1))?)
 }
 
-/// Maximum-weight perfect assignment of an n x n matrix whose None entries are
-/// structurally zero. Returns None when every permutation meets such an entry.
-/// Classical O(n^3) Hungarian method with potentials on negated weights.
-fn maximum_assignment(weights: &[Vec<Option<u64>>]) -> Option<u64> {
+/// Result of a certified assignment bound.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum AssignmentBound {
+    Finite(u64),
+    /// No permutation avoids a structurally zero entry: the determinant is
+    /// identically zero.
+    StructurallyZero,
+}
+
+/// Certified maximum-weight assignment of an n x n matrix whose None entries
+/// are structurally zero.
+///
+/// The classical O(n^3) Hungarian method on negated weights only proposes
+/// row/column potentials. By weak LP duality, any U, V with
+/// U_i + V_j >= w_ij on every allowed entry bound the weight of every
+/// permutation avoiding None entries by sum(U) + sum(V). That inequality is
+/// checked here entry by entry, so the returned bound never relies on the
+/// Hungarian implementation. Weights are nonnegative, so a negative certified
+/// bound proves that no allowed permutation exists. Returns None only if the
+/// proposed potentials fail the check (never expected; callers then keep the
+/// closed-form bound).
+fn certified_maximum_assignment(weights: &[Vec<Option<u64>>]) -> Option<AssignmentBound> {
     let n = weights.len();
     if n == 0 {
-        return Some(0);
+        return Some(AssignmentBound::Finite(0));
     }
-    // Entry degrees are at most MAX_DEGREE < 2^31 and n <= 129, so all sums
-    // of finite costs stay far below the forbidden cost and i64 range.
-    const FORBIDDEN: i64 = 1 << 50;
-    let cost = |i: usize, j: usize| -> i64 {
-        weights[i][j].map_or(FORBIDDEN, |w| -(w as i64))
-    };
-    let mut u = vec![0i64; n + 1];
-    let mut v = vec![0i64; n + 1];
+    // Entry degrees are at most MAX_DEGREE < 2^31 and n <= 1024; the forbidden
+    // cost dominates every finite assignment and all sums fit in i128.
+    const FORBIDDEN: i128 = 1 << 60;
+    let cost = |i: usize, j: usize| -> i128 { weights[i][j].map_or(FORBIDDEN, |w| -i128::from(w)) };
+    let mut u = vec![0i128; n + 1];
+    let mut v = vec![0i128; n + 1];
     let mut assigned = vec![0usize; n + 1];
     let mut way = vec![0usize; n + 1];
     for row in 1..=n {
         assigned[0] = row;
         let mut column = 0usize;
-        let mut minimum = vec![i64::MAX; n + 1];
+        let mut minimum = vec![i128::MAX; n + 1];
         let mut used = vec![false; n + 1];
         loop {
             used[column] = true;
             let current = assigned[column];
-            let mut delta = i64::MAX;
+            let mut delta = i128::MAX;
             let mut next = 0usize;
             for j in 1..=n {
                 if !used[j] {
@@ -222,12 +344,23 @@ fn maximum_assignment(weights: &[Vec<Option<u64>>]) -> Option<u64> {
             }
         }
     }
-    let mut total = 0u64;
-    for j in 1..=n {
-        let w = weights[assigned[j] - 1][j - 1]?;
-        total += w;
+    // Independent dual check: U_i = -u_i, V_j = -v_j must dominate every
+    // allowed weight.
+    for i in 1..=n {
+        for j in 1..=n {
+            if let Some(w) = weights[i - 1][j - 1]
+                && -u[i] - v[j] < i128::from(w)
+            {
+                return None;
+            }
+        }
     }
-    Some(total)
+    let bound = -(u[1..].iter().sum::<i128>() + v[1..].iter().sum::<i128>());
+    Some(if bound < 0 {
+        AssignmentBound::StructurallyZero
+    } else {
+        AssignmentBound::Finite(u64::try_from(bound).ok()?)
+    })
 }
 
 /// Degree of every eliminated-axis coefficient in `parameter`, indexed by the
@@ -241,16 +374,22 @@ fn coefficient_degrees(p: &Poly, variable: usize, parameter: usize) -> Vec<Optio
     degrees
 }
 
-/// Exact tropical bound on deg_parameter Res_variable(p,q), from the
+/// Certified tropical bound on deg_parameter Res_variable(p,q), from the
 /// maximum-weight permutation of the Sylvester matrix's entry degrees. Valid in
 /// any variable map: other active variables are simply ignored, so this also
 /// bounds each parameter separately for multivariate segmentation.
+///
+/// The bound is the dual value of checked LP potentials (weak duality), so it
+/// is proved independently of the Hungarian search that proposes them. Some(0)
+/// with a certified structural zero means Res vanishes identically. None means
+/// no certified bound (failed check or above MAX_DEGREE): callers keep the
+/// closed-form bounds.
 pub fn assignment_degree_bound(
     p: &Poly,
     q: &Poly,
     variable: usize,
     parameter: usize,
-) -> Result<usize> {
+) -> Result<Option<usize>> {
     ensure!(
         variable < p.nvars() && parameter < p.nvars() && variable != parameter,
         "invalid resultant axes"
@@ -281,10 +420,13 @@ pub fn assignment_degree_bound(
             matrix[n + row][row + (n - k)] = b[k];
         }
     }
-    Ok(match maximum_assignment(&matrix) {
-        Some(bound) => usize::try_from(bound.min(MAX_DEGREE))?,
+    Ok(match certified_maximum_assignment(&matrix) {
+        Some(AssignmentBound::Finite(bound)) if bound <= MAX_DEGREE => {
+            Some(usize::try_from(bound)?)
+        }
+        Some(AssignmentBound::Finite(_)) | None => None,
         // Every determinant monomial vanishes structurally: Res is zero.
-        None => 0,
+        Some(AssignmentBound::StructurallyZero) => Some(0),
     })
 }
 
@@ -405,7 +547,7 @@ pub fn plan(p: &Poly, q: &Poly, variable: usize, options: &Options) -> Result<Op
     let parameter = parameters[0];
     let closed_form_bound = degree_bound(p, q, variable, parameter)?;
     let assignment = if options.assignment_bound {
-        Some(assignment_degree_bound(p, q, variable, parameter)?)
+        assignment_degree_bound(p, q, variable, parameter)?
     } else {
         None
     };
@@ -416,7 +558,12 @@ pub fn plan(p: &Poly, q: &Poly, variable: usize, options: &Options) -> Result<Op
     let max_skips = u64::from(p.degree(parameter)) + u64::from(q.degree(parameter));
     let attempts = (bound as u64).saturating_add(1).saturating_add(max_skips);
     let image_bit_bound = image_bit_bound(p, q, variable, parameter, attempts.div_ceil(2));
-    let size_admitted = bound > options.unconditional_degree_bound;
+    // The historical envelope is decided by the closed-form bound alone, so
+    // it admits exactly what the fixed-cap rule admitted. Everything else,
+    // including a bound brought under the threshold only by the assignment
+    // bound, needs the a-priori size check and can never hit an image stop.
+    let historical = closed_form_bound <= options.unconditional_degree_bound;
+    let size_admitted = !historical;
     if size_admitted
         && (image_bit_bound > options.max_image_bits
             || image_bit_bound.saturating_mul(bound as u64 + 1) > options.max_total_image_bits)
@@ -476,9 +623,11 @@ pub fn try_resultant(
         interpolation_seconds: 0.0,
         closed_form_bound: plan.closed_form_bound,
         size_admitted: plan.size_admitted,
+        spot_checked: false,
     };
     let started = Instant::now();
     let mut total_bits = 0u64;
+    let mut largest_magnitude = 0i64;
     let left_table = IntegerImage::new(p, variable, parameter);
     let right_table = IntegerImage::new(q, variable, parameter);
     // Res(P/Lp, Q/Lq) = Lp^-n Lq^-m Res(P, Q) for formal degrees m, n.
@@ -486,7 +635,9 @@ pub fn try_resultant(
         / Rational::from(
             left_table.denominator.pow(u64::from(n)) * right_table.denominator.pow(u64::from(m)),
         );
-    let max_power = left_table.parameter_degree.max(right_table.parameter_degree) as usize;
+    let max_power = left_table
+        .parameter_degree
+        .max(right_table.parameter_degree) as usize;
     let x = std::sync::Arc::new(p.variables()[variable].clone());
     for attempt in 0..attempts {
         if points.len() == required {
@@ -530,6 +681,7 @@ pub fn try_resultant(
             return Err(Stopped("exact numeric image storage cap".into()).into());
         }
         stats.maximum_image_bits = stats.maximum_image_bits.max(size);
+        largest_magnitude = largest_magnitude.max(magnitude);
         points.push(point);
         // Symbolica can return a zero image with no variables. Restore the
         // original map before Newton interpolation extends its first image.
@@ -561,5 +713,121 @@ pub fn try_resultant(
         (0..result.nvars()).all(|v| v == parameter || result.degree(v) == 0),
         "interpolated resultant has extra support"
     );
+    // Beyond every sample: an independent route must reproduce the result.
+    stats.spot_checked = spot_check(p, q, variable, largest_magnitude + 1, &result)?;
+    check(&mut callback)?;
     Ok(Some((result, stats)))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{algebra::Algebra, projection::exact_resultant_ducos};
+
+    #[test]
+    fn spot_check_accepts_exact_results_and_rejects_altered_ones() {
+        let a = Algebra::new(&["s".into(), "x".into(), "t".into()]).unwrap();
+        for (p, q) in [
+            ("(2/3)*s*x^3+x^2/5+s^2*x+1", "(s+1)*x^2/7-s*x+3"),
+            ("x^4+s*t*x^2+t", "(s-t)*x^3+x+s^2"),
+        ] {
+            let p = a.parse(p).unwrap();
+            let q = a.parse(q).unwrap();
+            let r = exact_resultant_ducos(&p, &q, 1).unwrap();
+            assert!(spot_check(&p, &q, 1, 3, &r).unwrap());
+            assert!(
+                spot_check(&q, &p, 1, 3, &r).is_ok_and(|checked| checked)
+                    == (p.degree(1) * q.degree(1) % 2 == 0)
+            );
+            assert!(spot_check(&p, &q, 1, 3, &-r.clone()).is_err());
+            assert!(spot_check(&p, &q, 1, 3, &r.clone().mul_coeff(Rational::from(2))).is_err());
+            let shifted = &r + &a.parse("s+t+1").unwrap();
+            assert!(spot_check(&p, &q, 1, 3, &shifted).is_err());
+        }
+        // A shared factor: the zero result is confirmed through Brown.
+        let p = a.parse("(x^2+s)*(x+1)").unwrap();
+        let q = a.parse("(x^2+s)*(x-s)").unwrap();
+        assert!(spot_check(&p, &q, 1, 3, &p.zero()).unwrap());
+        assert!(spot_check(&p, &q, 1, 3, &p.one()).is_err());
+        // Linear operands use the explicit identity elsewhere.
+        let linear = a.parse("x+s").unwrap();
+        assert!(!spot_check(&p, &linear, 1, 3, &p.zero()).unwrap());
+        // Leading coefficients vanishing at the first candidates are skipped.
+        let p = a.parse("(s-3)*(s-4)*x^2+x+1").unwrap();
+        let q = a.parse("x^2+s").unwrap();
+        let r = exact_resultant_ducos(&p, &q, 1).unwrap();
+        assert!(spot_check(&p, &q, 1, 3, &r).unwrap());
+        assert!(spot_check(&p, &q, 1, 3, &(&r + &a.parse("(s-3)*(s-4)").unwrap())).is_err());
+        // Extra support is refused outright.
+        assert!(spot_check(&p, &q, 1, 3, &a.parse("t").unwrap()).is_err());
+    }
+
+    /// Brute-force maximum over permutations avoiding None entries.
+    fn brute_force(weights: &[Vec<Option<u64>>]) -> Option<u64> {
+        fn walk(
+            row: usize,
+            used: &mut [bool],
+            weights: &[Vec<Option<u64>>],
+            sum: u64,
+            best: &mut Option<u64>,
+        ) {
+            if row == weights.len() {
+                *best = Some(best.map_or(sum, |b| b.max(sum)));
+                return;
+            }
+            for column in 0..weights.len() {
+                if !used[column]
+                    && let Some(w) = weights[row][column]
+                {
+                    used[column] = true;
+                    walk(row + 1, used, weights, sum + w, best);
+                    used[column] = false;
+                }
+            }
+        }
+        let mut best = None;
+        walk(0, &mut vec![false; weights.len()], weights, 0, &mut best);
+        best
+    }
+
+    #[test]
+    fn certified_assignment_matches_brute_force_and_certifies_structural_zeros() {
+        let mut state = 0x2545_f491_4f6c_dd1du64;
+        let mut next = move |bound: u64| {
+            state ^= state << 13;
+            state ^= state >> 7;
+            state ^= state << 17;
+            state % bound
+        };
+        let (mut finite, mut zero) = (0, 0);
+        for _ in 0..4000 {
+            let n = 1 + next(7) as usize;
+            let holes = next(5);
+            let weights = (0..n)
+                .map(|_| {
+                    (0..n)
+                        .map(|_| (next(8) >= holes).then(|| next(40)))
+                        .collect::<Vec<_>>()
+                })
+                .collect::<Vec<_>>();
+            let certified = certified_maximum_assignment(&weights).expect("dual check");
+            match brute_force(&weights) {
+                Some(best) => {
+                    assert_eq!(certified, AssignmentBound::Finite(best), "{weights:?}");
+                    finite += 1;
+                }
+                None => {
+                    assert_eq!(certified, AssignmentBound::StructurallyZero, "{weights:?}");
+                    zero += 1;
+                }
+            }
+        }
+        assert!(finite > 1000 && zero > 100, "{finite} {zero}");
+        // Public bound: x divides both operands, so Sylvester's last column is
+        // structurally zero and the certified bound is Some(0).
+        let a = Algebra::new(&["s".into(), "x".into()]).unwrap();
+        let p = a.parse("x^3+s*x").unwrap();
+        let q = a.parse("x^2+s^5*x").unwrap();
+        assert_eq!(assignment_degree_bound(&p, &q, 1, 0).unwrap(), Some(0));
+    }
 }

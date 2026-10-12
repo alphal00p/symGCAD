@@ -482,13 +482,9 @@ pub fn prepare_projection(
     Option<OptimizedProjectionReport>,
 )> {
     if problem.solver.engine == "optimized" {
-        // Identical to the solve path: one cache for ordering and projection,
-        // with the same certified-projection call and cache fingerprint.
-        let (selected, normalized, projection, report, _, _) = prepare_optimized(problem)?;
-        ensure!(
-            selected == order,
-            "optimized projection order differs from the selected order"
-        );
+        // The solve path's cache, certified-projection call and fingerprint,
+        // in the caller's order (for the selected order: solve's projection).
+        let (_, normalized, projection, report, _, _) = project_optimized(problem, Some(order))?;
         return Ok((normalized, projection, Some(report)));
     }
     let normalized = normalize(problem, order)?;
@@ -611,11 +607,42 @@ fn prepare_optimized(
     f64,
     f64,
 )> {
+    project_optimized(problem, None)
+}
+
+/// The optimized engine's projection: one cache, certified-projection call and
+/// cache fingerprint, exactly as `solve`. `order = None` selects the order as
+/// `solve` does; an explicit order skips selection and projects in it.
+fn project_optimized(
+    problem: &Problem,
+    order: Option<&[String]>,
+) -> Result<(
+    Vec<String>,
+    NormalizedProblem,
+    Projection,
+    OptimizedProjectionReport,
+    f64,
+    f64,
+)> {
     let started = Instant::now();
     let original = normalize(problem, &problem.variables)?;
     let options = projection_options(problem)?;
     let mut cache = ProjectionCache::new(&original.algebra, &options);
-    let indices = select_cached(problem, &original, &mut cache)?;
+    let indices = match order {
+        None => select_cached(problem, &original, &mut cache)?,
+        Some(order) => order
+            .iter()
+            .map(|name| {
+                problem
+                    .variables
+                    .iter()
+                    .position(|n| n == name)
+                    .ok_or_else(|| {
+                        anyhow::anyhow!("projection order names unknown variable {name}")
+                    })
+            })
+            .collect::<Result<Vec<_>>>()?,
+    };
     let order = indices
         .iter()
         .map(|&i| problem.variables[i].clone())

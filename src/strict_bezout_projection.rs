@@ -26,10 +26,8 @@
 //! discovers a certificate; the verifier replays the identity and the
 //! certificate independently and checks pair membership at that level.
 use crate::{
-    algebra::{Algebra, Poly, canonical, rational},
-    domain::{
-        CertificateOptions, Domain, DomainCertificate, certify_nonzero, verify_certificate,
-    },
+    algebra::{Algebra, ExpansionCaps, Poly, canonical, rational},
+    domain::{CertificateOptions, Domain, DomainCertificate, certify_nonzero, verify_certificate},
 };
 use anyhow::{Result, anyhow, ensure};
 use serde::{Deserialize, Serialize};
@@ -38,6 +36,12 @@ use symbolica::{domains::InternalOrdering, prelude::*};
 pub const MAX_HINTS: usize = 128;
 const MAX_EXPRESSION: usize = 64 * 1024;
 const MAX_PRODUCTS: usize = 65_536;
+const MAX_HINT_DEGREE: u64 = 64;
+const HINT_CAPS: ExpansionCaps = ExpansionCaps {
+    max_terms: 16_384,
+    max_degree: MAX_HINT_DEGREE,
+    max_coefficient_bits: 65_536,
+};
 
 /// A proposed identity p*L + q*M = k*S. Exactly one of `square` (S = square^2)
 /// or `positive` (S itself) is given. Field names match the local engine's
@@ -87,11 +91,31 @@ pub(crate) fn is_coordinate_affine(polynomial: &Poly) -> bool {
 fn bounded(p: &Poly) -> bool {
     p.nterms() <= 4096
         && p.exponents_iter()
-            .all(|powers| powers.iter().map(|&e| u64::from(e)).sum::<u64>() <= 64)
+            .all(|powers| powers.iter().map(|&e| u64::from(e)).sum::<u64>() <= MAX_HINT_DEGREE)
         && p.coefficients.iter().all(|c| {
             c.numerator_ref().significant_bits() <= 4096
                 && c.denominator_ref().significant_bits() <= 4096
         })
+}
+
+/// The multiplier k as a plain signed decimal rational literal: Symbolica's
+/// parser would evaluate an expression such as `7^(3^20)` before any cap.
+/// 1,240 digits exceed the 4,096-bit height cap checked afterwards.
+fn rational_literal(text: &str) -> Result<Rational> {
+    let unsigned = text
+        .strip_prefix('-')
+        .or_else(|| text.strip_prefix('+'))
+        .unwrap_or(text);
+    let mut parts = unsigned.split('/');
+    let numerator = parts.next().unwrap_or("");
+    let denominator = parts.next();
+    let digits =
+        |s: &str| !s.is_empty() && s.len() <= 1240 && s.bytes().all(|b| b.is_ascii_digit());
+    ensure!(
+        digits(numerator) && denominator.is_none_or(digits) && parts.next().is_none(),
+        "strict-Bezout multiplier must be a decimal rational literal"
+    );
+    rational(text)
 }
 
 /// Exact identity check without any discovery. Returns the canonical pair,
@@ -114,8 +138,10 @@ fn identity(algebra: &Algebra, hint: &ProjectionBezoutHint) -> Result<([Poly; 2]
             .all(|text| !text.is_empty() && text.len() <= MAX_EXPRESSION),
         "strict-Bezout expression byte cap"
     );
+    // Hints and replayed evidence are untrusted text: bound the expansion
+    // before Symbolica performs it, then apply the polynomial caps.
     let parse = |text: &str| -> Result<Poly> {
-        let p = algebra.parse(text)?;
+        let p = algebra.parse_with_expansion_caps(text, HINT_CAPS)?;
         ensure!(bounded(&p), "strict-Bezout polynomial resource cap");
         Ok(p)
     };
@@ -124,7 +150,7 @@ fn identity(algebra: &Algebra, hint: &ProjectionBezoutHint) -> Result<([Poly; 2]
     let l = parse(&hint.multipliers[0])?;
     let m = parse(&hint.multipliers[1])?;
     let kernel = parse(kernel)?;
-    let k = rational(&hint.multiplier)?;
+    let k = rational_literal(&hint.multiplier)?;
     ensure!(
         k > Rational::zero()
             && k.numerator_ref().significant_bits() <= 4096
@@ -269,7 +295,13 @@ mod tests {
         positive.positive = Some("x^2+2*x*y+y^2".into());
         let prepared = prepare(&algebra, &domain, &options, &positive).unwrap();
         assert_eq!(prepared.certificate.sign, 1);
-        verify(&algebra, &constraints, &[], &prepared.evidence(&algebra, 0, 1)).unwrap();
+        verify(
+            &algebra,
+            &constraints,
+            &[],
+            &prepared.evidence(&algebra, 0, 1),
+        )
+        .unwrap();
         // Negative S is certified nonzero but not positive; k must be > 0.
         let mut negative = positive.clone();
         negative.positive = Some("-x^2-2*x*y-y^2".into());

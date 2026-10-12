@@ -155,6 +155,10 @@ pub struct OptimizedProjectionReport {
     pub pair_omission_hints_accepted: usize,
     #[serde(default, skip_serializing_if = "is_zero")]
     pub pair_omission_hints_rejected: usize,
+    /// Hint identity checks performed (each proposal is proved once per
+    /// distinct configuration, however often projection is configured).
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub pair_omission_hint_checks: usize,
     /// At most eight rejection reasons, for diagnostics only.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub pair_omission_rejections: Vec<String>,
@@ -411,6 +415,8 @@ pub struct ProjectionCache<'a> {
     pair_omission_index: HashMap<(Poly, Poly), usize>,
     /// Part of every prefix key once identities are configured.
     pair_omission_fingerprint: Option<String>,
+    /// Digest of the last configured proposals, domain and certificate options.
+    pair_omission_request: Option<String>,
     pub report: OptimizedProjectionReport,
 }
 
@@ -426,6 +432,7 @@ impl<'a> ProjectionCache<'a> {
             pair_omissions: Vec::new(),
             pair_omission_index: HashMap::new(),
             pair_omission_fingerprint: None,
+            pair_omission_request: None,
             report: OptimizedProjectionReport {
                 // newton-v2: exact integer images, Sylvester assignment degree
                 // bound and size-derived admission above degree 1024.
@@ -1248,14 +1255,26 @@ impl<'a> ProjectionCache<'a> {
     }
 
     /// Check and certify proposed strict-Bezout identities on the original
-    /// coordinate box. Rejected proposals are counted, never assumed. Calling
-    /// again with the same accepted set is a no-op.
+    /// coordinate box. Rejected proposals are counted, never assumed.
+    /// Identical proposals on the identical domain and certificate options are
+    /// not re-proved (ordering exploration and the final projection call this
+    /// repeatedly). An empty list clears any earlier configuration, so a reused
+    /// cache never keeps omissions its caller no longer supplies.
     pub fn configure_pair_omissions(
         &mut self,
         original_constraints: &[Poly],
         pruning: &DomainPruningOptions,
     ) -> Result<()> {
         if pruning.strict_bezout_hints.is_empty() {
+            if self.pair_omission_request.is_some() || !self.pair_omissions.is_empty() {
+                self.pair_omissions.clear();
+                self.pair_omission_index.clear();
+                self.pair_omission_fingerprint = None;
+                self.pair_omission_request = None;
+                self.report.pair_omission_hints_accepted = 0;
+                self.report.pair_omission_hints_rejected = 0;
+                self.report.pair_omission_rejections.clear();
+            }
             return Ok(());
         }
         let domain = derive_domain(
@@ -1263,6 +1282,16 @@ impl<'a> ProjectionCache<'a> {
             original_constraints,
             &pruning.excluded_sign_constraints,
         )?;
+        let request = digest(&(
+            "strict-bezout-pair-omission-request-v1",
+            &self.algebra.names,
+            &pruning.strict_bezout_hints,
+            &domain,
+            &pruning.certificates,
+        ))?;
+        if self.pair_omission_request.as_ref() == Some(&request) {
+            return Ok(());
+        }
         let mut prepared = Vec::new();
         let mut rejections = Vec::new();
         let mut rejected = 0usize;
@@ -1271,6 +1300,7 @@ impl<'a> ProjectionCache<'a> {
             rejections.push("strict-Bezout hint inventory cap".to_string());
         } else {
             for hint in &pruning.strict_bezout_hints {
+                self.report.pair_omission_hint_checks += 1;
                 match strict_bezout_projection::prepare(
                     self.algebra,
                     &domain,
@@ -1300,9 +1330,6 @@ impl<'a> ProjectionCache<'a> {
                 .collect::<Vec<_>>(),
             &domain,
         ))?;
-        if self.pair_omission_fingerprint.as_ref() == Some(&fingerprint) {
-            return Ok(());
-        }
         self.pair_omission_index.clear();
         for (index, p) in prepared.iter().enumerate() {
             self.pair_omission_index
@@ -1314,6 +1341,7 @@ impl<'a> ProjectionCache<'a> {
         self.report.pair_omission_rejections = rejections;
         self.pair_omissions = prepared;
         self.pair_omission_fingerprint = (!self.pair_omissions.is_empty()).then_some(fingerprint);
+        self.pair_omission_request = Some(request);
         Ok(())
     }
 
