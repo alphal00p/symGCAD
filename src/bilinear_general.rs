@@ -1281,6 +1281,7 @@ fn piece_problem(
     base.solver.bilinear_positive_guide = None;
     base.solver.negative_linear_guide = None;
     base.solver.local_strict_bezout_hints.clear();
+    base.solver.projection_strict_bezout_hints.clear();
     base.solver.merge = "none".into();
     match &problem.solver.bilinear_general_base_anchor {
         Some(anchor) => {

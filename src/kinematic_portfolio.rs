@@ -445,6 +445,7 @@ fn projection_problem(problem: &Problem) -> Result<Problem> {
         ![
             "quadratic_ladder",
             "bilinear_positive",
+            "bilinear_general",
             "linear_negative",
             "local"
         ]

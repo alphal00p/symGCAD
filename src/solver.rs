@@ -506,7 +506,12 @@ pub fn uses_homogeneous_reduction(problem: &Problem) -> bool {
         return false;
     }
     match problem.solver.engine.as_str() {
-        "quadratic_ladder" | "bilinear_positive" | "linear_negative" => false,
+        // bilinear_general refuses an outer anchor (it takes
+        // bilinear_general_base_anchor inside its pieces), so it must reach
+        // its own dispatch, as before the reduction was hoisted.
+        "quadratic_ladder" | "bilinear_positive" | "bilinear_general" | "linear_negative" => {
+            false
+        }
         "monotone" if problem.split.is_empty() => problem.solver.monotone_negative_target,
         _ => true,
     }
