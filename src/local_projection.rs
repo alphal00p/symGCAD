@@ -3291,10 +3291,10 @@ pub fn solve_local(problem: &Problem, options: &LocalOptions) -> Result<LocalSol
         base_retained_bits: 0,
         thrash: thrash_diag::ThrashDiag::enabled().then(thrash_diag::ThrashDiag::default),
         // About 5 KiB of resident memory per retained proof node was measured
-        // (6.45 GB for 1,048,576 nodes); 8 KiB keeps retained siblings near a
-        // quarter of the process memory limit.
+        // (6.45 GB for 1,048,576 nodes, including all other caches). At 4 KiB
+        // per node, retained siblings stay below about a third of the limit.
         retention_budget: sibling_pool::RetentionBudget::new(
-            (problem.limits.memory_mib as usize).saturating_mul(1024 * 1024 / 4 / 8192),
+            (problem.limits.memory_mib as usize).saturating_mul(1024 * 1024 / 4 / 4096),
         ),
     };
     builder.report.active_phase = "input_factorization".into();
