@@ -181,8 +181,8 @@ The benchmark runner first freezes reference-completing cases and their orders, 
 
 ## Library certificate budgets
 
-`domain::CertificateOptions` lets a caller raise `work_limit` to 16,000,000,000
-and `bernstein_coefficients` to 1,048,576 for larger exact nonvanishing proofs.
+`domain::CertificateOptions` lets a caller raise `work_limit` to 64,000,000,000
+and `bernstein_coefficients` to 2,097,152 for larger exact nonvanishing proofs.
 Defaults remain 1,000,000 work units and 4,096 coefficients. Other portfolio,
 polynomial, depth and node limits are unchanged; solver defaults are unchanged.
 These are explicit finite allowances, not guarantees that a proof will finish.

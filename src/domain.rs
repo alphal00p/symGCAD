@@ -109,10 +109,10 @@ pub struct CertificateOptions {
     pub polya_order: u32,
     pub bernstein_depth: usize,
     pub bernstein_nodes: usize,
-    /// Caller-selected tensor size, up to 1048576 coefficients. Defaults stay
+    /// Caller-selected tensor size, up to 2097152 coefficients. Defaults stay
     /// small; larger proofs also need caller-owned wall-time and memory caps.
     pub bernstein_coefficients: usize,
-    /// Caller-selected exact arithmetic allowance, up to sixteen billion units.
+    /// Caller-selected exact arithmetic allowance, up to sixty-four billion units.
     /// The allowance is recorded in the certificate and enforced on replay.
     pub work_limit: usize,
     /// Zero disables this independent portfolio member for ablations.
@@ -193,12 +193,12 @@ impl CertificateOptions {
             "Bernstein subdivision is capped at depth eight and 511 nodes"
         );
         ensure!(
-            self.bernstein_coefficients > 0 && self.bernstein_coefficients <= 1_048_576,
-            "Bernstein coefficient budget must be in 1..=1048576"
+            self.bernstein_coefficients > 0 && self.bernstein_coefficients <= 2_097_152,
+            "Bernstein coefficient budget must be in 1..=2097152"
         );
         ensure!(
-            self.work_limit > 0 && (self.work_limit as u128) <= 16_000_000_000,
-            "certificate arithmetic budget must be in 1..=16000000000"
+            self.work_limit > 0 && (self.work_limit as u128) <= 64_000_000_000,
+            "certificate arithmetic budget must be in 1..=64000000000"
         );
         Ok(())
     }
