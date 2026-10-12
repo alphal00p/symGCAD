@@ -29,7 +29,15 @@ would therefore be essential before considering a production path.
 `src/resultant_segmentation.rs` implements this exact method with bounded
 preflight before denominator clearing and integer encoding. Set
 `solver.binary_resultants = true` to try it for pair resultants in optimized
-or local projection. The default is false. Pair limits admit exactly two
+or local projection. The default is false.
+
+> **Superseded 2026-10-12:** `binary_resultants` now defaults to **true**
+> (`src/config.rs`); `binary_resultants = false` opts out. The measurements
+> behind the change are in
+> [ALGEBRA_KERNELS_2026_10_12.md](ALGEBRA_KERNELS_2026_10_12.md). The text
+> below describes the method and its limits, which are unchanged.
+
+Pair limits admit exactly two
 surviving active parameters, elimination-degree product at least 60,
 elimination degrees at most 64, at most 8,192
 combined input terms, 65,536 output digits, and 256 million encoded output bits.

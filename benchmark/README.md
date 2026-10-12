@@ -29,11 +29,11 @@
 | --- | --- |
 | `build_report.py` | Builds `report-data.json` from the runs below (stdlib Python ≥ 3.11). |
 | `report-data.json` | Generated table data with per-row provenance (binary sha256, input sha256, cache policy, date, record path) and a `sources` map of every file read with its sha256. |
-| `run_final.sh` | One command: cold symGCAD runs, opt-in projective rows, `report-data.json`, PDF. |
+| `run_final.sh` | One command: cold symGCAD runs (3 repeats by default), opt-in projective rows, `report-data.json`, PDF. |
 | `campaign/groups.json` | Manifest: the 331 groups, aliases, original corpus inputs (+sha256), sign cases, native ordering policy, symGCAD recipe and the 2026-10-10 measurement. |
 | `campaign/symgcad_inputs/` | The symGCAD recipe of every group (engine, ordering, options, limits). |
 | `campaign/projective/` | Opt-in recipes for positive Gluza33 (group 302) and positive Gluza30 (group 298). |
-| `campaign/symgcad_runner.py` | Cold runner: fresh checkpoint directory and `TMPDIR` per run, one pinned CPU, `prlimit`, GNU `time`, solve then independent verify; resumable `records.jsonl`. |
+| `campaign/symgcad_runner.py` | Cold runner: fresh run directory and `TMPDIR` per run, no persistent checkpoints (a fresh `checkpoint_dir` only for MCTS searches, where the solver would otherwise use the shared one), one pinned CPU, `prlimit`, GNU `time`, solve then independent verify; each group runs and is timed in its own worker process pinned to its CPU; every `result.json` is kept; resumable `records.jsonl`. |
 | `campaign/native_runner.py` | Native GCAD runner: sign expansion as in `src/benchmark.rs`, unmodified `.reference/gcad` through `reference/adapter.py`, 300 s / 8 GiB per case. |
 | `campaign/build_manifest.py`, `campaign/symgcad_summarize.py` | How `groups.json` was built; per-group summary of runner output. |
 | `FLINT_vs_symbolica/` | Reproducible Symbolica-vs-FLINT kernel campaign (harness, operands, `results/summary.json` and `results/table.typ` read by the report); see its README. |
@@ -60,24 +60,29 @@ sha256 and run directory on the title page and in `report-data.json`).
 This runs, in order:
 
 1. all 303 groups verified in the 2026-10-10 audit, cold, `--timeout 600` s each, into
-   `artifacts/bench-report/symgcad-<sha12>/symgcad/` (about 7 minutes at parallel 2, a few minutes
-   at parallel 6); add `--attempt-unresolved 300` to also give the 28 unresolved groups a cold
+   `artifacts/bench-report/symgcad-<sha12>/symgcad/`, repeated `--repeats N` times (default 3;
+   repeat k > 1 into `symgcad-k/`; about 7 minutes per repeat at parallel 2, 2.5 minutes at
+   parallel 6; about 6.5 GiB of results per repeat); add `--attempt-unresolved 300` to also give the 28 unresolved groups a cold
    300 s attempt (about 70 minutes; not done for the published report, whose unresolved rows show
    the recorded one-hour attempts with their cache tags);
-2. the two opt-in projective rows into `.../projective/`;
+2. after each strict repeat, the two opt-in projective rows into `.../projective/` (`projective-k/`);
 3. `build_report.py` → `benchmark/report-data.json`;
 4. `typst compile benchmark/benchmark.typ benchmark/benchmark.pdf` (Typst from `flake.lock`, 0.15.1).
 
 Every stage is resumable (records are keyed by binary sha256). `--skip-runs` only rebuilds the
 data and the PDF; `--out DIR` chooses the run directory; `--native DIR` points to the native run.
 The title page lists every reason the report is still a draft (groups without a cold run, mixed
-binaries, native run incomplete, no FLINT results, opt-in rows not run); a final report has none.
+binaries, native run incomplete, no FLINT results, opt-in rows not run, machine-local evidence
+missing when `report-data.json` was built, or FLINT results that no longer match the snapshot the
+Section 3 text describes); a final report has none. `build_report.py` defaults `--unresolved`
+and `--projective-evidence` to paths on this host; on another machine pass them explicitly, or the
+build warns and the PDF is marked as a draft instead of silently dropping those rows' evidence.
 
 Direct use of the builder:
 
 ```sh
 nix develop .#reference --command python3 -I benchmark/build_report.py \
-    --symgcad RUN/symgcad [MORE_RUN_DIRS...] --projective RUN/projective \
+    --symgcad RUN/symgcad RUN/symgcad-2 RUN/symgcad-3 --projective RUN/projective RUN/projective-2 RUN/projective-3 \
     --native /common/dev/gcad/artifacts/research/claude-2026-10-12/bench/native_300s_run \
     [--unresolved DIR] [--flint-dir DIR] --output benchmark/report-data.json
 nix develop --command typst compile benchmark/benchmark.typ benchmark/benchmark.pdf
@@ -122,15 +127,23 @@ re-run `run_final.sh ... --skip-runs`.
 
 * **verified**: a `complete_generic` result accepted by `symgcad verify` in a separate fresh process;
   only these count. Strict default contract unless the row is in the opt-in table.
-* **solve s / verify s**: process wall seconds, one pinned CPU, cold caches; solve includes in-run
-  ordering search, preprocessing and export.
+* **solve s / verify s**: process wall seconds, one pinned CPU, cold caches; solve includes process
+  start-up, in-run ordering search, preprocessing and the export of `result.json`. Measured with
+  `perf_counter` around the wrapper chain by a worker process of its own per group, pinned to that
+  group's CPU (GNU `time`'s 10 ms elapsed is kept as `gnu_elapsed_secs`); the table shows the
+  median of the repeats, and a row counts as verified only if every repeat verified the same cell
+  count (`rows[].symgcad.solve_s_runs` lists each repeat). On the smallest problems most of the
+  time is start-up and export, and the export's file copy on the shared ZFS file system can wait
+  for a file-system sync (up to about 0.5 s with 0.01 s of CPU); the repeats damp this.
 * **native s**: sum over sign cases of the native process wall time (Python start-up, SymPy parsing,
-  native ordering, projection, lifting); `report-data.json` also has the internal time
+  native ordering, projection, lifting), taken from GNU `time`'s elapsed time in each case's
+  `time.txt` (10 ms resolution; the native runner's own `wall_secs` polls every 0.2 s and is kept
+  as `native_runner_wall_s`); `report-data.json` also has the internal time
   (`rows[].native.internal_s`).
 * **ratio**: symGCAD solve / native time, only where both complete; the summary gives geometric
   means overall and for groups where native needs ≥ 1 s or ≥ 10 s of internal time.
-* **cache**: `cold` = measured by the report run (fresh process, fresh checkpoint directory and
-  `TMPDIR`); every verified row is cold. Unresolved rows were not re-attempted and carry the tag of
+* **cache**: `cold` = measured by the report run (fresh process, fresh run directory and `TMPDIR`,
+  no persistent checkpoints); every verified row is cold. Unresolved rows were not re-attempted and carry the tag of
   the attempt shown.
 * **unresolved rows**: the solve column is the longest attempt (lower bound): 2026-10-10 audit (h,
   `hist.`), 2026-10-12 one-hour attempt with a warm shared cache (w, `warm`), or a cold attempt of

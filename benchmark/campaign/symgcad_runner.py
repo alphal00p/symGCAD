@@ -9,24 +9,34 @@ Usage (normally via run_symgcad.sh, which sources the license env):
 
 Per group (one fresh process each, cold caches):
   * input.toml = the recipe verbatim, except [limits].wall_time_secs := timeout
-    (and memory_mib := --memory-mib when given) and a fresh per-run
-    [solver].checkpoint_dir = <run>/checkpoints (otherwise MCTS recipes would
-    use the shared ./artifacts/checkpoints persistent cache);
+    (and memory_mib := --memory-mib when given); only an MCTS search without a
+    fixed order (the one case where the solver itself switches persistent
+    checkpoints on, defaulting to the shared ./artifacts/checkpoints) gets a
+    fresh per-run [solver].checkpoint_dir = <run>/checkpoints.  Every other
+    recipe runs as written, without persistent checkpoint writes inside the
+    timed solve (item K2 is opt-in);
   * GNU time -v -> taskset -c CPU -> prlimit --as (memory + 2 GiB backstop for
     the supervising parent; the solver itself enforces memory_mib on its
     worker) -> timeout -k 10 T -> BIN solve input.toml --output result.json;
     cwd = run dir, TMPDIR = run dir/tmp;
   * if status complete_generic: same pinning, BIN verify result.json;
-  * record: status, wall (runner perf_counter), user/sys CPU and max RSS of the
-    process tree (GNU time), verified cell count, raw_cells, chosen order,
-    internal statistics (ordering/search/projection/lifting seconds), hashes.
+  * the whole group (timing, result parsing, hashing, clean-up) runs in its own
+    Python worker process pinned to the group's CPU, so parsing a large result
+    of one group can never delay the clock of another (the GIL is per process);
+  * record: status, wall (perf_counter in that worker, around the wrapper
+    chain; GNU time's own 10 ms elapsed is kept as gnu_elapsed_secs), user/sys
+    CPU and max RSS of the process tree (GNU time), verified cell count,
+    raw_cells, chosen order, internal statistics (ordering/search/projection/
+    lifting seconds), hashes.
 Resumable: groups with a record in <out>/records.jsonl for the same binary
 sha256 are skipped.  Parallelism re-read from <out>/parallel.txt if present.
 """
 import argparse
+import concurrent.futures
 import datetime
 import hashlib
 import json
+import multiprocessing
 import os
 import pathlib
 import re
@@ -68,6 +78,11 @@ def parse_time(path):
                 info["system_cpu_secs"] = float(line.split(":")[-1])
             elif line.startswith("Maximum resident set size (kbytes):"):
                 info["peak_rss_kib"] = int(line.split(":")[-1])
+            elif line.startswith("Elapsed (wall clock) time"):
+                seconds = 0.0
+                for part in line.rsplit(" ", 1)[1].split(":"):
+                    seconds = 60 * seconds + float(part)
+                info["gnu_elapsed_secs"] = seconds
             elif line.startswith("Exit status:"):
                 info["exit_status"] = int(line.split(":")[-1])
             elif line.startswith("Command terminated by signal"):
@@ -77,14 +92,25 @@ def parse_time(path):
     return info
 
 
+def solver_enables_checkpoints(solver):
+    """Mirror of src/main.rs: `solve` switches persistent checkpoints on by itself only for an
+    MCTS search without a fixed order (enable_search_checkpoints, default ./artifacts/checkpoints)."""
+    return solver.get("ordering") == "mcts" and not solver.get("order")
+
+
 def prepare_input(recipe_text, run_dir, timeout, memory_mib):
     text = recipe_text
     if re.search(r'^checkpoint_dir\s*=', text, re.M):
         raise ValueError("recipe already sets checkpoint_dir")
     ckpt = run_dir / "checkpoints"
-    text, n = re.subn(r'^\[solver\]\n', f'[solver]\ncheckpoint_dir = "{ckpt}"\n', text, count=1, flags=re.M)
-    if n != 1:
-        text = text.rstrip("\n") + f'\n\n[solver]\ncheckpoint_dir = "{ckpt}"\n'
+    # Only where the solver would otherwise write to the shared ./artifacts/checkpoints: a fresh
+    # per-run directory keeps that run cold.  Other recipes keep the default (no persistent
+    # checkpoints), so no checkpoint I/O is timed that a default solve would not do.
+    use_ckpt = solver_enables_checkpoints(tomllib.loads(recipe_text).get("solver", {}))
+    if use_ckpt:
+        text, n = re.subn(r'^\[solver\]\n', f'[solver]\ncheckpoint_dir = "{ckpt}"\n', text, count=1, flags=re.M)
+        if n != 1:
+            text = text.rstrip("\n") + f'\n\n[solver]\ncheckpoint_dir = "{ckpt}"\n'
     m = re.search(r'^\[limits\]\n((?:(?!\[).*\n?)*)', text, re.M)
     limits = tomllib.loads(m.group(0)) ["limits"] if m else {}
     limits["wall_time_secs"] = float(timeout)
@@ -96,8 +122,8 @@ def prepare_input(recipe_text, run_dir, timeout, memory_mib):
         f"{k} = {json.dumps(v) if not isinstance(v, float) else repr(v)}\n" for k, v in limits.items())
     text = (text[:m.start()] + block + text[m.end():]) if m else text.rstrip("\n") + "\n\n" + block
     parsed = tomllib.loads(text)  # must stay valid
-    assert parsed["solver"]["checkpoint_dir"] == str(ckpt)
-    return text, parsed["limits"]
+    assert parsed.get("solver", {}).get("checkpoint_dir") == (str(ckpt) if use_ckpt else None)
+    return text, parsed["limits"], use_ckpt
 
 
 def summarize_result(path):
@@ -157,7 +183,10 @@ def summarize_result(path):
 
 
 def run_one(entry, args, cpu, out_dir, binary_sha):
-    gid = f"{entry['index']:03d}"
+    """One group, executed in its own worker process (see main), pinned to the group's CPU: the
+    result parsing after the timed solve runs on that CPU between solve and verify, never on a
+    CPU where another group is being timed."""
+    os.sched_setaffinity(0, {cpu})
     run_dir = out_dir / "runs" / pathlib.Path(entry["recipe"]["file"]).stem
     if run_dir.exists():
         shutil.rmtree(run_dir)
@@ -165,7 +194,7 @@ def run_one(entry, args, cpu, out_dir, binary_sha):
     recipe_path = pathlib.Path(entry.get("_override") or (BENCH / entry["recipe"]["file"]))
     unresolved = entry["status_in_data_json"] == "unresolved"
     timeout = args.timeout_unresolved if unresolved else args.timeout
-    text, limits = prepare_input(recipe_path.read_text(), run_dir, timeout, args.memory_mib)
+    text, limits, use_ckpt = prepare_input(recipe_path.read_text(), run_dir, timeout, args.memory_mib)
     (run_dir / "input.toml").write_text(text)
     backstop = (int(limits["memory_mib"]) + 2048) * 1024 * 1024
     env = dict(os.environ, TMPDIR=str(run_dir / "tmp"), OPENBLAS_NUM_THREADS="1", OMP_NUM_THREADS="1",
@@ -194,7 +223,10 @@ def run_one(entry, args, cpu, out_dir, binary_sha):
                engine=entry["recipe"]["engine"], ordering=entry["recipe"]["ordering"],
                recipe_order=entry["recipe"]["order"], anchor=entry["recipe"]["homogeneous_anchor"],
                cpu=cpu, solve_timeout_secs=timeout, memory_mib=limits["memory_mib"],
-               cache_policy="cold: fresh per-run checkpoint_dir, fresh TMPDIR",
+               cache_policy=("cold: fresh run directory and TMPDIR; fresh per-run checkpoint_dir for the MCTS search"
+                             if use_ckpt else
+                             "cold: fresh run directory and TMPDIR; no persistent checkpoints (default)"),
+               checkpoint_dir_set=use_ckpt, timing="perf_counter in a per-group worker process pinned to the CPU",
                binary=str(args.binary), binary_sha256=binary_sha, started=now(),
                load_before=pathlib.Path("/proc/loadavg").read_text().split()[:3],
                run_dir=str(run_dir.relative_to(out_dir)))
@@ -254,7 +286,9 @@ def main():
     ap.add_argument("--timeout-unresolved", type=float)
     ap.add_argument("--verify-timeout", type=float)
     ap.add_argument("--memory-mib", type=int)
-    ap.add_argument("--keep-results", choices=["small", "all", "none"], default="small")
+    ap.add_argument("--keep-results", choices=["small", "all", "none"], default="all",
+                    help="all (default): keep every result.json so each proof can be re-verified later; "
+                         "small: delete results over 64 MiB after hashing them")
     ap.add_argument("--recipe-override", action="append", default=[], metavar="ID_OR_INDEX=TOML",
                     help="run this TOML instead of the group's recipe (e.g. the Gluza33 projective-sections "
                          "recipe: 302=/path/g33.toml); use a separate --out to keep both variants")
@@ -313,7 +347,12 @@ def main():
 
     def work(entry, cpu):
         try:
-            rec = run_one(entry, args, cpu, out, binary_sha)
+            # A fresh single-use worker process per group: no interpreter (and no GIL) is shared
+            # between groups, so one group's result parsing cannot delay another group's clock,
+            # and a crash affects only this group.
+            with concurrent.futures.ProcessPoolExecutor(
+                    max_workers=1, mp_context=multiprocessing.get_context("spawn")) as pool:
+                rec = pool.submit(run_one, entry, args, cpu, out, binary_sha).result()
         except Exception as e:
             rec = dict(group_index=entry["index"], group=entry["identifier"], status="runner_error",
                        error=repr(e), binary_sha256=binary_sha, cpu=cpu)

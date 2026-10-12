@@ -1,5 +1,5 @@
 {
- "comment": "Reproduction subset (scripts/reproduce_subset.sh): every operation kind and every size class the campaign measured, plus one interpolation image and two small parametric (symbolic s,t) operands that the campaign snapshot had not reached. 'ids' are timed; 'derive_only' are parents materialized only to regenerate a derived operand. Expected wall time with two workers: about 15 minutes.",
+ "comment": "Reproduction subset (scripts/reproduce_subset.sh): every operation kind and every size class the campaign measured, plus one interpolation image and two small parametric (symbolic s,t) operands that the campaign snapshot had not reached. 'ids' are timed; 'derive_only' are parents materialized only to regenerate a derived operand. Expected wall time with two workers: about 10 minutes (9 min 40 s measured on 2026-10-12).",
  "ids": [
   "g33D-res-01-1715cd542f",
   "g30base-res-05-e62c63f5e6",

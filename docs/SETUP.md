@@ -60,11 +60,16 @@ The reference builder makes an isolated `.reference/gcad` copy, compiles against
 The default Nix shell includes Typst and pinned Libertinus/Noto font packages. It sets `TYPST_FONT_PATHS` to their Nix store paths:
 
 ```sh
-benchmark/render.sh
+nix develop --command typst compile benchmark/benchmark.typ benchmark/benchmark.pdf
 ```
 
-This renders the main benchmark and its separately preserved ordering/MCTS
-companion. The table data and Typst sources are committed separately from
+This renders the main benchmark from the committed `benchmark/report-data.json`.
+`benchmark/run_final.sh <symgcad binary> --skip-runs` also rebuilds
+`report-data.json` from existing runs before compiling, and `benchmark/run_final.sh
+<symgcad binary>` repeats the cold runs as well (see
+[benchmark/README.md](../benchmark/README.md)). Do not use `benchmark/render.sh`
+merely to refresh the main report: it also re-renders the separately preserved
+ordering/MCTS companion. The table data and Typst sources are committed separately from
 generated solver proofs. Regenerating measurements requires the retained
 source evidence; rendering the published snapshot does not.
 

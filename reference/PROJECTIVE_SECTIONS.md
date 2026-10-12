@@ -233,8 +233,11 @@ Each order is a single run, `complete_generic` and verified:
 * **Strict reference:** the published strict result is 80,980 cells, with
   22.57 s solve and 16.85 s check (release, N=3, cold;
   [GLUZA30_BILINEAR_RELEASE_BENCHMARK.md](GLUZA30_BILINEAR_RELEASE_BENCHMARK.md)).
-  It used `bilinear_positive` and its own order, so this is not a matched-order
-  comparison.
+  It used the same order `[x1,x7,x2,x6,x5,x4,x0]` as the 1-cell row above, so
+  the order is matched; the engine and the contract differ (`bilinear_positive`
+  with the `local` base engine under the strict contract, against
+  `bilinear_general` with the `optimized` base engine under
+  `projective_sections = true`).
 * **No sanity check:** no fresh-point sanity check was recorded for the
   Gluza30 projective runs.
 

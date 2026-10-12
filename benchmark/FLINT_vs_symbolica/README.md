@@ -182,7 +182,7 @@ nix develop -c cargo build --release --locked -j 8 --features flint-bench-hooks 
 # FLINT side (FLINT 3.6.0 from the flake's reference shell)
 nix develop .#reference -c make -C benchmark/FLINT_vs_symbolica/flint
 
-# Reproduce the committed subset (~10 min with two workers on CPUs 2,3)
+# Reproduce the committed subset (about 10 min with two workers on CPUs 2,3; 9 min 40 s measured)
 nix develop .#reference -c benchmark/FLINT_vs_symbolica/scripts/reproduce_subset.sh \
     benchmark/FLINT_vs_symbolica/work/subset 2,3
 ```
@@ -366,7 +366,9 @@ and FLINT's multimodular `fmpz_poly_resultant` 10.0 ms: ratio 1.70.
   decoded exactly. This applies to Gluza33 S2 (degree ≈ 12 in three
   variables, 400–1,000 terms) and to the symbolic A317/A318/A377 pairs
   (degree 6–22 in s, t and one variable, up to 2,560 terms). Production is:
-  * 3–7.5× faster than FLINT's `fmpz_mpoly_resultant` on Gluza33 S2;
+  * 3.3–6.8× faster than FLINT's `fmpz_mpoly_resultant` on the ten segmented
+    Gluza33 S2 resultants, and 3.2–7.5× faster than `fmpz_mpoly_discriminant`
+    on its four segmented discriminants;
   * 3.5× faster on A317, 10.5× on A318 and 15.7× on `a377-1d4048e35d3e`
     (14.6 s against 230 s);
   * finished in 34 s on `a377-1d3e6e9835cc`, where FLINT did not finish in

@@ -9,6 +9,8 @@ Path conventions
            eb1cd8a, claude/kinematic-order 74440c8), extended by claude/projective-sections @ 9baf91c
   [res]    /common/dev/gcad/artifacts/research/claude-2026-10-12/ (session evidence, not in Git)
   [up]     https://github.com/symbolica-dev/symbolica/pull/<n> (state checked with gh on 2026-10-12: all OPEN)
+  [note]   committed 2026-10-12 reference note (reference/<name>.md, in Git from the final integration
+           claude/final-2026-10-12 on): the durable record of the [res] session evidence it cites
 Baseline compared against: magv/gcad fb6ebe3aa0e3fdd073f410d01050a4ed7e235f4e (PROVENANCE.toml;
 DO_NOT_PUSH_REFERENCES/gcad/gcad/gcad.py: GPROJ, RSFC, greedy_{mods,sotd,t1}_order, merge).
 
@@ -28,16 +30,20 @@ A6  evaluation/interpolation resultants (A446 pair 5.888 s): src/resultant_inter
     BENCHMARKS.md "Captured algebra and lifting costs"
 A7  assignment bound + size-derived admission (disc2/disc3 timings): [int]src/resultant_interpolation.rs,
     [int]src/resultant_segmentation.rs, [int]tests/kernel_selection.rs, [int]examples/profile_kernel_selection.rs,
-    [int]docs/USAGE.md; commits f8d2500, 716dd18 (claude/algebra-fixes); [res]wf3-alg.txt, [res]wf3-fix.txt,
+    [int]docs/USAGE.md; [note]ALGEBRA_KERNELS_2026_10_12.md section (a); commits f8d2500, 716dd18 (claude/algebra-fixes);
+    [res]wf3-alg.txt, [res]wf3-fix.txt,
     [res]algebra-fixes/REPORT.txt, [res]algebra-fixes/measurements.json
 A8  zero-image guard (panic_pair_low 7 cells): [int]src/resultant_interpolation.rs, [int]src/projection.rs;
+    [note]ALGEBRA_KERNELS_2026_10_12.md section (a) "Zero-image guard", (f) "Ducos panic";
     commit 716dd18; [res]wf3-rev.txt (finding 1, 4), [res]wf3-fix.txt (finding 1), [res]algebra-fixes/fix/
 A9  binary segmentation, default-on (A317/A318 38.16/20.03 s; disc1 2.17 vs 7.80 s): src/resultant_segmentation.rs,
     [int]src/config.rs (binary_resultants: true); reference/BINARY_SEGMENTATION_RESULTANTS.md,
     reference/BINARY_SEGMENTATION_PRODUCTION_CHECK.md, reference/A377_BINARY_DISCRIMINANT_DIAGNOSTIC.md;
-    HANDOFF.md "Exact resultant acceleration"; commit f8d2500; [res]wf3-alg.txt
+    HANDOFF.md "Exact resultant acceleration"; [note]ALGEBRA_KERNELS_2026_10_12.md section (b); commit f8d2500;
+    [res]wf3-alg.txt
 A10 second-route spot check (27.86 vs 27.87 s): [int]src/resultant_interpolation.rs, [int]src/resultant_segmentation.rs,
-    [int]src/verify.rs; commit 716dd18; [res]wf3-fix.txt (finding 5)
+    [int]src/verify.rs; [note]ALGEBRA_KERNELS_2026_10_12.md section (a) "Spot check"; commit 716dd18;
+    [res]wf3-fix.txt (finding 5)
 A11 sum-variable factor preconditioning: src/algebra/sum_factorization.rs; reference/SUM_FACTOR_PRECONDITIONING.md;
     docs/USAGE.md (square-plus-residual paragraph)
 A12 affine translation (224-term 1.63 s vs 30.02 s): src/algebra/affine_factorization.rs; tests/affine_factorization.rs;
@@ -72,7 +78,8 @@ P3  certified removal (A446 1.326 s vs 60 s timeout): src/domain.rs, src/optimiz
 P4  prune_operations: src/optimized_projection.rs, src/config.rs; docs/USAGE.md
 P5  global strict-Bezout omission (1,033->661 polys, 228,998->112,759 terms): [int]src/strict_bezout_projection.rs,
     [int]src/optimized_projection.rs, [int]src/verify.rs, [int]tests/strict_bezout_projection.rs, [int]docs/USAGE.md;
-    commits da5575e, ec518c7, 716dd18; [res]wf3-alg.txt (b), [res]algebra-fixes/pmm/
+    [note]ALGEBRA_KERNELS_2026_10_12.md section (c); commits da5575e, ec518c7, 716dd18; [res]wf3-alg.txt (b),
+    [res]algebra-fixes/pmm/
 
 == Positivity and domain certificates
 C1  certificate portfolio: src/domain.rs; tests/domain.rs; HANDOFF.md "Certified reductions and algebra-policy boundaries"
@@ -102,7 +109,10 @@ E7  bilinear_positive (80,980 cells): src/bilinear_positive.rs; tests/bilinear_p
     reference/GLUZA30_POSITIVE_LADDER.md, reference/GLUZA30_BILINEAR_RELEASE_BENCHMARK.md
 E8  bilinear_general + pieces (plan 0.034 s, 47 cells; pieces time out at 1,200 s): [int]src/bilinear_general.rs,
     [int]src/identity.rs, [int]src/main.rs, [int]tests/bilinear_general.rs, [int]examples/bilinear_general.toml,
-    [int]docs/USAGE.md, [int]README.md; commits 6cabcf5, eb1cd8a, 0d4e38c; [res]wf2-impl-bilinear-general.txt,
+    [int]docs/USAGE.md, [int]README.md; [note]BILINEAR_GENERAL.md ("Planner and objective": region_weighted vs atoms
+    on the 3-parameter quartic chain; "Measured attempts on the strict Gluza33 pieces"); the 47-cell figure is the
+    4-piece parallel test of [res]wf2-impl-bilinear-general.txt (line 59), a different synthetic input;
+    commits 6cabcf5, eb1cd8a, 0d4e38c; [res]wf2-impl-bilinear-general.txt,
     [res]wf2-review-bilinear-general.txt, [res]wf2-fix-bilinear-general.txt, [res]bilinear-general/;
     design: [res]agent-aa4d317654c2058db.final.txt
 E9  quadratic_ladder (t<4: 5 cells): src/quadratic_ladder.rs; tests/quadratic_ladder.rs;
@@ -131,7 +141,8 @@ LP10 coalescing (97 guards / 109,726 terms, 1.60 s): src/local_projection/interv
      reference/GLUZA33_FINAL_INTERVAL_FRONTIER.md; HANDOFF.md "Aggregate guards, preconditioner regression and compact covers"
 LP11 positive pair witnesses: src/local_projection/pair_witnesses.rs; tests/local_pair_witnesses.rs; reference/PAIR_SEPARATOR_PROFILE.md
 LP12 witness gate + axis budget (S1/a>0: 570 s incomplete -> 0.02 s, 178 cells): [int]src/local_projection/pair_witnesses.rs,
-     [int]src/config.rs, [int]tests/local_thrash.rs, [int]docs/USAGE.md; commits 3988f53, c702742;
+     [int]src/config.rs, [int]tests/local_thrash.rs, [int]docs/USAGE.md; [note]LOCAL_ENGINE_THRASH.md
+     ("The pair-witness pathology", "Pair-witness admission"); commits 3988f53, c702742;
      [res]wf2-impl-local-thrash.txt, [res]wf2-review-local-thrash.txt, [res]wf2-fix-local-thrash.txt,
      [res]local-thrash/ and local-thrash/fix/ (measurements.json); [res]agent-ac76ac3b4e1f08ff7.final.txt (diagnosis)
 LP13 local strict-Bezout hints (2,918 resultants): src/local_projection/strict_bezout.rs; tests/local_strict_bezout.rs;
@@ -146,6 +157,7 @@ LP18 deferred projection: src/local_projection/lazy_projection.rs; tests/local_d
 LP19 retained sibling proofs (Ppm 12.80M -> 1.38M nodes; B6_469 112,124 cells 9.91 s): [int]src/local_projection/sibling_pool.rs,
      [int]src/local_projection.rs, [int]src/local_projection/lazy_projection.rs, [int]tests/local_thrash.rs,
      [int]tests/fixtures/local_retained_sibling_wide_interval.toml, [int]reference/LOCAL_PROJECTION_LIVENESS.md;
+     [note]LOCAL_ENGINE_THRASH.md ("local_retain_siblings", "Measurements");
      commits 3988f53, af3577f, 3aff953, 40d1965, 1600619, c702742, 8b2173a, 493e6b3; [res]wf2-impl-local-thrash.txt,
      [res]wf2-fix-local-thrash.txt (findings 3, 5)
 LP20 first-axis square-free basis (92.06 vs 185.83 s): src/local_projection/base_univariate.rs, src/local_projection/base_univariate/;
@@ -153,7 +165,8 @@ LP20 first-axis square-free basis (92.06 vs 185.83 s): src/local_projection/base
      reference/BASE_SUPPORT_PROPOSAL_CACHE.md, reference/BASE_SUPPORT_REGISTRY_CAPACITY.md
 LP21 discovery caps: src/config.rs; docs/USAGE.md (local_max_refinements / local_max_nodes)
 LP22 thrash diagnostics (337,116 discarded children): [int]src/local_projection/thrash_diag.rs, [int]src/optimized_projection.rs
-     (cached_factor_basis), [int]tests/local_thrash_diag.rs; commits 3988f53, c702742; [res]wf2-impl-local-thrash.txt
+     (cached_factor_basis), [int]tests/local_thrash_diag.rs; [note]LOCAL_ENGINE_THRASH.md ("Diagnostic counts",
+     "Read-only diagnostic"); commits 3988f53, c702742; [res]wf2-impl-local-thrash.txt
 LP23 obstruction observer: src/local_projection/obstruction_observer.rs; tests/local_obstruction_observer.rs;
      reference/LOCAL_OBSTRUCTION_OBSERVER.md
 
@@ -165,10 +178,13 @@ O3  search pruning: src/search.rs; docs/USAGE.md
 O4  local-progress score (65.10 vs 313.63 s): src/search/local_progress.rs; tests/search_local_progress.rs;
     reference/LOCAL_SEARCH_PROMOTION_BENCHMARK.md
 O5  kinematic_portfolio (105.88->92.97 s etc.): [int]src/kinematic_portfolio.rs, [int]src/main.rs, [int]src/config.rs,
-    [int]tests/kinematic_portfolio.rs, [int]docs/USAGE.md; commits d04747a, b696002, 74440c8, 4dbe440;
+    [int]tests/kinematic_portfolio.rs, [int]docs/USAGE.md; [note]KINEMATIC_PORTFOLIO.md ("The ordering mode",
+    "Measured gains and regressions"); commits d04747a, b696002, 74440c8, 4dbe440;
     [res]wf2-impl-kinematic-order.txt, [res]wf2-review-kinematic-order.txt, [res]wf2-fix-kinematic-order.txt,
     [res]kinematic-order/, [res]kinematic-order-fix/; motivation [res]agent-param-profile.final.txt
-O6  portfolio_fixed_budgets (21/21; 1,317 s): [int]src/kinematic_portfolio.rs; commit b696002; [res]wf2-fix-kinematic-order.txt (finding 5)
+O6  portfolio_fixed_budgets (21/21; 1,317 s): [int]src/kinematic_portfolio.rs; [note]KINEMATIC_PORTFOLIO.md
+    ("Measured gains and regressions"); docs/USAGE.md (portfolio_fixed_budgets); commit b696002;
+    [res]wf2-fix-kinematic-order.txt (finding 5)
 O7  order proposal helpers: examples/ (support-order seeds, profile_linear_prefix.rs); reference/SUPPORT_ORDER_SEEDS.md,
     reference/LINEAR_PREFIX_RESEARCH.md
 
@@ -176,7 +192,8 @@ O7  order proposal helpers: examples/ (support-order seeds, profile_linear_prefi
 K1  operation cache: src/optimized_projection.rs (ProjectionCache); HANDOFF.md "Ordering, caches, deadlines and checkpoint semantics"
 K2  persistent checkpoints (32,456 ops): src/optimized_projection.rs, src/campaign.rs; docs/USAGE.md; reference/FINAL_CHECKPOINT.md,
     reference/GLUZA33_FINAL_FACTOR_PUSH.md
-K3  domain-free keys (50/127 disk hits): [int]src/optimized_projection.rs, [int]tests/optimized_projection.rs; commit dd524dd;
+K3  domain-free keys (50/127 disk hits): [int]src/optimized_projection.rs, [int]tests/optimized_projection.rs;
+    [note]ALGEBRA_KERNELS_2026_10_12.md section (d); commit dd524dd;
     [res]wf3-alg.txt (c), [res]algebra-fixes/cache_share/; background reference/CROSS_ORDER_ALGEBRA_CACHE.md
 K4  primitive-linear cache bypass (15.531->0.415 ms): src/optimized_projection.rs; reference/PRIMITIVE_LINEAR_CACHE.md;
     examples/profile_linear_cache.rs
@@ -226,8 +243,10 @@ R10 reproducible environment / public deps (symGCAD PR #1): flake.nix, flake.loc
 == Interfaces
 I1  library + TOML CLI: src/lib.rs, src/main.rs, src/config.rs; README.md; docs/USAGE.md "Problem format"
 I2  project = solve (R+- 354.5 s vs 1,500 s timeout): [int]src/main.rs, [int]src/solver.rs, [int]src/homogeneity.rs,
-    [int]tests/homogeneity.rs; commit 0e77b99; [res]wf3-alg.txt (d), [res]algebra-fixes/ppm_project/
-I3  pieces plan/assemble: [int]src/main.rs, [int]src/bilinear_general.rs, [int]docs/USAGE.md; commits 6cabcf5, eb1cd8a
+    [int]tests/homogeneity.rs; [note]ALGEBRA_KERNELS_2026_10_12.md section (e); commit 0e77b99; [res]wf3-alg.txt (d),
+    [res]algebra-fixes/ppm_project/
+I3  pieces plan/assemble: [int]src/main.rs, [int]src/bilinear_general.rs, [int]docs/USAGE.md; [note]BILINEAR_GENERAL.md
+    ("Pieces CLI"); commits 6cabcf5, eb1cd8a
 I4  FastSecDec import: src/fastsecdec.rs; tests/fastsecdec.rs; docs/FASTSECDEC_INTEROP.md
 I5  corpus builder (177 / 265 / 12 -> 331): src/corpus.rs; tests/corpus_literals.rs; PROVENANCE.toml [corpus]; reference/build_reference.py
 I6  benchmark document: benchmark/build_report.py, benchmark/run_final.sh, benchmark/benchmark.typ, benchmark/report-data.json,
@@ -255,7 +274,9 @@ U8  patch bootstrap: scripts/bootstrap-deps.sh, scripts/use-local-symbolica.sh; 
 
 == Opt-in contract extensions
 X1  projective sections (Gluza33 positive 2,372 cells, solve 0.42 s, verify 0.55 s, sanity 4,744 points 0 failures;
-    Gluza30 positive 1 cell): commit 9baf91c [int]src/bilinear_general.rs (module doc: derivation), [int]src/output.rs
+    Gluza30 positive 1 cell): [note]PROJECTIVE_SECTIONS.md (contract, fiber theorem, verifier rules, measured
+    results); final cold-run numbers from benchmark/report-data.json (opt_in);
+    commit 9baf91c [int]src/bilinear_general.rs (module doc: derivation), [int]src/output.rs
     (RootIndexDomain::PositiveOrInfinity), [int]src/verify.rs, [int]src/config.rs, [int]tests/bilinear_projective.rs,
     [int]examples/sanity_sample.rs, [int]docs/USAGE.md "Projective sections (opt-in contract extension)";
     [res]projective-sections/REPORT.txt, [res]projective-sections/measurements.json, [res]projective-sections/g33_x5last/,
@@ -267,12 +288,17 @@ X1  projective sections (Gluza33 positive 2,372 cells, solve 0.42 s, verify 0.55
 X2  aggressive merging: src/solver/merging.rs; reference/INDEXED_COMPATIBILITY_MERGE.md
 
 == Investigated, not adopted
-N1  convex two-point theory (86 -> 71 / 34 factors): [res]agent-a4c09cd4c860e7f0e.final.txt, [res]convex-theory/
-N2  relevance-restricted prototype (1.9e6 / 3.0e6 cells; ordinary ~1.05e10): [res]wf3-shadow.txt, [res]shadow-prototype/REPORT.txt,
+N1  convex two-point theory (86 -> 71 / 34 factors): [note]GLUZA33_STRUCTURE_2026_10_12.md ("Convexity of F/U",
+    "Projection sizes: full versus relevance-restricted"); [res]agent-a4c09cd4c860e7f0e.final.txt, [res]convex-theory/
+N2  relevance-restricted prototype (1.9e6 / 3.0e6 cells; ordinary ~1.05e10): [note]BILINEAR_GENERAL.md ("Shadow
+    prototype"), [note]GLUZA33_STRUCTURE_2026_10_12.md ("Projection sizes"); [res]wf3-shadow.txt, [res]shadow-prototype/REPORT.txt,
     [res]shadow-prototype/results.json
-N3  literature + Symbolica audits: [res]agent-af4c63bbffc7dd42a.final.txt (literature), [res]agent-a65de943828c9a820.final.txt
+N3  literature + Symbolica audits: [note]GLUZA33_STRUCTURE_2026_10_12.md (Symbolica Q(alpha) factorization, "Open items"),
+    [note]KINEMATIC_PORTFOLIO.md ("Landau versus spurious factors"); [res]agent-af4c63bbffc7dd42a.final.txt (literature),
+    [res]agent-a65de943828c9a820.final.txt
     (Symbolica, Q(sqrt10) 450 -> 43 x 43 terms in 1.05 s; 2,250 terms > 1,800 s), [res]symbolica-audit/
-N4  domain-aware ordering profile (2-312x): [res]agent-param-profile.final.txt, [res]param-profile/
+N4  domain-aware ordering profile (2-312x): [note]KINEMATIC_PORTFOLIO.md ("Parametric analysis", "Why the unresolved
+    2-loop cases need relevance, not ordering"); [res]agent-param-profile.final.txt, [res]param-profile/
 N5  earlier research lines: reference/CFF_KINEMATIC_PROJECTION.md, reference/TROPICAL_SUBTROPICA_RESEARCH.md,
     reference/LINEAR_PREFIX_RESEARCH.md, reference/QUADRATIC_FLAG_IDENTITIES_RESEARCH.md, reference/CROSSING_TRANSPORT_DESIGN.md,
     reference/DETERMINISTIC_CRT_PRIME_IMAGE.md, reference/FAST_TAYLOR_SHIFT_RESEARCH.md; HANDOFF.md "Physics, graph structure,

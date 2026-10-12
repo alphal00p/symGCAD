@@ -4,11 +4,16 @@
 Inputs (every file read is recorded with its sha256 in "sources"):
   --manifest    benchmark/campaign/groups.json: the 331 distinct corpus problems, their
                 sign cases and the symGCAD recipe of each group.
-  --symgcad     one or more symgcad_runner.py output directories (records.jsonl); a later
-                directory overrides an earlier one for the same group.  These are the
-                strict-contract rows: only "complete_verified" counts as solved.
-  --projective  symgcad_runner.py output directory of the opt-in projective-sections
-                recipes (groups 298 and 302).  Reported separately, never counted as strict.
+  --symgcad     one or more symgcad_runner.py output directories (records.jsonl).  Records of
+                the same group and the same binary sha256 in different directories are
+                repeats (run_final.sh --repeats): the row shows the median solve and verify
+                times, and a row counts as verified only if every repeat verified the same
+                cell count.  A record of another binary in a later directory replaces the
+                earlier ones.  These are the strict-contract rows: only "complete_verified"
+                counts as solved.
+  --projective  symgcad_runner.py output directories of the opt-in projective-sections
+                recipes (groups 298 and 302), repeats as for --symgcad.  Reported separately,
+                never counted as strict.
   --native      native GCAD run directory (cases/<group>/<signs>/record.json, 300 s cap
                 per sign case).  Partial runs are accepted: missing cases are "not run".
   --unresolved  latest long attempts at the unresolved groups (run_lanes.sh layout:
@@ -19,6 +24,16 @@ Inputs (every file read is recorded with its sha256 in "sources"):
 
 A group with no record in --symgcad falls back to its --history measurement and is
 labelled "history"; it still counts only if data.json verified it.
+
+Times.  symGCAD solve/verify: the runner's perf_counter around the wrapper chain, measured in a
+per-group worker process pinned to the group's CPU (records from runners without that isolation
+are used as recorded).  Native: per sign case, GNU time's elapsed wall time from the case's
+time.txt (10 ms resolution), summed over sign cases; the native runner's own wall_secs polls
+every 0.2 s and is kept only as native_runner_wall_s.
+
+Default evidence paths (--unresolved, --projective-evidence) are machine-local; when one is
+missing the build warns on stderr and lists it in provenance.missing_inputs, which the PDF
+shows as a DRAFT reason.
 """
 import argparse
 import datetime
@@ -28,12 +43,39 @@ import json
 import math
 import pathlib
 import re
+import statistics
+import sys
 import tomllib
 
 HERE = pathlib.Path(__file__).resolve().parent
 REPO = HERE.parent
 RESEARCH = pathlib.Path("/common/dev/gcad/artifacts/research/claude-2026-10-12")
 SOURCES = {}
+MISSING = []
+
+
+def gnu_elapsed(path):
+    """GNU time -v 'Elapsed (wall clock) time' in seconds, or None."""
+    try:
+        text = pathlib.Path(path).read_text()
+    except FileNotFoundError:
+        return None
+    m = re.search(r"Elapsed \(wall clock\) time \(h:mm:ss or m:ss\): (\S+)", text)
+    if not m:
+        return None
+    seconds = 0.0
+    for part in m.group(1).split(":"):
+        seconds = 60 * seconds + float(part)
+    return seconds
+
+
+def require(path, what):
+    """Record (and warn about) a missing optional input instead of silently dropping it."""
+    if path and not pathlib.Path(path).exists():
+        MISSING.append(dict(input=what, path=str(path)))
+        print(f"build_report.py: WARNING: {what} not found: {path}", file=sys.stderr)
+        return False
+    return bool(path)
 
 
 def sha256_file(path):
@@ -102,7 +144,11 @@ def run_input(run_root, record):
 
 
 def load_runs(directories):
-    latest = {}
+    """group index -> representative record.  Same group + same binary in several directories =
+    repeats: the representative is the run with the median solve time, carrying the median solve
+    and verify times (_median) and every repeat (_repeats).  Inconsistent repeats (a repeat not
+    verified, or different cell counts) make the row unverified, using the first such record."""
+    by_group = {}
     launches = []
     for d in directories:
         d = pathlib.Path(d)
@@ -118,7 +164,33 @@ def load_runs(directories):
             if line.strip():
                 r = json.loads(line)
                 r["_root"] = str(d)
-                latest[r["group_index"]] = r
+                runs = by_group.setdefault(r["group_index"], {})
+                if any(x.get("binary_sha256") != r.get("binary_sha256") for x in runs.values()):
+                    runs.clear()  # a later binary replaces the earlier measurement
+                runs[str(d)] = r  # within one directory the later record wins
+    latest = {}
+    for gi, runs in by_group.items():
+        recs = list(runs.values())
+        if len(recs) == 1:
+            latest[gi] = recs[0]
+            continue
+        summary = [dict(record=f"{x['_root']}/records.jsonl#{x.get('run_dir')}", status=x.get("status"),
+                        cells=x.get("cells"), solve_s=(x.get("solve") or {}).get("wall_secs"),
+                        verify_s=(x.get("verify") or {}).get("wall_secs"), cpu=x.get("cpu"),
+                        started=x.get("started")) for x in recs]
+        good = all(x.get("status") == "complete_verified" for x in recs) and len({x.get("cells") for x in recs}) == 1
+        if good:
+            ranked = sorted(recs, key=lambda x: x["solve"]["wall_secs"])
+            rep = dict(ranked[(len(ranked) - 1) // 2])
+            rep["_median"] = dict(solve=statistics.median(x["solve"]["wall_secs"] for x in recs),
+                                  verify=statistics.median(x["verify"]["wall_secs"] for x in recs))
+        else:
+            rep = dict(next(x for x in recs if x.get("status") != "complete_verified" or x.get("cells") != recs[0].get("cells")))
+            if rep.get("status") == "complete_verified":
+                rep["status"] = "repeats_disagree"
+            rep["_repeats_inconsistent"] = True
+        rep["_repeats"] = summary
+        latest[gi] = rep
     return latest, launches
 
 
@@ -130,7 +202,13 @@ def symgcad_cell(record):
     return dict(
         status=status, verified=status == "complete_verified", cells=record.get("cells"),
         raw_cells=(record.get("result") or {}).get("raw_cells"),
-        solve_s=solve.get("wall_secs"), verify_s=verify.get("wall_secs") if verify else None,
+        solve_s=(record.get("_median") or {}).get("solve", solve.get("wall_secs")),
+        verify_s=(record.get("_median") or {}).get("verify", verify.get("wall_secs") if verify else None),
+        repeats=len(record.get("_repeats") or []) or 1,
+        solve_s_runs=[x["solve_s"] for x in record["_repeats"]] if record.get("_repeats") else None,
+        verify_s_runs=[x["verify_s"] for x in record["_repeats"]] if record.get("_repeats") else None,
+        repeats_inconsistent=bool(record.get("_repeats_inconsistent")),
+        solve_gnu_elapsed_s=solve.get("gnu_elapsed_secs"),
         peak_rss_mib=max(rss) / 1024 if rss else None,
         order=record.get("order") or [], engine=used.get("engine") or record.get("engine"),
         ordering=used.get("ordering") or record.get("ordering"),
@@ -140,10 +218,13 @@ def symgcad_cell(record):
         provenance=dict(kind="cold run", binary_sha256=record.get("binary_sha256"),
                         binary=record.get("binary"), cache_policy="cold",
                         cache_detail=record.get("cache_policy"), date=record.get("started"),
+                        checkpoint_dir_set=record.get("checkpoint_dir_set"),
+                        checkpoint_bytes=record.get("checkpoint_bytes"), timing=record.get("timing"),
                         cpu=record.get("cpu"), load_before=record.get("load_before"),
                         input_sha256=used.get("input_sha256") or record.get("input_sha256"),
                         result_sha256=record.get("result_sha256"),
-                        record=f"{record['_root']}/records.jsonl#{record.get('run_dir')}"))
+                        record=f"{record['_root']}/records.jsonl#{record.get('run_dir')}",
+                        repeats=record.get("_repeats")))
 
 
 def history_cell(group, history_row):
@@ -182,7 +263,10 @@ def native_group(group, cases_by_group):
     return dict(
         status=status, cases=len(expected), cases_recorded=len(recs), cases_complete=len(done),
         cases_timeout=statuses.count("timeout"),
-        wall_s=sum(r["wall_secs"] for r in recs) if complete else None,
+        wall_s=sum(r["_elapsed_s"] for r in recs) if complete else None,
+        wall_source=("GNU time elapsed" if all(r["_elapsed_src"] == "gnu" for r in recs)
+                     else "runner wall (time.txt missing for some cases)") if complete else None,
+        native_runner_wall_s=sum(r["wall_secs"] for r in recs) if complete else None,
         internal_s=sum(r.get("adapter_elapsed_secs") or 0 for r in recs) if complete else None,
         raw_cells=sum(r.get("raw_cells") or 0 for r in recs) if complete else None,
         peak_rss_mib=max((r.get("peak_rss_kib") or 0) for r in recs) / 1024 if recs else None,
@@ -196,6 +280,8 @@ def load_native(run):
     cases = {}
     for path in sorted(run.glob("cases/*/*/record.json")):
         rec = json.loads(path.read_text())
+        elapsed = gnu_elapsed(path.parent / "time.txt")
+        rec["_elapsed_s"], rec["_elapsed_src"] = (elapsed, "gnu") if elapsed is not None else (rec["wall_secs"], "runner")
         cases.setdefault(rec["group_index"], {})[rec["signs"]] = rec
     provenance = []
     for path in sorted(run.glob("provenance-*.json")):
@@ -282,6 +368,16 @@ def method_label(cell):
     return engine
 
 
+def ratio_text(x):
+    """Two significant digits, three where two would round onto a colour boundary (1 or 2)."""
+    if x is None:
+        return "—"
+    s = sig(x, 2)
+    if float(s) in (1.0, 2.0) and x != float(s):
+        s = sig(x, 3)
+    return s
+
+
 def ratio_class(x):
     if x is None:
         return "none"
@@ -298,7 +394,7 @@ def main():
     ap.add_argument("--manifest", default=str(HERE / "campaign/groups.json"))
     ap.add_argument("--history", default=str(HERE / "data.json"))
     ap.add_argument("--symgcad", nargs="+", required=True)
-    ap.add_argument("--projective")
+    ap.add_argument("--projective", nargs="+")
     ap.add_argument("--projective-evidence", default=str(RESEARCH / "projective-sections/measurements.json"))
     ap.add_argument("--native", required=True)
     ap.add_argument("--unresolved", default=str(RESEARCH / "unresolved/v1-nopw-retain"))
@@ -310,15 +406,16 @@ def main():
     history = load_json(args.history)
     hist_rows = {r["identifier"]: r for r in history["rows"]}
     runs, launches = load_runs(args.symgcad)
-    proj_runs, proj_launches = load_runs([args.projective]) if args.projective else ({}, [])
+    proj_runs, proj_launches = load_runs(args.projective) if args.projective else ({}, [])
     native_cases, native_prov = load_native(args.native)
+    have_unresolved = require(args.unresolved, "long attempts at the unresolved groups (--unresolved)")
 
     rows = []
     for g in manifest["entries"]:
         hist = hist_rows.get(g["identifier"])
         rec = runs.get(g["index"])
         cell = symgcad_cell(rec) if rec else (history_cell(g, hist) if g["status_in_data_json"] == "verified" else None)
-        if not (cell and cell["verified"]) and args.unresolved:
+        if not (cell and cell["verified"]) and have_unresolved:
             attempt = unresolved_attempt(args.unresolved, g)
             if attempt and attempt.get("state") == "complete_verified":
                 cell = long_attempt_cell(attempt)
@@ -335,8 +432,20 @@ def main():
         row["cells_differ_from_history"] = bool(row["verified"] and prior and prior.get("cells") is not None
                                                 and cell["provenance"]["kind"] == "cold run"
                                                 and prior["cells"] != cell["cells"])
+        if row["cells_differ_from_history"]:
+            # Why the count moved: the recipe input is the one the audit measured (same ledger run, or same
+            # executable as the measurement) and the exported order is unchanged -> only the code changed.
+            src = ((hist or {}).get("measurement") or {}).get("source") or {}
+            rp = g["recipe"].get("provenance") or {}
+            same_recipe = bool((src.get("ledger") and src.get("ledger") == rp.get("ledger")
+                                and src.get("run_index") == rp.get("run_index"))
+                               or (prior.get("executable_sha256")
+                                   and prior.get("executable_sha256") == rp.get("executable_sha256")))
+            same_order = (prior.get("order") or []) == (cell.get("order") or [])
+            row["cells_change_reason"] = "code only" if same_recipe and same_order else \
+                ("order changed" if not same_order else "recipe changed")
         if not row["verified"]:
-            attempt = unresolved_attempt(args.unresolved, g) if args.unresolved else None
+            attempt = unresolved_attempt(args.unresolved, g) if have_unresolved else None
             prior = dict(longest_s=(hist or {}).get("longest_incomplete_seconds"),
                          last_status=(hist or {}).get("last_status"),
                          peak_rss_mib=(hist or {}).get("incomplete_peak_rss_mib"),
@@ -405,13 +514,14 @@ def main():
             d["native"] = "timeout"
         else:
             d["native"] = n["status"]
-        d["ratio"] = sig(r["ratio"], 2) if r["ratio"] is not None else "—"
+        d["ratio"] = ratio_text(r["ratio"])
         d["ratio_class"] = ratio_class(r["ratio"])
         r["display"] = d
 
     # opt-in projective rows
     evidence = None
-    if args.projective_evidence and pathlib.Path(args.projective_evidence).exists():
+    if args.projective and require(args.projective_evidence,
+                                   "projective-sections sanity evidence (--projective-evidence)"):
         evidence = load_json(args.projective_evidence)
     opt_in = []
     for index, label in ((302, "positive Gluza33 (test_gluza_ex33/solve/3)"),
@@ -469,7 +579,10 @@ def main():
     for r in cold:
         b = r["symgcad"]["provenance"]["binary_sha256"]
         binaries[b] = binaries.get(b, 0) + 1
-    dates = sorted(r["symgcad"]["provenance"]["date"] for r in cold if r["symgcad"]["provenance"]["date"])
+    dates = sorted(d for r in cold for d in ([x["started"] for x in r["symgcad"]["provenance"]["repeats"]]
+                                             if r["symgcad"]["provenance"].get("repeats")
+                                             else [r["symgcad"]["provenance"]["date"]]) if d)
+    repeats = sorted({r["symgcad"]["repeats"] for r in cold})
     cold_ids = {r["index"] for r in cold}
 
     def tier(threshold):
@@ -488,6 +601,8 @@ def main():
                     unresolved_groups_without_cold_attempt=sum(r["data_json_status"] != "verified"
                                                                and r["index"] not in cold_ids for r in rows),
                     cells_differ_from_history=sum(r["cells_differ_from_history"] for r in rows),
+                    cells_change_reasons={k: sum(r.get("cells_change_reason") == k for r in rows)
+                                          for k in ("order changed", "recipe changed", "code only")},
                     unresolved=sum(not r["verified"] for r in rows), by_scope=by_scope,
                     newly_verified=[r["identifier"] for r in rows if r["verified"] and r["data_json_status"] != "verified"],
                     lost=[r["identifier"] for r in rows if not r["verified"] and r["data_json_status"] == "verified"]),
@@ -496,8 +611,12 @@ def main():
                                      and e["strict_status"] != "verified"],
                     counted_in_strict=False),
         symgcad_binaries=binaries, symgcad_run_dates=[dates[0], dates[-1]] if dates else None,
+        symgcad_repeats=repeats,
+        symgcad_repeats_inconsistent=[r["identifier"] for r in cold if r["symgcad"].get("repeats_inconsistent")],
         native=dict(groups=nat_status, cases_total=sum(r["sign_cases"] for r in rows), cases_recorded=cases_recorded,
                     cases_status=cases_status, timeout_cap_s=300,
+                    reruns=[dict(purpose=p.get("purpose"), launched_utc=p.get("launched_utc"))
+                            for p in native_prov if p.get("kind") == "rerun"],
                     groups_timeout=nat_status.get("timeout", 0)),
         comparison=dict(
             n=len(both),
@@ -505,6 +624,9 @@ def main():
             geomean_solve_over_native_internal=geomean([r.get("ratio_internal") for r in both]),
             symgcad_solve_sum_s=sum(r["symgcad"]["solve_s"] for r in both),
             native_wall_sum_s=sum(r["native"]["wall_s"] for r in both),
+            native_runner_wall_sum_s=sum(r["native"]["native_runner_wall_s"] for r in both),
+            native_wall_source=sorted({r["native"]["wall_source"] for r in both}),
+            symgcad_checkpoint_dir_rows=sum(bool(r["symgcad"]["provenance"].get("checkpoint_dir_set")) for r in both),
             native_internal_sum_s=sum(r["native"]["internal_s"] for r in both),
             tiers=[tier(1.0), tier(10.0)],
             symgcad_faster=sum(r["ratio"] < 1 for r in both),
@@ -543,11 +665,15 @@ def main():
         definitions=dict(
             verified="strict default contract: complete_generic result accepted by the independent "
                      "`symgcad verify` in a fresh process (cold run) or in the data.json audit (history)",
-            solve_s="fresh-process wall seconds of `symgcad solve` (includes in-run ordering search, "
-                    "preprocessing and export), one pinned CPU, cold caches",
-            verify_s="fresh-process wall seconds of `symgcad verify`",
+            solve_s="fresh-process wall seconds of `symgcad solve` (includes process start, in-run ordering "
+                    "search, preprocessing and export of result.json), one pinned CPU, cold: fresh run directory "
+                    "and TMPDIR, no persistent checkpoints (a fresh checkpoint_dir only for MCTS searches); "
+                    "perf_counter around the wrapper chain in a per-group worker process pinned to that CPU; "
+                    "median over the repeats (solve_s_runs), each of which must verify the same cell count",
+            verify_s="fresh-process wall seconds of `symgcad verify`, measured the same way (median over the repeats)",
             native_s="sum over sign cases of the native GCAD process wall time (Python start, SymPy parsing, "
-                     "native ordering, projection, lifting); each case capped at 300 s",
+                     "native ordering, projection, lifting), GNU time elapsed per case (10 ms resolution); "
+                     "each case capped at 300 s",
             ratio="symGCAD solve_s / native_s; only where both complete",
             order="variable order of the exported result (projection eliminates from the end); "
                   "H = homogeneous anchor fixed to 1 before solving",
@@ -555,6 +681,7 @@ def main():
                    "(solver.projective_sections); never counted in the strict completion count"),
         summary=summary,
         provenance=dict(symgcad_launches=launches, projective_launches=proj_launches, native=native_prov,
+                        missing_inputs=MISSING,
                         native_run=str(args.native), unresolved_attempts=args.unresolved,
                         manifest=rel(args.manifest), history=rel(args.history)),
         rows=ordered, opt_in=opt_in, flint=flint, sources=SOURCES)
