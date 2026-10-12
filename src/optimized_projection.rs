@@ -705,6 +705,19 @@ impl<'a> ProjectionCache<'a> {
         Ok(())
     }
 
+    /// Read-only lookup of an in-memory factor basis for one polynomial: no
+    /// factorization, disk access, retention change or counter update. Used
+    /// only by diagnostics; `None` means the basis is not currently cached.
+    pub fn cached_factor_basis(&self, polynomial: &Poly) -> Option<Vec<Poly>> {
+        if polynomial.variables() != &self.algebra.variables {
+            return None;
+        }
+        if polynomial.is_constant() {
+            return Some(Vec::new());
+        }
+        self.factor_cache.get(&canonical(polynomial)).cloned()
+    }
+
     /// Canonical square-free factor basis in this cache's fixed variable map.
     /// Cached factors preserve zero sets; independent proof replay must still
     /// reconstruct the requested factorization without trusting this cache.

@@ -297,9 +297,9 @@ fn per_axis_witness_budget_bounds_new_templates() {
 }
 
 /// Gluza33 base piece {a>0} (six homogeneous variables, anchor x4). With
-/// pair witnesses enabled and the historical always-attempt policy this used
-/// to spend millions of speculative nodes; the default admission policy keeps
-/// its sample-independent resultants and completes immediately.
+/// pair witnesses enabled and the historical always-attempt policy (still the
+/// default) this spends millions of speculative nodes; the opt-in admission
+/// gate keeps its sample-independent resultants and completes immediately.
 fn gluza_base_piece() -> Problem {
     let a = "x0^2-8*x0*x1+x1^2+2*x0*x2-8*x1*x2+x2^2-8*x0*x4+2*x1*x4-8*x2*x4+x4^2-8*x0*x6+2*x1*x6-8*x2*x6+2*x4*x6+x6^2+2*x0*x7-8*x1*x7+2*x2*x7-8*x4*x7-8*x6*x7+x7^2";
     let mut p = problem(
@@ -343,26 +343,85 @@ fn reduced_report(result: &SolveResult) -> &LocalReport {
 }
 
 #[test]
-fn gluza33_positive_base_piece_with_pair_witnesses_completes_by_default() {
-    let p = gluza_base_piece();
-    assert_eq!(p.solver.local_pair_witness_min_resultant_terms, 4096);
+fn gluza33_positive_base_piece_with_pair_witnesses_completes_under_the_gate() {
+    let mut p = gluza_base_piece();
+    // The gate is opt-in: the default keeps the historical policy.
+    assert_eq!(p.solver.local_pair_witness_min_resultant_terms, 0);
+    p.solver.local_pair_witness_min_resultant_terms = 4096;
     let result = symgcad::solver::solve(&p).unwrap();
     assert_eq!(result.status, Status::CompleteGeneric, "{:?}", result.diagnostic);
     assert!(symgcad::verify::verify(&result).unwrap().verified);
     let r = reduced_report(&result);
     assert!(r.pair_witness_cheap_resultant_declines > 0);
     assert!(r.speculative_nodes < 10_000, "{}", r.speculative_nodes);
-    // The same input without witnesses has the same exact coverage.
+    // Here the gate admits no template at all, so the search is exactly the
+    // witness-free one: same nodes and the same exact coverage. The gate's
+    // benefit over simply disabling witnesses is unmeasured on such inputs.
+    assert_eq!(r.pair_witness_templates, 0);
     let mut ordinary = p.clone();
     ordinary.solver.local_positive_pair_witnesses = false;
     let baseline = symgcad::solver::solve(&ordinary).unwrap();
     assert!(symgcad::verify::verify(&baseline).unwrap().verified);
+    assert_eq!(
+        reduced_report(&baseline).speculative_nodes,
+        r.speculative_nodes
+    );
     assert_eq!(
         symgcad::comparison::compare_generic(&result, &baseline, &symgcad::Limits::default())
             .unwrap()
             .equivalent,
         Some(true)
     );
+}
+
+#[test]
+fn default_witness_inputs_run_and_serialize_as_before_the_gate() {
+    // A pre-gate problem file with witnesses on keeps the always-attempt
+    // policy and evidence that older verifiers (deny_unknown_fields) accept.
+    let mut p = witness_problem();
+    p.solver.engine = "local".into();
+    p.solver.positivity = false;
+    p.solver.local_positive_pair_witnesses = true;
+    let restored = Problem::from_toml(&toml::to_string(&p).unwrap()).unwrap();
+    assert!(
+        !toml::to_string(&restored)
+            .unwrap()
+            .contains("pair_witness_min_resultant_terms")
+    );
+    let result = symgcad::solver::solve(&restored).unwrap();
+    assert_eq!(result.status, Status::CompleteGeneric, "{:?}", result.diagnostic);
+    assert!(symgcad::verify::verify(&result).unwrap().verified);
+    let evidence = serde_json::to_value(result.local.as_deref().unwrap()).unwrap();
+    let options = &evidence["options"];
+    assert_eq!(options["positive_pair_witnesses"], true);
+    assert!(options.get("pair_witness_min_resultant_terms").is_none());
+    assert!(options.get("pair_witness_axis_budget").is_none());
+    let LocalEvidence::Local { report, .. } = result.local.as_deref().unwrap() else {
+        panic!()
+    };
+    assert_eq!(report.pair_witness_cheap_resultant_declines, 0);
+}
+
+/// Review reproducer: a retained sample inside a new root's coarse isolating
+/// interval but on the far side of the root must not be reused there.
+#[test]
+fn retained_children_are_reused_only_after_an_exact_membership_check() {
+    let p = Problem::from_toml(include_str!(
+        "fixtures/local_retained_sibling_wide_interval.toml"
+    ))
+    .unwrap();
+    assert!(p.solver.local_retain_siblings);
+    let result = symgcad::solver::solve(&p).unwrap();
+    assert_eq!(result.status, Status::CompleteGeneric, "{:?}", result.diagnostic);
+    assert!(symgcad::verify::verify(&result).unwrap().verified);
+    let LocalEvidence::Local { report: cli, .. } = result.local.as_deref().unwrap() else {
+        panic!("missing local proof")
+    };
+    assert!(cli.retained_sibling_proofs > 0);
+    // The library engine agrees with and without retention.
+    let retained = certified(&p, &options(true, true));
+    assert!(report(&retained).retained_sibling_proofs > 0);
+    equivalent(&retained, &certified(&p, &options(false, false)));
 }
 
 #[test]

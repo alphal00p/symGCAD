@@ -13,14 +13,6 @@ pub(crate) const MAX_DESCARTES_INTERVAL_SOURCE_TERMS: usize = 65_536;
 pub(crate) const DEFAULT_DESCARTES_INTERVAL_MAX_TOTAL_TERMS: usize = 65_536;
 pub(crate) const MAX_DESCARTES_INTERVAL_TOTAL_TERMS: usize = 262_144;
 pub(crate) const DEFAULT_SUBTREE_CACHE_ENTRY_NODES: usize = 128;
-/// New pair-witness templates are admitted only when the dense monomial bound
-/// of the replaced resultant exceeds this. Smaller resultants are cheap and
-/// sample-independent, while every template adds new sample-dependent guards.
-pub(crate) const DEFAULT_PAIR_WITNESS_MIN_RESULTANT_TERMS: u64 = 4096;
-
-pub(crate) fn is_default_pair_witness_min_resultant_terms(value: &u64) -> bool {
-    *value == DEFAULT_PAIR_WITNESS_MIN_RESULTANT_TERMS
-}
 pub(crate) const MAX_SUBTREE_CACHE_ENTRY_NODES: usize = 4096;
 
 pub(crate) fn default_subtree_cache_entry_nodes() -> usize {
@@ -212,9 +204,10 @@ pub struct SolverOptions {
     #[serde(skip_serializing_if = "is_false")]
     pub local_positive_pair_witnesses: bool,
     /// Discovery-only: admit a new pair-witness template only if the dense
-    /// monomial bound of the replaced resultant exceeds this value (default
-    /// 4096; 0 restores the historical always-attempt behaviour).
-    #[serde(skip_serializing_if = "is_default_pair_witness_min_resultant_terms")]
+    /// monomial bound of the replaced resultant exceeds this value (default 0:
+    /// the historical always-attempt policy, so existing inputs and evidence
+    /// are unchanged).
+    #[serde(skip_serializing_if = "is_zero_u64")]
     pub local_pair_witness_min_resultant_terms: u64,
     /// Discovery-only lifetime cap on new pair-witness templates per axis
     /// (0: unlimited). A decline selects the ordinary resultant.
@@ -291,7 +284,7 @@ impl Default for SolverOptions {
             local_descartes_interval_max_total_terms: DEFAULT_DESCARTES_INTERVAL_MAX_TOTAL_TERMS,
             local_descartes_interval_template_limit: 2,
             local_positive_pair_witnesses: false,
-            local_pair_witness_min_resultant_terms: DEFAULT_PAIR_WITNESS_MIN_RESULTANT_TERMS,
+            local_pair_witness_min_resultant_terms: 0,
             local_pair_witness_axis_budget: 0,
             local_strict_bezout_hints: Vec::new(),
             local_base_point_projection: true,
@@ -343,6 +336,9 @@ fn is_two(value: &usize) -> bool {
     *value == 2
 }
 fn is_zero_usize(value: &usize) -> bool {
+    *value == 0
+}
+fn is_zero_u64(value: &u64) -> bool {
     *value == 0
 }
 fn is_optimized(value: &str) -> bool {

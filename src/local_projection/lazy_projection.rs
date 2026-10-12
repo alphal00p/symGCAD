@@ -170,11 +170,12 @@ impl Builder<'_> {
                 return Ok(None);
             }
             let mut frontier = Vec::new();
-            let mut completed: Vec<Child> = Vec::new();
             let mut additions = BTreeSet::new();
             let mut siblings = 0usize;
             let mut requirements = 0usize;
             let mut cells = 0usize;
+            // Past the ordinary thresholds only while proofs are retained.
+            let mut retaining = retained.as_ref().is_some_and(|pool| pool.accepting());
             for i in 0..=roots.len() {
                 self.check_budget()?;
                 if !additions.is_empty() {
@@ -268,21 +269,18 @@ impl Builder<'_> {
                             }
                             frontier.push(Child { sample, built });
                         } else if !negative_ray {
-                            completed.push(Child { sample, built });
+                            retaining &= self.set_aside(retained.as_mut(), sample, built);
                         }
                     }
                 }
                 if !additions.is_empty() {
-                    if retained.is_some() {
-                        completed.extend(frontier.drain(..).filter(|child| {
-                            ray.is_none() || child.sample > Rational::zero()
-                        }));
-                    } else {
-                        frontier.clear();
+                    for child in std::mem::take(&mut frontier) {
+                        if ray.is_none() || child.sample > Rational::zero() {
+                            retaining &=
+                                self.set_aside(retained.as_mut(), child.sample, child.built);
+                        }
                     }
-                    // Retained complete siblings are never wasted, so a
-                    // retaining round collects every discovery before restart.
-                    if retained.is_none()
+                    if !retaining
                         && (!self.options.batch_sibling_discovery
                             || additions.len() >= 8
                             || siblings >= 32)
@@ -293,11 +291,6 @@ impl Builder<'_> {
             }
             if additions.is_empty() {
                 break frontier;
-            }
-            if let Some(children) = &mut retained {
-                for child in completed {
-                    children.retain(child.sample, child.built);
-                }
             }
             self.report.refinement_cuts += additions.len();
             self.report.multi_cut_refinements += usize::from(additions.len() > 1);

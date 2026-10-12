@@ -1,11 +1,13 @@
 //! Read-only refinement diagnostics, enabled by `SYMGCAD_LOCAL_THRASH_DIAG`.
 //!
 //! Nothing recorded here is proof authority or changes a solver choice: the
-//! counters only describe how a stack visit restarts, which projection rule
-//! first produced each newly requested cut, and why exact-prefix subtree reuse
-//! missed. Polynomial origins are attributed by factoring each raw projection
-//! obligation separately (through the ordinary operation cache), so enabling
-//! the diagnostic can only add cached factorization calls.
+//! counters only describe how a stack visit restarts, which projection rules
+//! have produced each newly requested cut, and why exact-prefix subtree reuse
+//! missed. Polynomial origins are attributed by looking up each raw projection
+//! obligation's factor basis in the in-memory operation cache only: the
+//! diagnostic never factors, interns or changes a cache counter, so an
+//! obligation that was not factored (base-univariate sources) or whose basis
+//! was evicted simply stays unattributed.
 use serde::{Deserialize, Serialize};
 use std::{
     collections::{BTreeMap, HashMap, HashSet},
@@ -22,8 +24,11 @@ pub(super) const PAIR_WITNESS: u16 = 1 << 4;
 pub(super) const DESCARTES_WITNESS: u16 = 1 << 5;
 pub(super) const OTHER_SEPARATOR: u16 = 1 << 6;
 pub(super) const DOMAIN_SUPPORT: u16 = 1 << 7;
+/// Coefficient of a cut that itself already carried a separator origin.
+pub(super) const SEPARATOR_COEFFICIENT: u16 = 1 << 8;
+pub(super) const SEPARATORS: u16 = PAIR_WITNESS | DESCARTES_WITNESS | OTHER_SEPARATOR;
 
-const NAMES: [(u16, &str); 8] = [
+const NAMES: [(u16, &str); 9] = [
     (INPUT, "input"),
     (COEFFICIENT, "coefficient"),
     (DISCRIMINANT, "discriminant"),
@@ -32,6 +37,7 @@ const NAMES: [(u16, &str); 8] = [
     (DESCARTES_WITNESS, "descartes_witness_separator"),
     (OTHER_SEPARATOR, "interval_separation_or_bezout"),
     (DOMAIN_SUPPORT, "domain_support"),
+    (SEPARATOR_COEFFICIENT, "coefficient_of_separator_cut"),
 ];
 
 pub(super) fn label(bits: u16) -> String {
@@ -57,10 +63,17 @@ pub struct ThrashReport {
     pub additions_by_level: Vec<usize>,
     /// Largest cut set seen in one stack, per level.
     pub max_cuts_by_level: Vec<usize>,
-    /// New cut requests by the projection rule that first produced the cut.
+    /// Addition events (one per stack round that requests a cut missing from
+    /// its cut set; the same cut requested again in another visit or round
+    /// counts again), keyed by the union of every projection rule that had
+    /// produced the polynomial anywhere in the solve by then. A combined
+    /// label such as `coefficient+pair_witness_separator` means both rules
+    /// produced it, not that one rule derived it from the other.
     pub additions_by_origin: BTreeMap<String, usize>,
     /// Same, restricted to failed children whose sample was on that cut.
     pub guard_stop_additions_by_origin: BTreeMap<String, usize>,
+    /// Distinct registry cuts by their origin label at their first addition.
+    pub distinct_additions_by_origin: BTreeMap<String, usize>,
     /// Completed children discarded by a restart, with their cell counts.
     pub discarded_completed_children: usize,
     pub discarded_completed_cells: usize,
@@ -117,6 +130,7 @@ pub(super) struct ThrashDiag {
     pub report: ThrashReport,
     pub origins: HashMap<usize, u16>,
     admitted: HashSet<u64>,
+    added: HashSet<usize>,
 }
 
 fn grow(values: &mut Vec<usize>, level: usize) -> &mut usize {
@@ -160,9 +174,19 @@ impl ThrashDiag {
             self.report.subtree_admission_declines += 1;
         }
     }
+    pub(super) fn origin(&self, id: usize) -> u16 {
+        self.origins.get(&id).copied().unwrap_or(0)
+    }
     pub(super) fn addition(&mut self, id: usize, guard_stop: bool) {
-        let name = label(self.origins.get(&id).copied().unwrap_or(0));
+        let name = label(self.origin(id));
         *self.report.additions_by_origin.entry(name.clone()).or_default() += 1;
+        if self.added.insert(id) {
+            *self
+                .report
+                .distinct_additions_by_origin
+                .entry(name.clone())
+                .or_default() += 1;
+        }
         if guard_stop {
             *self
                 .report

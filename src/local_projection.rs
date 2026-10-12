@@ -113,8 +113,7 @@ pub struct LocalOptions {
     pub positive_pair_witnesses: bool,
     /// Discovery-only: admit a new pair-witness template only when the dense
     /// monomial bound of the replaced resultant exceeds this value (0: always,
-    /// which is also what historical evidence without the field recorded).
-    /// The solver configuration supplies 4096 whenever pair witnesses are on.
+    /// the default and what historical evidence without the field recorded).
     #[serde(default, skip_serializing_if = "is_zero_u64")]
     pub pair_witness_min_resultant_terms: u64,
     /// Discovery-only lifetime cap on new pair-witness templates per axis
@@ -383,8 +382,15 @@ pub struct LocalReport {
     pub retained_sibling_budget: usize,
     #[serde(skip_serializing_if = "is_zero_count")]
     pub retained_sibling_peak_weight: usize,
+    /// Children the shared node budget could not hold (revisited later).
     #[serde(skip_serializing_if = "is_zero_count")]
     pub retained_sibling_budget_drops: usize,
+    /// Children not kept because a child at the same exact sample already is.
+    #[serde(skip_serializing_if = "is_zero_count")]
+    pub retained_sibling_duplicate_drops: usize,
+    /// Children not kept because one pool reached its count bound.
+    #[serde(skip_serializing_if = "is_zero_count")]
+    pub retained_sibling_capacity_drops: usize,
     pub second_cancellation_pairs_omitted: usize,
     pub subtree_cache_hits: usize,
     pub subtree_cache_misses: usize,
@@ -2308,8 +2314,9 @@ impl Builder<'_> {
         Ok(index)
     }
     /// Diagnostic only: attribute every factor of each raw obligation to the
-    /// projection rule that produced it. Factorization goes through the same
-    /// cache as `guard_basis`; no proof object or solver choice depends on it.
+    /// projection rule that produced it. Factor bases are only looked up in
+    /// the in-memory cache that `guard_basis` filled: nothing is factored,
+    /// interned or counted, and no proof object or solver choice depends on it.
     fn diag_tag_projection(
         &mut self,
         raw: &[Poly],
@@ -2322,8 +2329,15 @@ impl Builder<'_> {
         for &id in cuts {
             let p = &self.polynomials[id];
             if highest(p) == Some(level) {
+                // Link coefficients to a parent cut that a separator produced.
+                let parent = self.thrash.as_ref().map_or(0, |diag| diag.origin(id));
+                let bits = if parent & thrash_diag::SEPARATORS != 0 {
+                    thrash_diag::COEFFICIENT | thrash_diag::SEPARATOR_COEFFICIENT
+                } else {
+                    thrash_diag::COEFFICIENT
+                };
                 for (coefficient, _) in p.to_univariate_polynomial_list(level) {
-                    kinds.push((thrash_diag::COEFFICIENT, coefficient));
+                    kinds.push((bits, coefficient));
                 }
             }
         }
@@ -2364,11 +2378,14 @@ impl Builder<'_> {
             } else {
                 bits
             };
-            // Never intern here: only factors already admitted by guard_basis
-            // are tagged, so the registry is identical with the diagnostic off.
-            // A diagnostic factorization failure only leaves the origin unknown.
-            let Ok(factors) = self.operations.factors(std::slice::from_ref(p)) else {
-                continue;
+            // Never factor or intern here: only factors already admitted by
+            // guard_basis are tagged, so the registry, the operation cache and
+            // its counters are identical with the diagnostic off. An obligation
+            // without a cached basis (an unfactored base-univariate source, or
+            // an evicted entry) is attributed only if it is itself registered.
+            let factors = match self.operations.cache.cached_factor_basis(p) {
+                Some(factors) => factors,
+                None => vec![canonical(p)],
             };
             for factor in factors {
                 if let (Some(&id), Some(diag)) = (self.ids.get(&factor), &mut self.thrash) {
@@ -2437,6 +2454,8 @@ impl Builder<'_> {
             self.report.projected_pairs,
         );
         let result = self.project_inner(cuts, level, prefix);
+        // An error between enabling and consuming the log must not leave it on.
+        self.operations.diag_log = None;
         let phases = &self.operations.phases;
         let costs = thrash_diag::ProjectionCost {
             seconds: started.elapsed().as_secs_f64(),
@@ -2759,12 +2778,14 @@ impl Builder<'_> {
             let mut required = self.projection_requirements(&projection);
             // Each sector keeps its exact sample and whole conditional child.
             let mut sectors: Vec<(Rational, Built)> = Vec::new();
-            // Complete children of a round that cannot be emitted.
-            let mut completed: Vec<(Rational, Built)> = Vec::new();
             let mut round_samples: Vec<(Rational, bool)> = Vec::new();
             let mut cells = 0usize;
             let mut additions = BTreeSet::new();
             let mut discovery_siblings = 0usize;
+            // A round collects siblings past the ordinary discovery thresholds
+            // only while their complete proofs are actually being retained;
+            // once the pool declines one for memory, the round stops as before.
+            let mut retaining = siblings.as_ref().is_some_and(|pool| pool.accepting());
             for i in 0..=roots.len() {
                 self.check_budget()?;
                 if !additions.is_empty() {
@@ -2888,25 +2909,23 @@ impl Builder<'_> {
                             }
                             sectors.push((sample, child));
                         } else if !negative_ray {
-                            completed.push((sample, child));
+                            retaining &= self.set_aside(siblings.as_mut(), sample, child);
                         }
                     }
                 }
                 if !additions.is_empty() {
                     // These sectors cannot be emitted: their boundary set has
-                    // changed. Discard them now while collecting a bounded
-                    // number of additional same-axis obligations. Earlier-axis
-                    // guards and all failures still return immediately above.
-                    // Retained siblings keep the complete proofs for reuse.
+                    // changed. Set them aside now (retained for reuse when that
+                    // option is on, otherwise discarded) while collecting a
+                    // bounded number of additional same-axis obligations.
+                    // Earlier-axis guards and all failures return above.
                     let positive = projection.positive_ray.is_some();
-                    completed.extend(
-                        sectors
-                            .drain(..)
-                            .filter(|(sample, _)| !positive || *sample > Rational::zero()),
-                    );
-                    // A retained complete sibling is never wasted work, so the
-                    // round finishes and collects every discovery at once.
-                    if siblings.is_none()
+                    for (sample, child) in std::mem::take(&mut sectors) {
+                        if !positive || sample > Rational::zero() {
+                            retaining &= self.set_aside(siblings.as_mut(), sample, child);
+                        }
+                    }
+                    if !retaining
                         && (!self.options.batch_sibling_discovery
                             || additions.len() >= 8
                             || discovery_siblings >= 32)
@@ -2944,17 +2963,7 @@ impl Builder<'_> {
                 for (sample, done) in round_samples {
                     *seen.entry(sample).or_insert(false) |= done;
                 }
-                if siblings.is_none() {
-                    diag.report.discarded_completed_children += completed.len();
-                    diag.report.discarded_completed_cells +=
-                        completed.iter().map(|(_, child)| child.cells).sum::<usize>();
-                }
                 diag.refinement(level, additions.len(), cuts.len() + additions.len());
-            }
-            if let Some(pool) = &mut siblings {
-                for (sample, child) in completed {
-                    pool.retain(sample, child);
-                }
             }
             self.report.refinement_cuts += additions.len();
             self.report.multi_cut_refinements += usize::from(additions.len() > 1);
