@@ -1,0 +1,58 @@
+name = "finiteB_6_469_7_0__2_0_1_0_1_0_1_1_1/fixed"
+variables = [
+    "x0",
+    "x2",
+    "x4",
+    "x6",
+    "x7",
+    "x8",
+]
+constraints = [
+    "x0 > 0",
+    "x2 > 0",
+    "x4 > 0",
+    "x6 > 0",
+    "x7 > 0",
+    "x8 > 0",
+]
+split = ["(-s)*x0*x2*x4 + (-s)*x0*x2*x6 + (-s)*x0*x2*x7 + (-s)*x0*x2*x8 + (mt2)*x0*x4^2 + (2*mt2 - mz2)*x0*x4*x6 + (2*mt2 - mz2)*x0*x4*x7 + (2*mt2 - mz2)*x0*x4*x8 + (mt2)*x0*x6^2 + (2*mt2 - s)*x0*x6*x7 + (2*mt2 - s)*x0*x6*x8 + (mt2)*x0*x7^2 + (2*mt2)*x0*x7*x8 + (mt2)*x0*x8^2 + (mt2)*x2*x4^2 + (2*mt2 - mz2)*x2*x4*x6 + (2*mt2 - mz2)*x2*x4*x7 + (2*mt2 - mz2)*x2*x4*x8 + (mt2)*x2*x6^2 + (2*mt2 - s)*x2*x6*x7 + (2*mt2)*x2*x6*x8 + (mt2)*x2*x7^2 + (2*mt2 - s)*x2*x7*x8 + (mt2)*x2*x8^2 + (mt2)*x4^2*x8 + (2*mt2 - mz2)*x4*x6*x8 + (2*mt2 - mz2)*x4*x7*x8 + (mt2)*x4*x8^2 + (mt2)*x6^2*x8 + (2*mt2 - s)*x6*x7*x8 + (mt2)*x6*x8^2 + (mt2)*x7^2*x8 + (mt2)*x7*x8^2"]
+variable_groups = [[
+    "x0",
+    "x2",
+    "x4",
+    "x6",
+    "x7",
+    "x8",
+]]
+
+[parameters]
+mt2 = "1"
+mz2 = "5/18"
+s = "10"
+t = "-3"
+
+[solver]
+engine = "monotone"
+ordering = "mods"
+order = []
+merge = "none"
+seed = 0
+max_rollouts = 256
+search_pruning = true
+cache_memory_mib = 128
+positivity = true
+input_positivity = true
+homogeneous_block = [
+    "x0",
+    "x2",
+    "x4",
+    "x6",
+    "x7",
+    "x8",
+]
+homogeneous_anchor = "x4"
+
+[limits]
+wall_time_secs = 30.0
+memory_mib = 4096
+workers = 1

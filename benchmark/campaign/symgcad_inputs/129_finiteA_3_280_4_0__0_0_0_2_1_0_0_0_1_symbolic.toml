@@ -1,0 +1,49 @@
+name = "finiteA_3_280_4_0__0_0_0_2_1_0_0_0_1/symbolic"
+variables = [
+    "s",
+    "x3",
+    "x4",
+    "x8",
+]
+constraints = [
+    "s > 4",
+    "x3 > 0",
+    "x4 > 0",
+    "x8 > 0",
+]
+split = ["(mt2)*x3^2*x4 + (mt2)*x3^2*x8 + (mt2)*x3*x4^2 + (2*mt2 - mz2)*x3*x4*x8 + (mt2)*x4^2*x8"]
+variable_groups = [
+    ["s"],
+    [
+    "x3",
+    "x4",
+    "x8",
+],
+]
+
+[parameters]
+mt2 = "1"
+mz2 = "5/18"
+
+[solver]
+engine = "monotone"
+ordering = "mods"
+order = []
+merge = "none"
+seed = 0
+max_rollouts = 256
+search_pruning = true
+cache_memory_mib = 128
+positivity = true
+input_positivity = true
+homogeneous_block = [
+    "x3",
+    "x4",
+    "x8",
+]
+homogeneous_anchor = "x4"
+
+[limits]
+wall_time_secs = 60.0
+memory_mib = 4096
+workers = 1

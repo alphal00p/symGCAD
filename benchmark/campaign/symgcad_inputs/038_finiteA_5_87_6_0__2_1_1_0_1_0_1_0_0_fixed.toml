@@ -1,0 +1,54 @@
+name = "finiteA_5_87_6_0__2_1_1_0_1_0_1_0_0/fixed"
+variables = [
+    "x0",
+    "x1",
+    "x2",
+    "x4",
+    "x6",
+]
+constraints = [
+    "x0 > 0",
+    "x1 > 0",
+    "x2 > 0",
+    "x4 > 0",
+    "x6 > 0",
+]
+split = ["(mt2)*x0^2*x4 + (mt2)*x0^2*x6 + (2*mt2)*x0*x1*x4 + (2*mt2)*x0*x1*x6 + (2*mt2 - s)*x0*x2*x4 + (2*mt2 - s)*x0*x2*x6 + (mt2)*x0*x4^2 + (2*mt2 - s)*x0*x4*x6 + (mt2)*x0*x6^2 + (mt2)*x1^2*x4 + (mt2)*x1^2*x6 + (2*mt2)*x1*x2*x4 + (2*mt2)*x1*x2*x6 + (mt2)*x1*x4^2 + (2*mt2 - s)*x1*x4*x6 + (mt2)*x1*x6^2 + (mt2)*x2^2*x4 + (mt2)*x2^2*x6 + (mt2)*x2*x4^2 + (2*mt2 - s)*x2*x4*x6 + (mt2)*x2*x6^2"]
+variable_groups = [[
+    "x0",
+    "x1",
+    "x2",
+    "x4",
+    "x6",
+]]
+
+[parameters]
+mt2 = "1"
+mz2 = "5/18"
+s = "10"
+t = "-3"
+
+[solver]
+engine = "monotone"
+ordering = "mods"
+order = []
+merge = "none"
+seed = 0
+max_rollouts = 256
+search_pruning = true
+cache_memory_mib = 128
+positivity = true
+input_positivity = true
+homogeneous_block = [
+    "x0",
+    "x1",
+    "x2",
+    "x4",
+    "x6",
+]
+homogeneous_anchor = "x4"
+
+[limits]
+wall_time_secs = 30.0
+memory_mib = 4096
+workers = 1

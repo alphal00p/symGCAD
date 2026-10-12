@@ -1,0 +1,46 @@
+name = "test_gluza_ex30/solve/3"
+variables = [
+    "x0",
+    "x1",
+    "x2",
+    "x4",
+    "x5",
+    "x6",
+    "x7",
+]
+constraints = [
+    "-x0*x1*x2*x5 - x0*x1*x2*x6 - x0*x1*x2*x7 + x0*x1*x2 - x0*x1*x4*x5 - x0*x1*x4*x6 - x0*x1*x4*x7 + x0*x1*x4 - x0*x1*x5*x7 - x0*x1*x5 - x0*x1*x6*x7 - x0*x1*x6 + x0*x1 - x0*x2*x4*x5 - x0*x2*x4*x6 - x0*x2*x4*x7 + x0*x2*x4 - x0*x2*x5*x6 + x0*x2*x5 - x0*x2*x6*x7 + x0*x2*x7 - x0*x4*x5*x6 - x0*x4*x5*x7 - x0*x4*x6 - x0*x4*x7 + x0*x4 - x0*x5*x6*x7 - x0*x5*x6 + x0*x5*x7 + x0*x5 - x0*x6*x7 + x0*x7 - x1*x2*x4*x5 - x1*x2*x4*x6 - x1*x2*x4*x7 + x1*x2*x4 + x1*x2 - x1*x4*x5*x7 + x1*x4*x5 - x1*x4*x6*x7 + x1*x4*x6 + x1*x5 + x1*x6 - x2*x4*x5*x6 - x2*x4*x5 - x2*x4*x6*x7 - x2*x4*x7 + x2*x4 + x2*x5 + x2*x7 - x4*x5*x6*x7 + x4*x5*x6 - x4*x5*x7 + x4*x5 - x4*x6*x7 + x4*x6 + x5*x6 + x5*x7 + x6*x7 > 0",
+    "x0 > 0",
+    "x1 > 0",
+    "x2 > 0",
+    "x4 > 0",
+    "x5 > 0",
+    "x6 > 0",
+    "x7 > 0",
+]
+split = []
+variable_groups = [[
+    "x0",
+    "x1",
+    "x2",
+    "x4",
+    "x5",
+    "x6",
+    "x7",
+]]
+
+[parameters]
+[solver]
+engine = "bilinear_general"
+ordering = "given"
+order = ["x1", "x7", "x2", "x6", "x5", "x4", "x0"]
+merge = "none"
+positivity = true
+projective_sections = true
+bilinear_general_guide = "x0*x1*x2+x0*x1*x4+x0*x2*x4+x1*x2*x4+x0*x2*x5+x1*x2*x5+x0*x4*x5+x1*x4*x5+x1*x2*x6+x1*x4*x6+x2*x4*x6+x2*x5*x6+x4*x5*x6+x0*x1*x7+x0*x2*x7+x1*x2*x7+x0*x5*x7+x1*x5*x7+x1*x6*x7+x2*x6*x7+x5*x6*x7+x0*x1+x1*x2+x0*x4+x2*x4+x0*x5+x1*x5+x2*x5+x4*x5+x1*x6+x4*x6+x5*x6+x0*x7+x2*x7+x5*x7+x6*x7"
+bilinear_general_base_engine = "optimized"
+
+[limits]
+wall_time_secs = 900.0
+memory_mib = 4096
+workers = 1

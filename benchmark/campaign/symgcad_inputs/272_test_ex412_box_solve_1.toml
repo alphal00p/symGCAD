@@ -1,0 +1,42 @@
+name = "test_ex412_box/solve/1"
+variables = [
+    "s12",
+    "s13",
+    "p1s",
+    "x1",
+    "x2",
+    "x3",
+    "x4",
+]
+constraints = [
+    "-p1s*x1*x3 - s12*x1*x2 - s13*x3*x4 < 0",
+    "x1 > 0",
+    "x2 > 0",
+    "x3 > 0",
+    "x4 > 0",
+    "s12 > 0",
+    "s13 < 0",
+    "p1s > 0",
+]
+split = []
+variable_groups = []
+
+[parameters]
+
+[solver]
+engine = "optimized"
+ordering = "mods"
+order = []
+merge = "none"
+seed = 0
+max_rollouts = 256
+search_pruning = true
+cache_memory_mib = 128
+positivity = true
+input_positivity = true
+homogeneous_block = []
+
+[limits]
+wall_time_secs = 60.0
+memory_mib = 4096
+workers = 1

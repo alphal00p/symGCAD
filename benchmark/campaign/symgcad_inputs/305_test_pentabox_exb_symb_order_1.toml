@@ -1,0 +1,72 @@
+name = "test_pentabox_exb_symb/order/1"
+variables = [
+    "s12",
+    "s23",
+    "s34",
+    "s45",
+    "s15",
+    "x0",
+    "x1",
+    "x2",
+    "x3",
+    "x4",
+    "x5",
+    "x6",
+    "x7",
+]
+constraints = [
+    "-s12*x0*x2*x4 - s12*x0*x2*x5 - s12*x0*x2*x6 - s12*x0*x2*x7 - s12*x2*x4*x7 - s15*x1*x6*x7 - s23*x1*x3*x4 - s23*x1*x3*x5 - s23*x1*x3*x6 - s23*x1*x3*x7 - s23*x1*x5*x7 - s34*x2*x6*x7 - s45*x0*x3*x4 - s45*x0*x3*x5 - s45*x0*x3*x6 - s45*x0*x3*x7 - s45*x0*x4*x5 - s45*x0*x5*x7 - s45*x1*x4*x5 - s45*x2*x4*x5 - s45*x3*x4*x5 - s45*x3*x4*x7 - s45*x4*x5*x7 < 0",
+    "x0 > 0",
+    "x1 > 0",
+    "x2 > 0",
+    "x3 > 0",
+    "x4 > 0",
+    "x5 > 0",
+    "x6 > 0",
+    "x7 > 0",
+    "s12 > 0",
+    "s23 < 0",
+    "s34 > 0",
+    "s45 > 0",
+    "s15 < 0",
+]
+split = []
+variable_groups = [
+    [
+    "s12",
+    "s23",
+    "s34",
+    "s45",
+    "s15",
+],
+    [
+    "x0",
+    "x1",
+    "x2",
+    "x3",
+    "x4",
+    "x5",
+    "x6",
+    "x7",
+],
+]
+
+[parameters]
+
+[solver]
+engine = "optimized"
+ordering = "mods"
+order = []
+merge = "none"
+seed = 0
+max_rollouts = 256
+search_pruning = true
+cache_memory_mib = 128
+positivity = true
+input_positivity = true
+homogeneous_block = []
+
+[limits]
+wall_time_secs = 60.0
+memory_mib = 4096
+workers = 1

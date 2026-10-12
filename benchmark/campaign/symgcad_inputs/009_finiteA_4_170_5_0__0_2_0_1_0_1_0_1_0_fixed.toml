@@ -1,0 +1,50 @@
+name = "finiteA_4_170_5_0__0_2_0_1_0_1_0_1_0/fixed"
+variables = [
+    "x1",
+    "x3",
+    "x5",
+    "x7",
+]
+constraints = [
+    "x1 > 0",
+    "x3 > 0",
+    "x5 > 0",
+    "x7 > 0",
+]
+split = ["(mt2)*x1^2*x5 + (mt2)*x1^2*x7 + (2*mt2 - 2*mz2 + s + t)*x1*x3*x5 + (2*mt2 - 2*mz2 + s + t)*x1*x3*x7 + (mt2)*x1*x5^2 + (2*mt2 - 2*mz2 + s + t)*x1*x5*x7 + (mt2)*x1*x7^2 + (mt2)*x3^2*x5 + (mt2)*x3^2*x7 + (mt2)*x3*x5^2 + (2*mt2 - 2*mz2 + s + t)*x3*x5*x7 + (mt2)*x3*x7^2"]
+variable_groups = [[
+    "x1",
+    "x3",
+    "x5",
+    "x7",
+]]
+
+[parameters]
+mt2 = "1"
+mz2 = "5/18"
+s = "10"
+t = "-3"
+
+[solver]
+engine = "monotone"
+ordering = "mods"
+order = []
+merge = "none"
+seed = 0
+max_rollouts = 256
+search_pruning = true
+cache_memory_mib = 128
+positivity = true
+input_positivity = true
+homogeneous_block = [
+    "x1",
+    "x3",
+    "x5",
+    "x7",
+]
+homogeneous_anchor = "x1"
+
+[limits]
+wall_time_secs = 30.0
+memory_mib = 4096
+workers = 1

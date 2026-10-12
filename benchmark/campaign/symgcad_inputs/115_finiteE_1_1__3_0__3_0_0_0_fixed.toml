@@ -1,0 +1,30 @@
+name = "finiteE_1_1__3_0__3_0_0_0/fixed"
+variables = ["x0"]
+constraints = ["x0 > 0"]
+split = ["mt2*(x0)^2"]
+variable_groups = [["x0"]]
+
+[parameters]
+mt2 = "1"
+mz2 = "5/18"
+s = "10"
+t = "-3"
+
+[solver]
+engine = "monotone"
+ordering = "mods"
+order = []
+merge = "none"
+seed = 0
+max_rollouts = 256
+search_pruning = true
+cache_memory_mib = 128
+positivity = true
+input_positivity = true
+homogeneous_block = ["x0"]
+homogeneous_anchor = "x0"
+
+[limits]
+wall_time_secs = 30.0
+memory_mib = 4096
+workers = 1

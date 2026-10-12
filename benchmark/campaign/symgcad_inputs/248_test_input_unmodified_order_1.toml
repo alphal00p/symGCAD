@@ -1,0 +1,41 @@
+name = "test_input_unmodified/order/1"
+variables = [
+    "t",
+    "u",
+    "x",
+    "y",
+    "z",
+]
+constraints = ["t*x + u*y - z > 0"]
+split = []
+variable_groups = [
+    [
+    "t",
+    "u",
+],
+    [
+    "x",
+    "y",
+    "z",
+],
+]
+
+[parameters]
+
+[solver]
+engine = "optimized"
+ordering = "mods"
+order = []
+merge = "none"
+seed = 0
+max_rollouts = 256
+search_pruning = true
+cache_memory_mib = 128
+positivity = true
+input_positivity = true
+homogeneous_block = []
+
+[limits]
+wall_time_secs = 60.0
+memory_mib = 4096
+workers = 1

@@ -1,247 +1,214 @@
-#let data = json("data.json")
-#import "style.typ": *
-#show: report-style
+// symGCAD corpus benchmark (generated data: report-data.json, built by build_report.py).
+// Section 1: all 331 corpus problems, symGCAD (cold runs) vs the original native GCAD.
+// Section 2: improvements over the original GCAD (improvements.typ).
+// Section 3: Symbolica vs FLINT on the purely algebraic steps (table included from the
+//            path recorded in report-data.json: FLINT_vs_symbolica/results/ or flint-draft/).
+#import "style.typ": ink, muted, line, green, yellow, red
+#let data = json("report-data.json")
+#let S = data.summary
+
 #set document(title: "symGCAD — corpus benchmark", author: "Valentin Hirschi")
+#set page(paper: "a4", flipped: true, margin: (x: 11mm, top: 11mm, bottom: 12mm),
+  footer: context [#text(size: 7pt, fill: muted)[symGCAD · corpus benchmark, improvements over GCAD, Symbolica vs FLINT #h(1fr) #counter(page).display("1")]])
+#set text(font: "Libertinus Sans", size: 9pt, fill: ink)
+#set par(leading: 0.55em, justify: false)
+#set heading(numbering: "1.1")
+#show heading.where(level: 1): it => { set text(size: 17pt, weight: "bold"); block(above: 0.6em, below: 0.7em, it) }
+#show heading.where(level: 2): set text(size: 11pt, weight: "bold")
+#show raw: set text(size: 0.95em)
 
-= symGCAD / corpus benchmark
-#text(size: 11pt, fill: muted)[
-  #data.completion_summary.complete_verified / #data.completion_summary.expected_groups distinct original problems independently verified
-  #h(1em)·#h(1em) #data.completion_summary.unresolved marked slow
-]
-
-All distinct problems are listed below, fastest verified solve first; unresolved problems follow.
-*Solve* and *check* are fresh-process wall seconds. *RAM* is maximum recorded resident MiB across solve and verification (†: verification RSS unavailable).
-*N* is the repetition count; three-run medians are preferred when available. *D/R* identifies debug/release builds.
-Cache tags: *C* = cold; *S* = shared checkpoints (may be warm); *?* = unrecorded.
-For incomplete rows, *TO/stop* is the longest retained observed attempt, not a solved time.
-Their RAM is the highest retained attempt RSS, which may come from an earlier run.
-The *baseline* columns are a separate, matched GCAD comparison: projection + lifting + merging only,
-with three fresh repetitions and identical orders. *±* means two separate sign-branch solves, not the optimized full-split solve.
-
-#text(size: 8pt)[
-  Matched ratio = symGCAD / GCAD:
-  #box(fill: green, inset: 3pt)[< 1]
-  #box(fill: yellow, inset: 3pt)[1–2]
-  #box(fill: red, inset: 3pt)[> 2]
-  #h(1em) — = unavailable or censored; TO = native timeout. Ratios use two significant digits.
-]
-#v(3pt)
-
-#let ident(s) = text(size: 7.4pt, s.replace("_", "_\u{200b}").replace("/", "/\u{200b}"))
-#let matched-cell(r) = {
-  let x = r.baseline.ratio
-  if x == none { table.cell(fill: rgb("F3F5F7"))[—] }
-  else {
-    let color = if x < 1 { rgb("216C3D") } else if x <= 2 { rgb("816407") } else { rgb("A3292F") }
-    table.cell(fill: if x < 1 { green } else if x <= 2 { yellow } else { red })[
-      #r.display.baseline_rust #text(fill: color, weight: "bold")[(×#r.display.ratio)]#if r.baseline.branches == 2 [ ±]
-    ]
+// ---------- helpers
+#let mono(s) = text(font: "Libertinus Mono", size: 0.92em, s)
+#let fmt-int(n) = {
+  if n == none { "—" } else {
+    let s = str(n)
+    let out = ""
+    let k = 0
+    for i in range(s.len() - 1, -1, step: -1) {
+      if k > 0 and calc.rem(k, 3) == 0 { out = "," + out }
+      out = s.at(i) + out
+      k += 1
+    }
+    out
   }
 }
-#let measure(r, key) = if r.verified { r.display.at(key) } else { "—" }
-#set text(size: 7.7pt)
-#table(
-  columns: (8mm, 83mm, 7mm, 33mm, 6mm, 16mm, 16mm, 17mm, 19mm, 30mm, 13mm),
-  align: (right, left, center, left, center, right, right, right, right, right, right),
-  inset: (x: 3pt, y: 2.6pt),
-  stroke: (left: none, right: none, top: none, bottom: 0.3pt + line),
-  fill: (x, y) => if y == 0 { ink } else if calc.rem(y, 2) == 0 { rgb("F7F9FA") } else { white },
-  table.header(
-    ..("#", "Original problem / representative full ID", "IDs", "Method · build", "N", "Solve s", "Check s", "RAM MiB", "Cells", "Matched Rust s (×R)", "GCAD s").map(x => text(fill: white, weight: "bold", x)),
-  ),
-  ..data.rows.map(r => (
-    str(r.rank),
-    ident(r.identifier),
-    str(r.alias_count),
-    if r.verified { [#r.measurement.method\ #text(fill: muted)[#r.measurement.build · #if r.measurement.cache_policy == "cold" [C] else if r.measurement.cache_policy == "shared" [S] else [?]]] }
-      else { [#text(weight: "bold", fill: muted)[slow / #r.at("slow_status", default: "incomplete")]] },
-    if r.verified { str(r.measurement.n) } else { "—" },
-    if r.verified { measure(r, "solve") } else if r.longest_incomplete_seconds != none {
-      [#if r.last_status == "timeout" [TO] else [stop] #r.display.incomplete]
-    } else { "—" },
-    measure(r, "verify"),
-    if r.verified { [#measure(r, "rss")#if not r.measurement.memory_complete [†]] } else if r.incomplete_peak_rss_mib > 0 { str(calc.round(r.incomplete_peak_rss_mib)) } else { "—" },
-    if r.verified { str(r.measurement.cells) } else { "—" },
-    matched-cell(r),
-    if r.baseline.complete { r.display.baseline_native } else if r.baseline.qualified_branches == 0 { [TO] } else { [partial TO] },
-  )).flatten(),
+#let fmt(x, d: 2) = if x == none { "—" } else { str(calc.round(x, digits: d)) }
+#let pct(a, b) = if b == 0 { "—" } else { str(calc.round(100 * a / b, digits: 1)) + "%" }
+#let speed(r) = if r == none { "—" } else { str(calc.round(1 / r, digits: 1)) + "×" }
+#let short(h) = if h == none { "—" } else { mono(h.slice(0, 12)) }
+#let ident(s) = s.replace("_", "_\u{200b}").replace("/", "/\u{200b}")
+#let card(title, big, body) = block(width: 100%, fill: rgb("EDF3F7"), radius: 4pt, inset: 7pt)[
+  #text(size: 8pt, fill: muted, weight: "bold", upper(title))\
+  #text(size: 17pt, weight: "bold", big)\
+  #text(size: 8pt, body)
+]
+
+// draft detection: anything not final is listed on the title page
+#let draft-reasons = {
+  let r = ()
+  if S.strict.verified_groups_without_cold_run > 0 { r.push([#S.strict.verified_groups_without_cold_run groups have no cold run with the report binary (data.json history shown)]) }
+  if S.symgcad_binaries.len() > 1 { r.push([cold runs mix #S.symgcad_binaries.len() symGCAD binaries]) }
+  if S.native.cases_recorded < S.native.cases_total { r.push([native GCAD run still in progress (#S.native.cases_recorded of #S.native.cases_total sign cases recorded)]) }
+  if data.flint == none or data.flint.draft { r.push([Symbolica-vs-FLINT numbers are a snapshot of a running campaign]) }
+  if S.opt_in.completed < S.opt_in.rows { r.push([opt-in projective rows not yet run with the report binary]) }
+  r
+}
+
+// ---------- title
+#text(size: 22pt, weight: "bold")[symGCAD — corpus benchmark]
+#h(1fr) #text(size: 9pt, fill: muted)[generated #data.generated_utc.slice(0, 10)]
+#v(-4pt)
+#text(size: 10.5pt, fill: muted)[All 331 distinct problems of the GCAD corpus: exact generic CAD in Rust on Symbolica, against the original GCAD by Vitaly Magerya]
+#if draft-reasons.len() > 0 [
+  #v(3pt)
+  #block(width: 100%, fill: rgb("FFF1BC"), radius: 4pt, inset: 6pt)[
+    #text(weight: "bold")[DRAFT.] #draft-reasons.join([; ]). Regenerate with #mono("benchmark/run_final.sh <symgcad binary>") (see #mono("benchmark/README.md")).
+  ]
+]
+
+= Benchmark results
+#v(-2pt)
+#let by = S.strict.by_scope
+#let C = S.comparison
+#grid(columns: (1fr, 1fr, 1fr, 1fr, 1fr), gutter: 4mm,
+  card("strict contract", [#S.strict.verified / #S.strict.expected], [
+    independently verified · fixed #by.fixed.verified/#by.fixed.expected · symbolic #by.symbolic.verified/#by.symbolic.expected · core #by.core.verified/#by.core.expected.
+    #if S.strict.newly_verified.len() > 0 [New: #S.strict.newly_verified.len().]
+    #if S.strict.lost.len() > 0 [#text(fill: rgb("A3292F"))[Lost vs data.json: #S.strict.lost.len().]]
+  ]),
+  card("opt-in projective", [+#S.opt_in.new_completions.len()], [
+    #if S.opt_in.new_completions.len() > 0 [#S.opt_in.new_completions.map(ident).join(", ") completes] else [no new completion] only under #mono("projective_sections = true") (§1.2); #S.opt_in.completed of #S.opt_in.rows opt-in rows verified. *Not* counted in the strict total.
+  ]),
+  card("native GCAD, 300 s/case", [#S.native.groups.at("complete", default: 0) / #S.groups], [
+    groups completed · #S.native.groups.at("timeout", default: 0) timeout · #S.native.groups.at("memory", default: 0) out of memory (8 GiB)#if S.native.groups.at("not run", default: 0) > 0 [ · #S.native.groups.at("not run") not run yet]; cases #S.native.cases_status.at("complete", default: 0)/#S.native.cases_total complete.
+  ]),
+  card("geometric mean ratio", [#fmt(C.geomean_solve_over_native_wall, d: 3)], [
+    symGCAD solve / native time on the #C.n groups both complete (#speed(C.geomean_solve_over_native_wall) faster); #C.symgcad_faster of #C.n faster, #C.ratio_above_2 more than 2× slower.
+  ]),
+  card("only symGCAD completes", [#C.verified_where_native_fails], [
+    groups verified by symGCAD where native GCAD timed out or ran out of memory#if C.native_completes_symgcad_not.len() > 0 [; native-only: #C.native_completes_symgcad_not.len()]. Summed times on the common set: #fmt(C.symgcad_solve_sum_s, d: 1) s vs #fmt(C.native_wall_sum_s, d: 1) s.
+  ]),
 )
+#v(4pt)
+#let T1 = C.tiers.at(0)
+#block(width: 100%)[
+#set text(size: 8.3pt)
+#set par(leading: 0.48em)
+#grid(columns: (1fr, 1fr), gutter: 8mm, [
+*What is compared.* Each row is one distinct original problem (aliases merged; split polynomials kept). *symGCAD* solves the full problem in one fresh process with its recipe (engine, ordering policy, options from the 2026-10-10 audit, #mono("benchmark/campaign/symgcad_inputs/")), then #mono("symgcad verify") re-checks the exported proof in a second fresh process. Only a verified #mono("complete_generic") result counts. *Native* is the unmodified GCAD (#mono("fb6ebe3"), FLINT 3.6) through the unmodified bridge #mono("reference/adapter.py"): each sign case of the split (`F > 0` and `F < 0` added as constraints, as in the earlier parity campaign) is solved in its own process, capped at 300 s and 8 GiB; the native time is the sum over sign cases and includes Python start-up and SymPy parsing. The *ratio* is symGCAD solve / native time; green < 1 (symGCAD faster), yellow 1–2, red > 2. Most corpus problems are tiny, and there the native time is dominated by Python start-up. On the #T1.n groups where native GCAD needs at least 1 s of internal time, the geometric mean ratio is #fmt(T1.geomean_solve_over_native_wall, d: 3) against native process time and #fmt(T1.geomean_solve_over_native_internal, d: 3) against native internal time (#speed(T1.geomean_solve_over_native_internal) faster without any start-up cost on the native side).
+], [
+*Columns.* *Order* is the variable order of the exported result (projection eliminates from the right); *H* marks the homogeneous anchor fixed to 1 before solving. *Method* is the engine and ordering policy (#mono("mods") = GCAD's heuristic, #mono("given") = recipe order, #mono("mcts") = bounded search inside the timed solve). *Cells* are verified raw cells (no merging; GCAD merges, so cell counts are not comparable); † marks the #S.strict.cells_differ_from_history groups whose count differs from the 2026-10-10 audit (both verified; recipes and code changed since). Times are wall seconds on one pinned CPU of an AMD EPYC 9754, with cold caches (fresh checkpoint directory and #mono("TMPDIR") per run); verified rows are sorted by solve time, then the incomplete ones. *Provenance:* symGCAD binary #for (h, n) in S.symgcad_binaries [#short(h) (#n groups) ] run #if S.symgcad_run_dates != none [#S.symgcad_run_dates.at(0).slice(0, 16)–#S.symgcad_run_dates.at(1).slice(11, 16) UTC]; native launch #if data.provenance.native.len() > 0 [#data.provenance.native.at(0).launched_utc.slice(0, 16) UTC, upstream #mono(data.provenance.native.at(0).upstream_revision.slice(0, 7))]. Every row's binary hash, input hash, date and record path are in #mono("report-data.json").
+])
+]
+
+== All 331 problems
+#let ratio-cell(r) = {
+  let c = r.display.ratio_class
+  let f = if c == "fast" { green } else if c == "par" { yellow } else if c == "slow" { red } else { none }
+  table.cell(fill: f)[#r.display.ratio]
+}
+#let status-cell(r) = {
+  if r.verified {
+    let k = r.symgcad.provenance.kind
+    if k == "cold run" [verified] else if k == "warm long attempt" [#text(fill: muted)[verified (warm)]] else [#text(fill: muted)[verified (hist.)]]
+  } else { text(fill: rgb("A3292F"), weight: "bold", r.display.status) }
+}
+#let native-cell(r) = {
+  let n = r.native.status
+  if n == "complete" [#r.display.native]
+  else if n == "timeout" [#text(fill: rgb("A3292F"))[timeout]]
+  else if n == "not run" [#text(fill: muted, style: "italic")[#r.display.native]]
+  else [#text(fill: rgb("A3292F"))[#r.display.native]]
+}
+#let order-cell(r) = {
+  let o = r.display.order
+  if r.display.anchor != "" [#o #text(fill: muted)[· H=#r.display.anchor]] else [#o]
+}
+#let solve-cell(r) = if r.verified [#r.display.solve] else [#text(fill: muted)[#r.display.longest#super(r.display.longest_tag)]]
+#let cells-cell(r) = [#r.display.cells#if r.display.cells_mark != "" [#text(fill: muted)[#r.display.cells_mark]]]
+#{
+  set text(size: 7pt)
+  set par(leading: 0.4em)
+  table(
+    columns: (7mm, 63mm, 12mm, 22mm, 34mm, 50mm, 15mm, 13mm, 12mm, 15mm, 11mm),
+    align: (right, left, left, left, left, left, right, right, right, right, right),
+    inset: (x: 2.5pt, y: 2.2pt),
+    stroke: (left: none, right: none, top: none, bottom: 0.3pt + line),
+    fill: (x, y) => if y == 0 { ink } else if calc.rem(y, 2) == 0 { rgb("F7F9FA") } else { white },
+    table.header(..("#", "Problem", "Scope", "Status", "Method · ordering", "Order (H = anchor)", "Cells", "Solve s", "Verify s", "Native s", "Ratio").map(x => text(fill: white, weight: "bold", x))),
+    ..data.rows.map(r => (
+      str(r.rank), ident(r.identifier), r.scope, status-cell(r),
+      [#r.display.method #text(fill: muted)[· #r.display.ordering]],
+      order-cell(r), cells-cell(r), solve-cell(r), r.display.verify, native-cell(r), ratio-cell(r),
+    )).flatten(),
+  )
+}
+#text(size: 7.5pt, fill: muted)[*Unresolved rows.* The *Solve s* column shows the longest attempt, a lower bound and not a solve time: #super[h] the 2026-10-10 one-hour campaign (Gluza33: 7,200 s), #super[w] a 2026-10-12 one-hour attempt with improved local-engine recipes and a warm shared operation cache (binary #mono("c8f2c62f"), integration #mono("4dbe440")), #super[c] a cold attempt of this run. For #mono("mcts") recipes without a fixed order, the order shown is the one the 2026-10-12 attempt was working on. Each attempt's status, wall time, peak memory and binary are in #mono("report-data.json") (#mono("rows[].attempts")).]
+
+== Opt-in projective contract
+These rows use the user-approved contract extension #mono("solver.projective_sections = true") (Section 2, item X1): a cell's upper boundary may be a positive root that escapes to +∞ inside the cell. They are reported separately and *do not change the strict count of #S.strict.verified / #S.strict.expected*.
+#v(2pt)
+#{
+  set text(size: 8pt)
+  table(
+    columns: (52mm, 40mm, 46mm, 17mm, 14mm, 14mm, 38mm, 17mm, 36mm),
+    align: (left, left, left, right, right, right, left, right, left),
+    inset: (x: 3pt, y: 3pt),
+    stroke: (left: none, right: none, top: none, bottom: 0.3pt + line),
+    fill: (x, y) => if y == 0 { ink } else { white },
+    table.header(..("Problem", "Engine (base)", "Order (H = base anchor)", "Cells", "Solve s", "Verify s", "Strict contract", "Native s", "Sanity check").map(x => text(fill: white, weight: "bold", x))),
+    ..data.opt_in.map(e => {
+      let c = e.at("symgcad", default: none)
+      let strict = if e.strict_status == "verified" [#fmt-int(e.strict_cells) cells, #fmt(e.strict_solve_s, d: 2) s] else [unresolved]
+      let nat = if e.native.status == "complete" [#fmt(e.native.wall_s, d: 2)] else [#e.native.status]
+      let san = e.at("sanity", default: none)
+      let sanity = if san == none [—] else [#fmt-int(san.points) fresh points in #fmt-int(san.cells_checked) cells, #san.failures failures#if not san.same_binary [ (same recipe, binary #mono(san.binary_sha256.slice(0, 8)))]]
+      if c == none {
+        (e.label, [not run], [—], [—], [—], [—], strict, nat, sanity)
+      } else {
+        (e.label, [#c.engine (#c.base_engine)],
+         [#c.order.join(" ")#if c.anchor != none [ #text(fill: muted)[· H=#c.anchor]]],
+         if c.verified [#fmt-int(c.cells)] else [#text(fill: rgb("A3292F"))[#c.status]],
+         fmt(c.solve_s, d: 2), fmt(c.verify_s, d: 2), strict, nat, sanity)
+      }
+    }).flatten(),
+  )
+}
+#text(size: 7.5pt, fill: muted)[Projective rows: same cold protocol and binary as the strict table (#mono("benchmark/campaign/projective/")). The sanity check (seed 20261010, two fresh rational points per cell, original TOML expressions evaluated exactly) is outside all timings and supplies no proof credit.]
+
+#[
+  #set page(columns: 2)
+  #set columns(gutter: 7mm)
+  #set text(size: 8.4pt)
+  #set par(leading: 0.5em, spacing: 0.75em)
+  #show heading.where(level: 2): set block(above: 0.9em, below: 0.5em)
+  #include "improvements.typ"
+]
 
 #pagebreak()
-#set text(size: 10pt)
-= Measurement notes and implementation
-#columns(2, gutter: 12mm)[
-  == Scope and comparability
-  The table contains all 331 exact polynomial/domain/order equivalence groups,
-  including fixed and symbolic ZZ examples, core examples, and disabled upstream fixtures.
-  “IDs” counts the retained original aliases; the accompanying #text(font: "Libertinus Mono")[data.json]
-  records every alias, input identity, source report and executable hash.
+= Symbolica vs FLINT on the algebraic steps
+#if data.flint == none [
+  No Symbolica-vs-FLINT measurements were found when this report was built.
+] else [
+  #let F = data.flint
+  #let kinds = F.by_kind.filter(k => k.n_ratio > 0)
+  symGCAD runs all exact polynomial algebra through Symbolica; the original GCAD calls FLINT. To isolate the algebra from everything else, exact operands were captured from real symGCAD solves (Gluza30/33, A317, A5\_31, fixed A377 and others), written in a neutral format, and replayed one operation per fresh process through (i) the kernel symGCAD's production code actually uses (Symbolica, after symGCAD's own dispatch: closed-form discriminants, interpolation, binary segmentation), (ii) Symbolica's individual algorithms (Lazard–Ducos subresultants, Brown/CRT), and (iii) FLINT 3.6 (#mono("fmpz_mpoly") and #mono("fmpz_poly")). Every output pair is compared after canonicalization (signs and content); #F.outputs_compared outputs were compared with #F.mismatches mismatches. Times are the minimum over repetitions on one pinned CPU; *ratio = Symbolica time / FLINT time*, so a ratio above 1 means FLINT is faster.
 
-  A row is complete only when the full original problem has an independently verified result.
-  Completing its positive and negative branches separately does not automatically certify the full split problem.
-  The current audit has #data.completion_summary.complete_verified verified groups and
-  #data.completion_summary.unresolved unresolved groups. The unresolved set is marked slow and assigned
-  full one-hour campaigns. The first complete campaign exhausted all 28 budgets.
-  Missing times and cells are not zeros, and timeouts do not produce finite speedup ratios.
+  #v(2pt)
+  #if kinds.len() > 0 {
+    grid(columns: kinds.len(), gutter: 4mm,
+      ..kinds.map(k => card(k.kind, [#fmt(k.geomean, d: 2)], [geometric-mean ratio over #k.n_ratio of #k.n operands; total-time ratio #fmt(k.total, d: 2)])))
+  }
+  #v(3pt)
+  #let verdict(k) = if k.geomean == none [no ratio] else if k.geomean > 1.25 [FLINT faster] else if k.geomean < 0.8 [Symbolica faster] else [about even]
+  *Reading.* #if kinds.len() > 0 [By geometric mean: #kinds.map(k => [#k.kind #verdict(k) (#fmt(k.geomean, d: 2))]).join([; ]).] The geometric mean weights every operand equally, so it is dominated by small, sub-millisecond operations; the total-time ratio is dominated by the few largest operands. Resultants and discriminants matter most for projection; factorization and GCDs build its square-free bases. Operands without a ratio did not finish on both sides within the limits of the snapshot, or were still queued; they are listed in the tables below.
+  #if F.best_for_symbolica.len() > 0 and F.best_for_flint.len() > 0 [Best case for Symbolica: #mono(F.best_for_symbolica.at(0).id) (ratio #fmt(F.best_for_symbolica.at(0).ratio, d: 2)); best case for FLINT: #mono(F.best_for_flint.at(0).id) (ratio #fmt(F.best_for_flint.at(0).ratio, d: 1)).]
+  The per-operand data, the harness and the reproduction commands are in #mono("benchmark/FLINT_vs_symbolica/").
+  #if F.draft [#text(fill: rgb("816407"))[This section shows a draft snapshot (#mono("benchmark/flint-draft/")) of a campaign that was still running; the report switches automatically to #mono("benchmark/FLINT_vs_symbolica/results/") once that directory exists.]]
 
-  All 124 fixed-kinematics ZZ groups are verified. The completed one-hour campaign
-  (10 October 2026) timed out on all 27 unresolved symbolic ZZ originals and the
-  fixed positive Gluza33 problem. None exported a complete result or verification.
-  These attempts add no completion credit; the frozen queue snapshot and all 28 ledger
-  hashes are in the JSON. Targeted continuations retain completed algebra separately.
-
-  The longest original Gluza33 continuation timed out after *7200.040 s*, with a
-  50 GiB ceiling and *3902 MiB measured peak RSS*. The latest A377 continuation timed
-  out after *3600.031 s*, at 892 MiB peak RSS under a 12 GiB ceiling. Both used audited
-  warm native-operation caches and exported no result. Their earlier search and solve
-  costs remain separate. The table includes the highest retained RSS, so A377 shows
-  an earlier 1650 MiB peak. Nine hash-bound continuation records are retained in the JSON.
-  Interrupted algebra experiments and restricted-domain successes add no original coverage.
-
-  Further Gluza33 work preserves every interior zero sheet. Interval coalescence constructs
-  a four-root cover with 97 guards / 109,726 terms in *1.604 s*, with exact replay in *1.538 s*.
-  A source-specific trace identifies exhausted template stocks; four slots bypass that
-  obstruction. Subsequent bounded continuations retain 27,897 exact operations but remain incomplete.
-
-  The final factor experiment finds a parity obstruction to the chosen leading-coefficient
-  image test. A general, bounded lowest-degree-axis policy instead factors the captured
-  1731-term component in *0.280 s*, and its full 2867-term source in *1.951 s*; both signed
-  products reconstruct exactly. Same-binary default-axis and second-leading controls time
-  out at *30.033 s* and *60.021 s*. These are individual diagnostic observations, not median
-  solve ratios. All optional Wang images reject; the changed axis lets ordinary fallback
-  succeed. Generic admitted-policy regressions retain units, multiplicities and inactive
-  coordinates. The patch is optional and leaves the production dependency unchanged.
-  The final warm original continuation times out at *6603.858 s* / *1964 MiB*,
-  retaining 32,456 operation records (4,559 new). No result is exported; verification does not run.
-
-  Measurements prefer verified three-repeat controls, otherwise the fastest accepted original-problem
-  run. Builds are labelled. Cache tags mean cold (C), shared and possibly warm (S), or unrecorded (?).
-  Solve times include in-run search, preprocessing and export. Earlier order discovery is separate;
-  Gluza30 positive used a disclosed 300.026-second search. Verification has its own column.
-
-  Baseline ratios use the frozen #text(font: "Libertinus Mono")[9025e71] release and original native GCAD,
-  with identical inputs, orders, merge settings, CPU assignment and paired limits. For two sign branches,
-  displayed times sum their separate three-repeat median phases; ratios compare those matched sums.
-  They do not compare the optimized solve column with an unrelated native time.
-  All 483 native-completing branches matched raw cell counts and independently verified; 96 native
-  timeouts remain explicit. Geometric mean ratios are 0.15 for matched phases and 0.062 for whole processes.
-
-  New reference comparisons use at most max(300 s, 3 × completed symGCAD solve-wall median)
-  per native repetition, subject to shorter explicit and campaign limits. Qualification runs
-  use a 300-second ceiling before Rust timings are known. Native timeouts have no exact ratio;
-  the historical baseline above retains its recorded limits.
-
-  == Machine and resource policy
-  AMD EPYC 9754 128-Core Processor, Linux 6.18.45, x86-64. The task budget is 16 CPU workers and
-  64 GiB aggregate memory; each measured solver process uses one CPU. Historical per-worker memory
-  ceilings range from 4 to 50 GiB and are retained in the source ledgers. RAM is measured resident
-  memory, not the configured ceiling. Three historical supplemental verification runs retain elapsed
-  time but no RSS; their RAM entries carry † and report the available solve RSS only.
-  Concurrent campaigns may share the host, so single-run differences
-  are not presented as precise speedups. The completed slow attempts used bounded process supervision,
-  durable attempt records and independent proof verification.
-
-  *Supplemental sanity check.* Fixed A446 passed two fresh rational points in each of its eight
-  exported cells (seed 20261010): 16 exact original-F evaluations and 112 strict-constraint checks,
-  with zero failures or unchecked cells. Boundaries were recomputed at each fresh prefix.
-  This separate check is outside benchmark timings and supplies no coverage-proof credit;
-  full points and counterexamples from a deliberately wrong sign label are retained in
-  #text(font: "Libertinus Mono")[reference/SUPPLEMENTAL_SANITY.md].
-
-  == What changed
-  *Exact algebra and reuse.* Rust uses Symbolica for polynomial arithmetic, factorization,
-  resultants and rational root work. Canonical factors, deterministic algorithms and bounded caches
-  avoid repeated work. Certified sum-variable preprocessing and primitive parameter-linear factors
-  address measured algebra bottlenecks.
-  Optional affine factor preconditioning detects evaluation-fiber degree drops or searches
-  bounded pairwise shears for simpler leading coefficients. Exact inverse maps and signed
-  product reconstruction preserve all original coordinates and zero sheets.
-  Support-preserving diagonal scaling now addresses the same degree-drop heuristic before
-  translation; its operand controls retain signed units and repeated factors. Exact adjacent
-  interval coalescence can reduce certificate guards while retaining every positive root.
-
-  *Smaller valid decompositions.* Positive-domain certificates, homogeneous charts, conditional
-  quadratic monotone reduction and strict linear/bilinear identities can avoid irrelevant projection
-  factors or restore whole fibers from a smaller verified base. Fixed A381/Ax381 and the negative
-  Gluza cases now have independently verified compact decompositions. Every specialized rule carries
-  exact replayable evidence; ordinary projection remains a fallback.
-  New default-off quadratic-component and ladder rules preserve all interior split boundaries.
-  The full crossed A446 polynomial has a verified five-cell decomposition only on the added
-  region $t < 4$; its original unrestricted problem remains unresolved.
-
-  *Bounded local and ordering work.* Local projection supports positive-ray certificates,
-  finite witness stocks, strict Bézout pair separation and explicit resource stops. MCTS preserves
-  variable groups and fixed orders with bounded trials, resumable journals and freshly completed
-  winners. Optional progress scoring affects promotion, never acceptance. See the separately
-  preserved #link("ordering-mcts.pdf")[two-page ordering and MCTS companion].
-
-  == Recent controlled validation
-  A separate release experiment completed all 66 fresh solve trials and 66 independent
-  verifications: three cold repetitions per configuration, one CPU and 2 GiB, identical
-  given orders and unmerged output. These synthetic and conditional cases add no original
-  corpus completions and no native-GCAD comparison. Selected off/on results are:
-
-  #table(
-    columns: (1.4fr, 1fr, 1fr), inset: 4pt, stroke: 0.3pt + line,
-    [*Case / selected rule*], [*Internal solve ms*], [*Raw cells*],
-    [Positive endpoint / weighted], [37.160 → 9.305], [20 → 1],
-    [Quadratic constant / components], [18.342 → 7.629], [8 → 1],
-    [Local linear split / components], [2.374 → 0.823], [12 → 2],
-  )
-  Median process times for these rows were 0.102508 → 0.061243 s, 0.081800 → 0.061391 s,
-  and 0.061425 → 0.061435 s. Startup dominates the approximately 61 ms group; its small
-  differences establish no end-to-end gain. The local split retains both signs and its
-  interior zero sheet. Costs on other cases support selective opt-in use.
-
-  The conditional full crossed A446 ladder case took a 0.061135 s median public solve
-  and 0.020867 s fresh verification, with five cells and 6196 KiB maximum RSS.
-  Its extra $t < 4$ condition remains explicit. Two fresh interior points per cell passed
-  90 original-constraint checks and 10 original-F evaluations; this supplemental check
-  is outside timings and supplies no coverage proof. Detailed variants, process measurements
-  and hashes are in #text(font: "Libertinus Mono")[reference/QUADRATIC_RELEASE_ABLATION.md].
-
-  == Root-isolation research
-  On a captured degree-1478 block, an isolated backend with unit-shift and positive-axis
-  patches isolated *294 real roots in 765.808 s / 813 MiB*, versus *145 positive roots in
-  557.983 s / 421 MiB*: 27.1% less API time in one matched CPU/build comparison.
-  Fresh exact ordered comparisons matched every root, costing 34.577 s and 20.528 s
-  separately; equality used exact roots or sign-changing interval intersections.
-  An older 1138.550 s wrapper included extra preparation and is not a matched ratio.
-  No original CAD completion follows. The corpus backend is unchanged; positive indices
-  cannot replace full-real indices silently. Replay:
-  #text(font: "Libertinus Mono")[reference/POSITIVE_AXIS_ISOLATION_RESEARCH.md].
-
-  *Projection research.* A graph-derived quadratic block completed three ordinary elimination
-  stages in 8.643 s; its 27 stationary-face identities replayed in 0.446 s. A later final-axis
-  audit verifies three smaller-resultant identities preserving all 71 projection factors;
-  its full applicability scan times out at 60 s. No solver speedup is established. A SubTropica-inspired anchor/order
-  probe completed 24 exact two-stage candidates in 3.945 s. Three shortlisted symbolic orders
-  each timed out at 60 s: better prefix scores have not yielded new completions.
-  A further eight candidates complete three linear stages in 2.638 s, producing 11 factors /
-  112 terms per family; both full original promotions still time out at 60 s.
-  Automatic shear preconditioning factors the captured C470 obstruction in 0.088 s, with
-  exact signed reconstruction. Original continuations retain completed work but remain incomplete.
-  An exact tropical root-gap screen checks 44 dyadic points in 0.034 s: only outer
-  root-free regions are certified, giving no useful internal gap or isolation speedup.
-  Earlier C470 release trials stop at the one-million-refinement limit:
-  *343.614 s / 460 MiB* with the original scale and warm cache, then *231.608 s / 492 MiB*
-  with another scale and fresh cache. Neither completes. A bounded observer records 148
-  revisits after individual proof-size rejection;
-  raising that entry's node cap reduces observed revisits to one but increases evictions.
-  Both instrumented trials time out. A matched release control at 20,001 refinements takes
-  *8.398 → 6.958 s* with 128 → 1024 nodes per cached proof, at 126 → 125 MiB.
-  The 1024-node continuation times out at *600.084 s / 669 MiB*, saving 1,295 new operations.
-  All remain incomplete; activity controls and retained algebra do not establish a solve-time gain.
-  Conditional AM–GM certificates are a further proposal for proved bounded domains; global
-  support screening found no new small-source candidate. All interior threshold sheets remain required.
-  The latest tracked fast suite passed 662 tests, with zero failures and two expensive tests ignored.
-
-  #block(breakable: false)[
-  == Reproduce and inspect
-  Typst and frozen #text(font: "Libertinus Mono")[data.json] render without private literature
-  or proof files. The Rust example #raw("benchmark_report --followups benchmark/followups.json")
-  checks ledger/input/order/executable provenance without changing completion or ratios.
-  #text(font: "Libertinus Mono")[benchmark/render.sh] renders both PDFs; detailed evidence is
-  in the JSON snapshot and repository reference notes.
-]
+  #set text(size: 7.5pt)
+  #set table(inset: (x: 3pt, y: 2pt))
+  #show figure: set block(breakable: true)
+  #show figure.caption: set text(size: 8pt)
+  #include F.table
 ]

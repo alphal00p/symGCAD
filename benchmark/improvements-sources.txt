@@ -1,0 +1,281 @@
+symGCAD improvements inventory: item -> source mapping
+=========================================================
+Companion of improvements.typ (same directory). One line block per item ID.
+
+Path conventions
+  (plain)  repository path, as of codex/symgcad @ 81d9ac5
+  [int]    repository path that only exists from the 2026-10-12 integration on: claude/integration-2026-10-12
+           @ 4dbe440 (merges claude/algebra-fixes 716dd18, claude/local-thrash 493e6b3, claude/bilinear-general
+           eb1cd8a, claude/kinematic-order 74440c8), extended by claude/projective-sections @ 9baf91c
+  [res]    /common/dev/gcad/artifacts/research/claude-2026-10-12/ (session evidence, not in Git)
+  [up]     https://github.com/symbolica-dev/symbolica/pull/<n> (state checked with gh on 2026-10-12: all OPEN)
+Baseline compared against: magv/gcad fb6ebe3aa0e3fdd073f410d01050a4ed7e235f4e (PROVENANCE.toml;
+DO_NOT_PUSH_REFERENCES/gcad/gcad/gcad.py: GPROJ, RSFC, greedy_{mods,sotd,t1}_order, merge).
+
+Intro / tags
+  test counts: reference/COMBINED_FAST_VALIDATION.md (662 @ 81d9ac5); [res]runs/bin/integration.txt (744 @ 4dbe440);
+    [res]projective-sections/measurements.json fast_suite (753 @ 9baf91c)
+
+== Exact algebra and kernels
+A1  Rust + Symbolica backend, parity 0.1466 / 0.0620: src/algebra.rs, src/projection.rs; BENCHMARKS.md (M2 section);
+    HANDOFF.md "Benchmarks and test interpretation"; reference/README.md
+A2  sign-preserving normalization: src/problem.rs, src/config.rs; HANDOFF.md "What the software implements"
+A3  full variable maps: src/algebra.rs; HANDOFF.md "What the software implements"
+A4  deterministic Ducos / CRT avoided: src/projection.rs (exact_resultant_ducos); docs/USAGE.md "Results and verification";
+    BENCHMARKS.md "Certification update"; HANDOFF.md invariant 4
+A5  closed-form discriminants (10.98x / 9.83x): src/projection.rs; BENCHMARKS.md "Captured algebra and lifting costs" (quartic)
+A6  evaluation/interpolation resultants (A446 pair 5.888 s): src/resultant_interpolation.rs; tests/resultant_interpolation.rs;
+    BENCHMARKS.md "Captured algebra and lifting costs"
+A7  assignment bound + size-derived admission (disc2/disc3 timings): [int]src/resultant_interpolation.rs,
+    [int]src/resultant_segmentation.rs, [int]tests/kernel_selection.rs, [int]examples/profile_kernel_selection.rs,
+    [int]docs/USAGE.md; commits f8d2500, 716dd18 (claude/algebra-fixes); [res]wf3-alg.txt, [res]wf3-fix.txt,
+    [res]algebra-fixes/REPORT.txt, [res]algebra-fixes/measurements.json
+A8  zero-image guard (panic_pair_low 7 cells): [int]src/resultant_interpolation.rs, [int]src/projection.rs;
+    commit 716dd18; [res]wf3-rev.txt (finding 1, 4), [res]wf3-fix.txt (finding 1), [res]algebra-fixes/fix/
+A9  binary segmentation, default-on (A317/A318 38.16/20.03 s; disc1 2.17 vs 7.80 s): src/resultant_segmentation.rs,
+    [int]src/config.rs (binary_resultants: true); reference/BINARY_SEGMENTATION_RESULTANTS.md,
+    reference/BINARY_SEGMENTATION_PRODUCTION_CHECK.md, reference/A377_BINARY_DISCRIMINANT_DIAGNOSTIC.md;
+    HANDOFF.md "Exact resultant acceleration"; commit f8d2500; [res]wf3-alg.txt
+A10 second-route spot check (27.86 vs 27.87 s): [int]src/resultant_interpolation.rs, [int]src/resultant_segmentation.rs,
+    [int]src/verify.rs; commit 716dd18; [res]wf3-fix.txt (finding 5)
+A11 sum-variable factor preconditioning: src/algebra/sum_factorization.rs; reference/SUM_FACTOR_PRECONDITIONING.md;
+    docs/USAGE.md (square-plus-residual paragraph)
+A12 affine translation (224-term 1.63 s vs 30.02 s): src/algebra/affine_factorization.rs; tests/affine_factorization.rs;
+    reference/AFFINE_FACTORIZATION_POLICY.md, reference/AFFINE_GLUZA33_CONTINUATION.md; HANDOFF.md lines ~300-304
+A13 diagonal scaling (1,283-term 0.048 s): src/algebra/affine_factorization.rs; reference/DIAGONAL_FACTORIZATION_RESEARCH.md,
+    reference/AFFINE_COMPONENT_DISPATCH_RESEARCH.md
+A14 shear (C470 0.088 s, +56,671 ops): src/algebra/shear_factorization.rs; tests/shear_factorization.rs;
+    reference/SHEAR_FACTORIZATION.md; reference/FINAL_CHECKPOINT.md
+A15 primitive parameter-linear shortcut (4.840->0.120 ms): src/algebra.rs; BENCHMARKS.md "Captured algebra and lifting costs"
+
+== Root isolation and lifting
+L1  re-isolated algebraic boundaries, bounded collisions: src/roots.rs, src/roots/collision.rs, src/solver.rs;
+    HANDOFF.md "Mathematical contract and evidence"
+L2  open-interval Sturm (3.184->0.602 ms): src/roots.rs (roots_in_open_interval); docs/USAGE.md (local paragraph on Sturm);
+    BENCHMARKS.md "Captured algebra and lifting costs"; examples/profile_sturm.rs
+L3  integer sign evaluation (2.64-11.01x): src/roots/integer_sign.rs; reference/INTEGER_SIGN_PROFILE.md; examples/profile_integer_sign.rs
+L4  integer prefix evaluation (3.79x / 5.33x; whole solver <1%): src/algebra/prefix_value.rs; reference/INTEGER_PREFIX_PROFILE.md;
+    examples/profile_integer_prefix.rs
+L5  batched specialization (0.401->0.252 s): src/solver.rs; BENCHMARKS.md "Captured algebra and lifting costs";
+    examples/profile_specialization.rs
+L6  deferred GCDs / borrowed signs (ratios 2.09/1.61/2.75): BENCHMARKS.md (1d15d03 paragraph)
+L7  primitive shared root fibers (A414 -10.7%): src/roots/primitive_fiber.rs; reference/PRIMITIVE_ROOT_FIBERS.md,
+    reference/A414_FIXED_WORK_RELEASE.md; commits 1223c1e, 47c1dd0, fb156a9
+L8  ordered root union (no speedup): src/roots.rs; reference/A381_ROOT_UNION_PROFILE.md; BENCHMARKS.md (heap paragraph)
+L9  positive / real_descending selectors: src/output.rs (RootIndexDomain); docs/USAGE.md (positive ray, linear_negative)
+
+== Projection operators and certified reductions
+P1  faithful baseline: src/projection.rs, src/solver.rs; reference/LITERATURE_GENERIC_GCAD.md; BENCHMARKS.md M2
+P2  optimized engine: src/optimized_projection.rs; tests/optimized_projection.rs; docs/USAGE.md
+P3  certified removal (A446 1.326 s vs 60 s timeout): src/domain.rs, src/optimized_projection.rs; BENCHMARKS.md
+    "A446 and Ax12 at fixed kinematics" (release ablation table)
+P4  prune_operations: src/optimized_projection.rs, src/config.rs; docs/USAGE.md
+P5  global strict-Bezout omission (1,033->661 polys, 228,998->112,759 terms): [int]src/strict_bezout_projection.rs,
+    [int]src/optimized_projection.rs, [int]src/verify.rs, [int]tests/strict_bezout_projection.rs, [int]docs/USAGE.md;
+    commits da5575e, ec518c7, 716dd18; [res]wf3-alg.txt (b), [res]algebra-fixes/pmm/
+
+== Positivity and domain certificates
+C1  certificate portfolio: src/domain.rs; tests/domain.rs; HANDOFF.md "Certified reductions and algebra-policy boundaries"
+C2  parameterized quadratics: src/domain.rs; tests/domain_quadratic.rs; commit "Certify parameterized quadratics with exact negative discriminants"
+C3  square + positive residual: src/domain.rs; reference/MONOMIAL_SQUARE_SCREEN.md; docs/USAGE.md
+C4  weighted squares (20->1 cell): src/domain/weighted_squares.rs; tests/domain_weighted_squares.rs;
+    reference/WEIGHTED_SQUARE_PRODUCTION.md, reference/QUADRATIC_RELEASE_ABLATION.md
+C5  PSD quadratic components (8->1, 12->2 cells): src/domain/quadratic_components.rs; tests/domain_quadratic_components.rs;
+    reference/QUADRATIC_COMPONENT_PRODUCTION.md, reference/QUADRATIC_RELEASE_ABLATION.md
+C6  caller certificate budgets (symGCAD PR #2): src/domain.rs (CertificateOptions); tests/domain_budgets.rs;
+    docs/USAGE.md "Library certificate budgets"; HANDOFF.md (PR #2 paragraph)
+C7  early abandonment from samples: src/domain.rs; docs/USAGE.md (subtree paragraph); examples/profile_certificate_rejection.rs
+C8  certified local guards (A446 436 occurrences, 0.427 s): src/local_projection.rs, src/domain.rs;
+    BENCHMARKS.md "Deterministic completion checkpoint" (local guard reduction paragraph)
+
+== Composite engines
+E1  homogeneous scale (2.409->1.326 s; 1.032->1.445 s): src/homogeneity.rs; tests/homogeneity.rs; BENCHMARKS.md release ablation table
+E2  monotone (35->8 cells, 1.326->0.825 s): src/monotone.rs; tests/monotone.rs; BENCHMARKS.md "A446 and Ax12 at fixed kinematics"
+E3  conditional quadratic peel (A381/Ax381 836 cells): src/monotone/conditional_linear.rs, src/monotone.rs;
+    tests/monotone_conditional.rs; reference/CONDITIONAL_QUADRATIC_PEEL.md; BENCHMARKS.md
+E4  negative target (269,061 cells): src/monotone.rs; tests/monotone_negative.rs; reference/NEGATIVE_MONOTONE_TARGET.md,
+    reference/PHYSICAL_ELLIPTIC_POSITIVITY.md; BENCHMARKS.md
+E5  sign filter: src/sign_filter.rs; tests/sign_filter.rs; docs/USAGE.md (unsplit monotone paragraph)
+E6  linear_negative (1 and 3 cells): src/linear_negative.rs; tests/linear_negative.rs; reference/GLUZA30_RAYLEIGH_REDUCTION.md,
+    reference/GLUZA33_RAYLEIGH_REDUCTION.md, reference/GLUZA_RAYLEIGH_RELEASE_BENCHMARK.md
+E7  bilinear_positive (80,980 cells): src/bilinear_positive.rs; tests/bilinear_positive.rs; examples/bilinear_positive.toml;
+    reference/GLUZA30_POSITIVE_LADDER.md, reference/GLUZA30_BILINEAR_RELEASE_BENCHMARK.md
+E8  bilinear_general + pieces (plan 0.034 s, 47 cells; pieces time out at 1,200 s): [int]src/bilinear_general.rs,
+    [int]src/identity.rs, [int]src/main.rs, [int]tests/bilinear_general.rs, [int]examples/bilinear_general.toml,
+    [int]docs/USAGE.md, [int]README.md; commits 6cabcf5, eb1cd8a, 0d4e38c; [res]wf2-impl-bilinear-general.txt,
+    [res]wf2-review-bilinear-general.txt, [res]wf2-fix-bilinear-general.txt, [res]bilinear-general/;
+    design: [res]agent-aa4d317654c2058db.final.txt
+E9  quadratic_ladder (t<4: 5 cells): src/quadratic_ladder.rs; tests/quadratic_ladder.rs;
+    reference/POSITIVE_ENDPOINT_QUADRATIC_LADDER_PLAN.md, reference/QUADRATIC_LADDER_VALIDATION.md
+E10 selectable base engines / inner anchors: src/config.rs (monotone_base_engine, bilinear_positive_base_engine,
+    bilinear_general_base_engine/_anchor/_block); [int]src/bilinear_general.rs; docs/USAGE.md
+E11 peel inspection: src/monotone.rs; tests/monotone_inspection.rs; reference/MONOTONE_INSPECTION.md
+
+== Local projection engine
+LP1  local projection: src/local_projection.rs; tests/local_projection.rs; docs/USAGE.md; reference/LOCAL_PROJECTION_LIVENESS.md
+LP2  batched siblings: src/local_projection.rs; docs/USAGE.md (local_batch_siblings)
+LP3  direct first-axis base (4,150,168 pairs avoided): src/local_projection.rs; BENCHMARKS.md "Captured algebra and lifting costs"
+LP4  positive-ray Descartes 0/1: src/local_projection/descartes.rs; docs/USAGE.md
+LP5  quadratic classifier + guard cache (-15.0% / -14.5%): src/local_projection.rs, src/local_projection/quadratic_tests.rs;
+     reference/A381_QUADRATIC_CACHE_PROFILE.md
+LP6  leading-term cancellation separation: src/local_projection.rs; docs/USAGE.md (local_pair_cancellations)
+LP7  adjacent-root pairs (27 timeouts): src/local_projection.rs; BENCHMARKS.md lines ~213-217
+LP8  Descartes witnesses (+4,554 ops): src/local_projection/descartes.rs; tests/local_descartes_witnesses.rs,
+     tests/local_descartes_witness_budget.rs; reference/GLUZA33_WITNESS_BUDGET.md, reference/DESCARTES_SOURCE_BUDGET_PRODUCTION.md,
+     reference/DESCARTES_SEPARATOR_PROFILE.md
+LP9  interval Descartes (+6,422 / +7,194 / +1,094 / +2,397 ops): src/local_projection/interval_descartes.rs;
+     tests/local_descartes_intervals.rs, tests/local_descartes_interval_budget.rs, tests/local_descartes_interval_total_budget.rs,
+     tests/local_interval_stock.rs; reference/GLUZA33_INTERVAL_BUDGET.md, reference/INTERVAL_SOURCE_BUDGET_PRODUCTION.md,
+     reference/GLUZA33_FINAL_INTERVAL_FRONTIER.md, reference/GLUZA33_WITNESS_STOCK_TRACE.md; reference/FINAL_CHECKPOINT.md
+LP10 coalescing (97 guards / 109,726 terms, 1.60 s): src/local_projection/interval_descartes.rs;
+     reference/GLUZA33_FINAL_INTERVAL_FRONTIER.md; HANDOFF.md "Aggregate guards, preconditioner regression and compact covers"
+LP11 positive pair witnesses: src/local_projection/pair_witnesses.rs; tests/local_pair_witnesses.rs; reference/PAIR_SEPARATOR_PROFILE.md
+LP12 witness gate + axis budget (S1/a>0: 570 s incomplete -> 0.02 s, 178 cells): [int]src/local_projection/pair_witnesses.rs,
+     [int]src/config.rs, [int]tests/local_thrash.rs, [int]docs/USAGE.md; commits 3988f53, c702742;
+     [res]wf2-impl-local-thrash.txt, [res]wf2-review-local-thrash.txt, [res]wf2-fix-local-thrash.txt,
+     [res]local-thrash/ and local-thrash/fix/ (measurements.json); [res]agent-ac76ac3b4e1f08ff7.final.txt (diagnosis)
+LP13 local strict-Bezout hints (2,918 resultants): src/local_projection/strict_bezout.rs; tests/local_strict_bezout.rs;
+     reference/STRICT_BEZOUT_PROJECTION.md; examples/gluza_bezout_hints.rs
+LP14 completed-subtree reuse (C470 8.40->6.96 s): src/local_projection/subtree_cache.rs; tests/local_subtree_entry_nodes.rs;
+     reference/C470_REFINEMENT_OBSERVER.md, reference/A414_SUBTREE_CPU_PROFILE.md
+LP15 learned-cut hints: src/local_projection/learned_cuts.rs; docs/USAGE.md
+LP16 hint archive: src/local_projection/hint_archive.rs; reference/LOCAL_HINT_ARCHIVE.md
+LP17 stable samples: src/local_projection/stack_samples.rs; tests/local_stable_samples.rs; reference/A381_STACK_SAMPLING.md
+LP18 deferred projection: src/local_projection/lazy_projection.rs; tests/local_deferred_projection.rs; reference/A414_DEFERRED_PILOT.md,
+     reference/LOCAL_PROJECTION_LIVENESS.md
+LP19 retained sibling proofs (Ppm 12.80M -> 1.38M nodes; B6_469 112,124 cells 9.91 s): [int]src/local_projection/sibling_pool.rs,
+     [int]src/local_projection.rs, [int]src/local_projection/lazy_projection.rs, [int]tests/local_thrash.rs,
+     [int]tests/fixtures/local_retained_sibling_wide_interval.toml, [int]reference/LOCAL_PROJECTION_LIVENESS.md;
+     commits 3988f53, af3577f, 3aff953, 40d1965, 1600619, c702742, 8b2173a, 493e6b3; [res]wf2-impl-local-thrash.txt,
+     [res]wf2-fix-local-thrash.txt (findings 3, 5)
+LP20 first-axis square-free basis (92.06 vs 185.83 s): src/local_projection/base_univariate.rs, src/local_projection/base_univariate/;
+     tests/local_base_univariate.rs; reference/BASE_UNIVARIATE_BASIS_PROPOSAL.md, reference/BASE_UNIVARIATE_RESOURCE_POLICY.md,
+     reference/BASE_SUPPORT_PROPOSAL_CACHE.md, reference/BASE_SUPPORT_REGISTRY_CAPACITY.md
+LP21 discovery caps: src/config.rs; docs/USAGE.md (local_max_refinements / local_max_nodes)
+LP22 thrash diagnostics (337,116 discarded children): [int]src/local_projection/thrash_diag.rs, [int]src/optimized_projection.rs
+     (cached_factor_basis), [int]tests/local_thrash_diag.rs; commits 3988f53, c702742; [res]wf2-impl-local-thrash.txt
+LP23 obstruction observer: src/local_projection/obstruction_observer.rs; tests/local_obstruction_observer.rs;
+     reference/LOCAL_OBSTRUCTION_OBSERVER.md
+
+== Ordering and search
+O1  Brown / sparsity + groups: src/ordering.rs; tests/ordering.rs; docs/USAGE.md
+O2  MCTS (126/126 verified, no gain): src/search.rs; tests/search.rs; BENCHMARKS.md "Cold ordering ablation";
+    benchmark/ordering-mcts.typ; HANDOFF.md "Ordering, caches, deadlines and checkpoint semantics"
+O3  search pruning: src/search.rs; docs/USAGE.md
+O4  local-progress score (65.10 vs 313.63 s): src/search/local_progress.rs; tests/search_local_progress.rs;
+    reference/LOCAL_SEARCH_PROMOTION_BENCHMARK.md
+O5  kinematic_portfolio (105.88->92.97 s etc.): [int]src/kinematic_portfolio.rs, [int]src/main.rs, [int]src/config.rs,
+    [int]tests/kinematic_portfolio.rs, [int]docs/USAGE.md; commits d04747a, b696002, 74440c8, 4dbe440;
+    [res]wf2-impl-kinematic-order.txt, [res]wf2-review-kinematic-order.txt, [res]wf2-fix-kinematic-order.txt,
+    [res]kinematic-order/, [res]kinematic-order-fix/; motivation [res]agent-param-profile.final.txt
+O6  portfolio_fixed_budgets (21/21; 1,317 s): [int]src/kinematic_portfolio.rs; commit b696002; [res]wf2-fix-kinematic-order.txt (finding 5)
+O7  order proposal helpers: examples/ (support-order seeds, profile_linear_prefix.rs); reference/SUPPORT_ORDER_SEEDS.md,
+    reference/LINEAR_PREFIX_RESEARCH.md
+
+== Caching and checkpointing
+K1  operation cache: src/optimized_projection.rs (ProjectionCache); HANDOFF.md "Ordering, caches, deadlines and checkpoint semantics"
+K2  persistent checkpoints (32,456 ops): src/optimized_projection.rs, src/campaign.rs; docs/USAGE.md; reference/FINAL_CHECKPOINT.md,
+    reference/GLUZA33_FINAL_FACTOR_PUSH.md
+K3  domain-free keys (50/127 disk hits): [int]src/optimized_projection.rs, [int]tests/optimized_projection.rs; commit dd524dd;
+    [res]wf3-alg.txt (c), [res]algebra-fixes/cache_share/; background reference/CROSS_ORDER_ALGEBRA_CACHE.md
+K4  primitive-linear cache bypass (15.531->0.415 ms): src/optimized_projection.rs; reference/PRIMITIVE_LINEAR_CACHE.md;
+    examples/profile_linear_cache.rs
+K5  search journal: src/search/checkpoint.rs; tests/search_checkpoint.rs; reference/SEARCH_CHECKPOINTS.md
+K6  untrusted proposal caches: src/local_projection/base_univariate/proposal_cache.rs, src/local_projection/hint_archive.rs;
+    reference/BASE_SUPPORT_PROPOSAL_CACHE.md, reference/LOCAL_HINT_ARCHIVE.md
+K7  cache integrity audits: HANDOFF.md "Final original campaign and stopping result"; reference/GLUZA33_FINAL_FACTOR_PUSH.md
+
+== Verification and evidence
+V1  generic-coverage contract: HANDOFF.md "Central correctness contract"; README.md; src/output.rs
+V2  JSON proof: src/output.rs; docs/USAGE.md "Results and verification"
+V3  independent verifier: src/verify.rs; tests/solver.rs, tests/cli.rs
+V4  raw cells / seams by default: src/config.rs (merge = "none"); HANDOFF.md
+V5  indexed compatibility merge (ex38 40.72 s): src/solver/merging.rs; reference/INDEXED_COMPATIBILITY_MERGE.md,
+    reference/SLOW_MERGE_ASSERTIONS.md; BENCHMARKS.md "Deterministic completion checkpoint"
+V6  replay hardening (new rules): [int]src/verify.rs, [int]src/strict_bezout_projection.rs, [int]src/bilinear_general.rs,
+    [int]src/resultant_interpolation.rs, [int]tests/strict_bezout_projection.rs, [int]tests/bilinear_general.rs,
+    [int]tests/kinematic_portfolio.rs; [res]wf3-alg.txt, [res]wf3-fix.txt, [res]wf2-fix-bilinear-general.txt,
+    [res]wf2-fix-kinematic-order.txt
+V7  certified comparison: src/comparison.rs; tests/comparison.rs
+V8  seeded sanity check (16 + 112 checks): examples/sanity_sample.rs; reference/SUPPLEMENTAL_SANITY.md
+V9  native comparison and parity: reference/adapter.py, reference/api_adapter.py, src/benchmark.rs, reference/README.md,
+    reference/REFERENCE_BUDGETS.md, reference/UPSTREAM_UTILITY_TESTS.md, reference/SLOW_MERGE_ASSERTIONS.md, BENCHMARKS.md
+V10 grid verification (4,773 points, 2,093.9 s): reference/A377_D32_GRID_VERIFICATION.md; examples/prepare_discriminant_grid.rs
+V11 original-identity audit (303/331): examples/aggregate_completion.rs; reference/FINAL_CHECKPOINT.md; BENCHMARKS.md;
+    benchmark/data.json
+
+== Robustness and supervision
+R1  killable workers / limits: src/main.rs (_worker), src/benchmark.rs, src/campaign.rs, src/config.rs (Limits);
+    HANDOFF.md "Ordering, caches, deadlines and checkpoint semantics"
+R2  campaign and slow-suite runners: src/campaign.rs, src/benchmark.rs, scripts/test.sh; reference/SLOW_SUITE.md
+R3  fast suite (662 -> 744): scripts/test.sh; reference/COMBINED_FAST_VALIDATION.md; [res]runs/bin/integration.txt
+R4  operand capture: src/solver.rs (SYMGCAD_CAPTURE_DIR, line ~106); examples/profile_operation.rs; docs/USAGE.md
+R5  progress throttle (17.505 -> 1.282 s system CPU): src/local_projection.rs, src/local_projection/base_univariate.rs (commit f5a2e8b); reference/BASE_PROGRESS_THROTTLE.md
+R6  buffered export (392,791 writes; 3,308 cells 1.354 s): src/main.rs (BufWriter, lines ~83-84); BENCHMARKS.md "Symbolic export regression"
+R7  interrupted-worker accounting: src/main.rs, src/output.rs, tests/cli.rs; commit c881148 "fix: retain interrupted worker time and typed local diagnostics"
+R8  bounded hint parsing ((x+y+z+1)^300 6.9 s -> <0.5 s): [int]src/strict_bezout_projection.rs, [int]src/local_projection.rs,
+    [int]docs/USAGE.md; commit 716dd18; [res]wf3-rev.txt (finding 3), [res]wf3-fix.txt (finding 3)
+R9  supervised portfolio/pieces (19.1 s / 1.97 GB -> 3.08 s / 491-518 MB): [int]src/main.rs, [int]src/kinematic_portfolio.rs,
+    [int]src/bilinear_general.rs; commits b696002, eb1cd8a; [res]wf2-fix-kinematic-order.txt (finding 1),
+    [res]wf2-fix-bilinear-general.txt (finding 5)
+R10 reproducible environment / public deps (symGCAD PR #1): flake.nix, flake.lock, Cargo.toml, Cargo.lock, PROVENANCE.toml,
+    docs/SETUP.md, reference/SETUP_VALIDATION.md; HANDOFF.md (PR #1 paragraph)
+
+== Interfaces
+I1  library + TOML CLI: src/lib.rs, src/main.rs, src/config.rs; README.md; docs/USAGE.md "Problem format"
+I2  project = solve (R+- 354.5 s vs 1,500 s timeout): [int]src/main.rs, [int]src/solver.rs, [int]src/homogeneity.rs,
+    [int]tests/homogeneity.rs; commit 0e77b99; [res]wf3-alg.txt (d), [res]algebra-fixes/ppm_project/
+I3  pieces plan/assemble: [int]src/main.rs, [int]src/bilinear_general.rs, [int]docs/USAGE.md; commits 6cabcf5, eb1cd8a
+I4  FastSecDec import: src/fastsecdec.rs; tests/fastsecdec.rs; docs/FASTSECDEC_INTEROP.md
+I5  corpus builder (177 / 265 / 12 -> 331): src/corpus.rs; tests/corpus_literals.rs; PROVENANCE.toml [corpus]; reference/build_reference.py
+I6  benchmark document: benchmark/build_report.py, benchmark/run_final.sh, benchmark/benchmark.typ, benchmark/report-data.json,
+    benchmark/README.md; earlier snapshot generator examples/benchmark_report.rs + benchmark/data.json
+I7  full-corpus campaign: benchmark/campaign/ (groups.json, symgcad_inputs/, symgcad_runner.py, native_runner.py,
+    build_manifest.py, projective/); [res]bench/README.txt, [res]bench/COORDINATION.txt, [res]bench/native_300s_run/
+I8  Symbolica vs FLINT harness: benchmark/FLINT_vs_symbolica/ (branch claude/flint-vs-symbolica); [res]flint-bench/
+
+== Upstream dependency fixes
+U1  Symbolica PR #69 (linear resultant sign): patches/symbolica-linear-resultant-sign.patch, patches/README.md; src/projection.rs
+    (signed linear identity); [up]69; [res]agent-a65de943828c9a820.final.txt (section 7)
+U2  Symbolica PR #75 (Integer left shift): patches/numerica-integer-left-shift.patch, patches/README.md; [up]75 (opened 2026-10-12)
+U3  Symbolica PR #76 (Ducos zero subresultant): [int]patches/symbolica-ducos-zero-subresultant.patch, [int]patches/README.md,
+    [int]scripts/bootstrap-deps.sh; [up]76 (opened 2026-10-12); [res]algebra-fixes/fix/symbolica_patch_{before,after}.log
+U4  other upstream PRs #61, #67, #68, #73: [up]61, [up]67, [up]68, [up]73; [res]agent-a65de943828c9a820.final.txt (sections 3, 6, 7)
+U5  bounded small-LC Wang (1.039 s vs 60.03 s): patches/experimental/symbolica-bounded-small-lc-wang.patch;
+    reference/GLUZA33_WANG_PREFLIGHT.md, reference/GLUZA33_FACTOR_PROFILE.md, reference/WANG_ADOPTION_PILOT.md
+U6  bounded main axis (0.280 s vs 30.03 s; 2,867 terms 1.951 s): patches/experimental/symbolica-bounded-main-axis.patch;
+    reference/GLUZA33_FINAL_FACTOR_PUSH.md
+U7  positive-only isolation / unit Taylor shift: reference/FAST_TAYLOR_SHIFT_RESEARCH.md, reference/POSITIVE_AXIS_ISOLATION_RESEARCH.md;
+    reference/FINAL_CHECKPOINT.md "What remains research"
+U8  patch bootstrap: scripts/bootstrap-deps.sh, scripts/use-local-symbolica.sh; patches/README.md; docs/SETUP.md
+
+== Opt-in contract extensions
+X1  projective sections (Gluza33 positive 2,372 cells, solve 0.42 s, verify 0.55 s, sanity 4,744 points 0 failures;
+    Gluza30 positive 1 cell): commit 9baf91c [int]src/bilinear_general.rs (module doc: derivation), [int]src/output.rs
+    (RootIndexDomain::PositiveOrInfinity), [int]src/verify.rs, [int]src/config.rs, [int]tests/bilinear_projective.rs,
+    [int]examples/sanity_sample.rs, [int]docs/USAGE.md "Projective sections (opt-in contract extension)";
+    [res]projective-sections/REPORT.txt, [res]projective-sections/measurements.json, [res]projective-sections/g33_x5last/,
+    [res]projective-sections/gluza30/, [res]wf4-impl-projective-sections.txt; recipes benchmark/campaign/projective/;
+    earlier base-only runs [res]projective/D_opt_a4_O1/ etc.; math: [res]shared/CONTEXT.md
+    (down-set fibers, "exists x3,x5>0: F>0 iff d>0"), HANDOFF.md lines ~290-294 (compactification endpoint switch),
+    reference/GLUZA33_POSITIVE_BILINEAR.md; user approval: workflow request of 2026-10-12 ("Contract extension for Gluza33 ...
+    disabled by default")
+X2  aggressive merging: src/solver/merging.rs; reference/INDEXED_COMPATIBILITY_MERGE.md
+
+== Investigated, not adopted
+N1  convex two-point theory (86 -> 71 / 34 factors): [res]agent-a4c09cd4c860e7f0e.final.txt, [res]convex-theory/
+N2  relevance-restricted prototype (1.9e6 / 3.0e6 cells; ordinary ~1.05e10): [res]wf3-shadow.txt, [res]shadow-prototype/REPORT.txt,
+    [res]shadow-prototype/results.json
+N3  literature + Symbolica audits: [res]agent-af4c63bbffc7dd42a.final.txt (literature), [res]agent-a65de943828c9a820.final.txt
+    (Symbolica, Q(sqrt10) 450 -> 43 x 43 terms in 1.05 s; 2,250 terms > 1,800 s), [res]symbolica-audit/
+N4  domain-aware ordering profile (2-312x): [res]agent-param-profile.final.txt, [res]param-profile/
+N5  earlier research lines: reference/CFF_KINEMATIC_PROJECTION.md, reference/TROPICAL_SUBTROPICA_RESEARCH.md,
+    reference/LINEAR_PREFIX_RESEARCH.md, reference/QUADRATIC_FLAG_IDENTITIES_RESEARCH.md, reference/CROSSING_TRANSPORT_DESIGN.md,
+    reference/DETERMINISTIC_CRT_PRIME_IMAGE.md, reference/FAST_TAYLOR_SHIFT_RESEARCH.md; HANDOFF.md "Physics, graph structure,
+    CFF and tropical research"
+
+Other files in this directory
+  improvements.typ  the inventory (Typst content, no page setup)
+  preview.typ       render check only: imports /benchmark/style.typ and includes improvements.typ in two columns;
+                    compile with: nix develop --command typst compile --root /common/dev/gcad \
+                      artifacts/research/claude-2026-10-12/inventory/preview.typ <out.pdf>   (5 landscape pages, no warnings)
