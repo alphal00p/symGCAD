@@ -114,6 +114,12 @@ pub fn selected_order(problem: &Problem) -> Result<Vec<String>> {
     crate::solver::selected_order(&plan(problem)?.arrangement)
 }
 
+/// The arrangement problem that `solve` delegates. Used only by heuristic
+/// projection probes; the solved certificate is selected and checked anew.
+pub(crate) fn planned_arrangement(problem: &Problem) -> Result<Problem> {
+    Ok(plan(problem)?.arrangement)
+}
+
 fn selected_indices(arrangement: &SolveResult, selected_sign: i8) -> Result<Vec<usize>> {
     ensure!(
         [-1, 1].contains(&selected_sign),

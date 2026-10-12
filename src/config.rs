@@ -273,7 +273,68 @@ pub struct SolverOptions {
     pub local_max_nodes: Option<usize>,
     pub homogeneous_block: Vec<String>,
     pub homogeneous_anchor: Option<String>,
+    /// `ordering = "kinematic_portfolio"`: wall budget of each alternative
+    /// candidate probe as a multiple of the default candidate's probe time.
+    /// Probes only rank orders; they never certify or remove a region.
+    #[serde(skip_serializing_if = "is_default_portfolio_budget_factor")]
+    pub portfolio_budget_factor: f64,
+    /// Lower bound on every alternative candidate's probe budget. Once a
+    /// candidate beats the default, later budgets tighten to
+    /// `max(this, factor x that candidate's probe time)`.
+    #[serde(skip_serializing_if = "is_default_portfolio_min_budget_secs")]
+    pub portfolio_min_budget_secs: f64,
+    /// The default candidate's probe lifts the complete fibers above this
+    /// many evenly spread kinematic cells to estimate its lifting time
+    /// (0 disables the estimate and the bound below).
+    #[serde(skip_serializing_if = "is_default_portfolio_fiber_samples")]
+    pub portfolio_fiber_samples: usize,
+    /// Alternatives may use at most this multiple of the default's
+    /// estimated lifting time (never less than `portfolio_min_budget_secs`).
+    #[serde(skip_serializing_if = "is_default_portfolio_lifting_budget_factor")]
+    pub portfolio_lifting_budget_factor: f64,
+    /// Probe budget of the default candidate. Omitted: a tenth of the wall
+    /// limit, clamped to [1, 60] seconds.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub portfolio_default_budget_secs: Option<f64>,
+    /// Bound on the whole portfolio, including the default probe. Omitted:
+    /// a quarter of the wall limit. Unprobed candidates are recorded as skipped.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub portfolio_total_budget_secs: Option<f64>,
+    /// Stop counting kinematic cells of one candidate at this many. The
+    /// portfolio lowers it per candidate to one more than the best count so
+    /// far, since a larger count can no longer be selected.
+    #[serde(skip_serializing_if = "is_default_portfolio_kinematic_cell_cap")]
+    pub portfolio_kinematic_cell_cap: usize,
+    /// Give every portfolio candidate the same fixed budget
+    /// `min(default budget, total budget / (candidates + 1))`, with no
+    /// adaptive tightening or lifting-time bound, so that the choice depends
+    /// on wall time only through which probes finish within that budget.
+    #[serde(skip_serializing_if = "is_false")]
+    pub portfolio_fixed_budgets: bool,
 }
+
+pub(crate) const DEFAULT_PORTFOLIO_BUDGET_FACTOR: f64 = 2.0;
+pub(crate) const DEFAULT_PORTFOLIO_MIN_BUDGET_SECS: f64 = 0.25;
+pub(crate) const DEFAULT_PORTFOLIO_FIBER_SAMPLES: usize = 8;
+pub(crate) const DEFAULT_PORTFOLIO_LIFTING_BUDGET_FACTOR: f64 = 1.0;
+pub(crate) const DEFAULT_PORTFOLIO_KINEMATIC_CELL_CAP: usize = 1_000_000;
+
+fn is_default_portfolio_budget_factor(value: &f64) -> bool {
+    *value == DEFAULT_PORTFOLIO_BUDGET_FACTOR
+}
+fn is_default_portfolio_min_budget_secs(value: &f64) -> bool {
+    *value == DEFAULT_PORTFOLIO_MIN_BUDGET_SECS
+}
+fn is_default_portfolio_fiber_samples(value: &usize) -> bool {
+    *value == DEFAULT_PORTFOLIO_FIBER_SAMPLES
+}
+fn is_default_portfolio_lifting_budget_factor(value: &f64) -> bool {
+    *value == DEFAULT_PORTFOLIO_LIFTING_BUDGET_FACTOR
+}
+fn is_default_portfolio_kinematic_cell_cap(value: &usize) -> bool {
+    *value == DEFAULT_PORTFOLIO_KINEMATIC_CELL_CAP
+}
+
 impl Default for SolverOptions {
     fn default() -> Self {
         Self {
@@ -335,6 +396,14 @@ impl Default for SolverOptions {
             local_max_nodes: None,
             homogeneous_block: vec![],
             homogeneous_anchor: None,
+            portfolio_budget_factor: DEFAULT_PORTFOLIO_BUDGET_FACTOR,
+            portfolio_min_budget_secs: DEFAULT_PORTFOLIO_MIN_BUDGET_SECS,
+            portfolio_fiber_samples: DEFAULT_PORTFOLIO_FIBER_SAMPLES,
+            portfolio_lifting_budget_factor: DEFAULT_PORTFOLIO_LIFTING_BUDGET_FACTOR,
+            portfolio_default_budget_secs: None,
+            portfolio_total_budget_secs: None,
+            portfolio_kinematic_cell_cap: DEFAULT_PORTFOLIO_KINEMATIC_CELL_CAP,
+            portfolio_fixed_budgets: false,
         }
     }
 }
@@ -627,6 +696,26 @@ impl Problem {
                 .search_time_secs
                 .is_none_or(|s| s.is_finite() && s > 0.0),
             "search_time_secs must be finite and positive"
+        );
+        ensure!(
+            self.solver.portfolio_budget_factor.is_finite()
+                && self.solver.portfolio_budget_factor > 0.0
+                && self.solver.portfolio_lifting_budget_factor.is_finite()
+                && self.solver.portfolio_lifting_budget_factor > 0.0
+                && self.solver.portfolio_min_budget_secs.is_finite()
+                && self.solver.portfolio_min_budget_secs > 0.0
+                && [
+                    self.solver.portfolio_default_budget_secs,
+                    self.solver.portfolio_total_budget_secs
+                ]
+                .iter()
+                .flatten()
+                .all(|s| s.is_finite() && *s > 0.0),
+            "portfolio budgets must be finite and positive"
+        );
+        ensure!(
+            self.solver.portfolio_kinematic_cell_cap > 0,
+            "portfolio_kinematic_cell_cap must be positive"
         );
         let scale_block = self
             .solver

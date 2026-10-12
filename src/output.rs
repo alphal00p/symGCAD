@@ -87,6 +87,10 @@ pub struct Statistics {
     pub search_seconds: f64,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub ordering_search: Option<serde_json::Value>,
+    /// Heuristic candidate scores of `ordering = "kinematic_portfolio"`.
+    /// Descriptive only: the certificate is the ordinary fixed-order solve.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ordering_portfolio: Option<crate::kinematic_portfolio::PortfolioReport>,
     pub projection_seconds: f64,
     pub lifting_seconds: f64,
     pub merging_seconds: f64,

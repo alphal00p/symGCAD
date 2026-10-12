@@ -23,6 +23,10 @@ mod merging;
 pub use merging::merge;
 
 pub fn selected_order(problem: &Problem) -> Result<Vec<String>> {
+    ensure!(
+        !crate::kinematic_portfolio::requested(problem),
+        crate::kinematic_portfolio::UNRESOLVED
+    );
     if problem.solver.engine == "quadratic_ladder" {
         return crate::quadratic_ladder::selected_order(problem);
     }
@@ -699,6 +703,10 @@ fn classify_solve_result(problem: &Problem, result: Result<SolveResult>) -> Resu
 
 fn solve_impl(problem: &Problem) -> Result<SolveResult> {
     problem.validate()?;
+    ensure!(
+        !crate::kinematic_portfolio::requested(problem),
+        crate::kinematic_portfolio::UNRESOLVED
+    );
     // The same predicate decides the public projection path.
     if uses_homogeneous_reduction(problem) {
         return crate::homogeneity::solve_homogeneous(problem);
