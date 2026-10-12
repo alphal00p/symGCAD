@@ -10,15 +10,28 @@
 //! the lifting cost by the exact number of open cells of the kinematic
 //! prefix, isolated with the solver's certified root isolation.
 //!
+//! Process boundary: `resolve` runs in the supervising CLI and performs no
+//! algebra. Candidate enumeration (the anchor certificates and the
+//! decoupled-variable check, see `plan_candidates`) and every probe run in
+//! killable CLI workers under hard wall and memory limits, so a hard input
+//! cannot overrun the user's limits in the parent.
+//!
 //! Cost control (measured on the parametric corpus, see docs/USAGE.md):
-//! every probe runs in a killable CLI worker under a hard wall budget of
+//! every alternative probe has a hard wall budget of
 //! `max(portfolio_min_budget_secs, portfolio_budget_factor x reference)`,
 //! where the reference is the default probe's time and, once a candidate
 //! beats the default, that candidate's probe time. The default probe also
 //! lifts a few complete fibers to estimate its own lifting time, and the
 //! alternatives together may use at most `portfolio_lifting_budget_factor`
-//! times that estimate, the work they could save at best. Kinematic orders
-//! that lift a decoupled kinematic variable first are not probed.
+//! times that estimate. If the default probe is not scored (timeout or
+//! failure), the alternatives share `portfolio_lifting_budget_factor` times
+//! the default probe's time, a lower bound on the default solve's cost;
+//! only a default probe that exceeded the memory limit, which the default
+//! solve would exceed as well, leaves them the whole portfolio budget.
+//! `portfolio_fixed_budgets` instead gives every candidate the same fixed
+//! budget, so the choice depends on wall time only through which probes
+//! finish within it. Kinematic orders that lift a decoupled kinematic
+//! variable first are not probed.
 //!
 //! Scores are heuristics only. The selected anchor and order are written
 //! into the problem as an explicit `given` order, which the ordinary solver
@@ -45,7 +58,7 @@ use symbolica::prelude::*;
 /// The `solver.ordering` value that requests this portfolio.
 pub const ORDERING: &str = "kinematic_portfolio";
 /// Identifies the candidate set, score and tie-break rules in reports.
-pub const POLICY: &str = "kinematic-portfolio-v1";
+pub const POLICY: &str = "kinematic-portfolio-v2";
 /// Chooses the Feynman order of every candidate and the default candidate.
 pub const BASE_ORDERING: &str = "mods";
 /// Kinematic lifting orders per anchor; larger groups keep only the listed
@@ -179,11 +192,17 @@ pub fn kinematic_orders(groups: &[Vec<String>]) -> Vec<Vec<String>> {
 /// first and then in block order. Without an input anchor no scale reduction
 /// is introduced, so the only choice is `None`.
 pub fn admissible_anchors(problem: &Problem) -> Result<Vec<Option<String>>> {
+    if problem.solver.homogeneous_anchor.is_none() {
+        return Ok(vec![None]);
+    }
+    anchors_of(problem, &normalize(problem, &problem.variables)?)
+}
+
+fn anchors_of(problem: &Problem, normalized: &NormalizedProblem) -> Result<Vec<Option<String>>> {
     let Some(input) = &problem.solver.homogeneous_anchor else {
         return Ok(vec![None]);
     };
     // Exactly the check of the solver's homogeneous preparation.
-    let normalized = normalize(problem, &problem.variables)?;
     let block = problem
         .solver
         .homogeneous_block
@@ -217,13 +236,24 @@ pub fn admissible_anchors(problem: &Problem) -> Result<Vec<Option<String>>> {
 /// with the same count, while lifting one before a coupled variable makes
 /// projection compute pairwise resultants that are constants.
 pub fn decoupled_kinematics(problem: &Problem, layout: &Layout) -> Result<BTreeSet<String>> {
-    let normalized = normalize(problem, &problem.variables)?;
+    Ok(decoupled_of(
+        problem,
+        layout,
+        &normalize(problem, &problem.variables)?,
+    ))
+}
+
+fn decoupled_of(
+    problem: &Problem,
+    layout: &Layout,
+    normalized: &NormalizedProblem,
+) -> BTreeSet<String> {
     let all: Vec<_> = normalized
         .positives
         .iter()
         .chain(&normalized.split)
         .collect();
-    Ok(layout
+    layout
         .kinematic_groups
         .iter()
         .flatten()
@@ -234,7 +264,7 @@ pub fn decoupled_kinematics(problem: &Problem, layout: &Layout) -> Result<BTreeS
             })
         })
         .cloned()
-        .collect())
+        .collect()
 }
 
 /// Kinematic orders for the portfolio: those that lift every decoupled
@@ -273,31 +303,105 @@ pub struct Candidate {
 /// projection, so they come last: when the default is expensive they are
 /// too, and the budget may by then have tightened. The enumeration is
 /// deterministic; its index is the final tie-break of the selection.
+///
+/// This runs exact algebra (normalization, the positive-scale anchor
+/// certificates); the CLI calls it only inside a bounded worker.
 pub fn candidates(problem: &Problem, layout: &Layout) -> Result<Vec<Candidate>> {
-    let mut result = vec![Candidate {
+    Ok(plan_for(problem, layout)?.candidates)
+}
+
+/// Candidate enumeration, the only algebra `resolve` needs besides probes.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CandidatePlan {
+    /// See `decoupled_kinematics`; their dominated orders are not probed.
+    pub decoupled_kinematic_variables: Vec<String>,
+    pub candidates: Vec<Candidate>,
+}
+
+/// Enumerate the candidates of a supported layout with one normalization.
+/// Exact algebra: the CLI runs it in the bounded `kinematic_candidates`
+/// worker, never in the supervising process.
+pub fn plan_candidates(problem: &Problem) -> Result<CandidatePlan> {
+    problem.validate()?;
+    let layout = structure(problem).map_err(anyhow::Error::msg)?;
+    plan_for(problem, &layout)
+}
+
+fn plan_for(problem: &Problem, layout: &Layout) -> Result<CandidatePlan> {
+    let normalized = normalize(problem, &problem.variables)?;
+    let decoupled = decoupled_of(problem, layout, &normalized);
+    let orders = portfolio_kinematic_orders(layout, &decoupled);
+    let mut candidates = vec![Candidate {
         anchor: problem.solver.homogeneous_anchor.clone(),
         kinematic_order: None,
     }];
-    let orders = portfolio_kinematic_orders(layout, &decoupled_kinematics(problem, layout)?);
-    let mut anchors = admissible_anchors(problem)?;
+    let mut anchors = anchors_of(problem, &normalized)?;
     anchors.rotate_left(1);
     for anchor in anchors {
         for order in &orders {
-            result.push(Candidate {
+            candidates.push(Candidate {
                 anchor: anchor.clone(),
                 kinematic_order: Some(order.clone()),
             });
         }
     }
-    Ok(result)
+    Ok(CandidatePlan {
+        decoupled_kinematic_variables: decoupled.into_iter().collect(),
+        candidates,
+    })
+}
+
+/// Structural admission of a plan returned by a worker, without algebra:
+/// the default candidate first, anchors from the block (only when the input
+/// has one), and group-respecting kinematic orders. Anchors are certified
+/// again by the solver and the verifier; this only rejects malformed plans.
+pub fn check_plan(
+    problem: &Problem,
+    layout: &Layout,
+    plan: &CandidatePlan,
+) -> std::result::Result<(), String> {
+    let default = Candidate {
+        anchor: problem.solver.homogeneous_anchor.clone(),
+        kinematic_order: None,
+    };
+    if plan.candidates.first() != Some(&default) {
+        return Err("the candidate plan does not start with the default candidate".into());
+    }
+    let orders = kinematic_orders(&layout.kinematic_groups);
+    let kinematic: BTreeSet<_> = layout.kinematic_groups.iter().flatten().collect();
+    if !plan
+        .decoupled_kinematic_variables
+        .iter()
+        .all(|v| kinematic.contains(v))
+    {
+        return Err("a decoupled variable of the plan is not kinematic".into());
+    }
+    for candidate in &plan.candidates[1..] {
+        let anchor_ok = match (&problem.solver.homogeneous_anchor, &candidate.anchor) {
+            (None, None) => true,
+            (Some(_), Some(anchor)) => problem.solver.homogeneous_block.contains(anchor),
+            _ => false,
+        };
+        let order_ok = candidate
+            .kinematic_order
+            .as_ref()
+            .is_some_and(|order| orders.contains(order));
+        if !anchor_ok || !order_ok {
+            return Err(format!("malformed portfolio candidate {candidate:?}"));
+        }
+    }
+    Ok(())
 }
 
 /// The probe input of one candidate: MODS ordering, the candidate anchor and,
 /// unless it is the default, singleton kinematic groups fixing the order.
+/// Probes never use the input's durable `checkpoint_dir`: their projections
+/// are discarded, and recording them slowed every probe in measurements.
 pub fn candidate_problem(problem: &Problem, layout: &Layout, candidate: &Candidate) -> Problem {
     let mut probe = problem.clone();
     probe.solver.ordering = BASE_ORDERING.into();
     probe.solver.order.clear();
+    probe.solver.checkpoint_dir = None;
     probe.solver.homogeneous_anchor = candidate.anchor.clone();
     if let Some(order) = &candidate.kinematic_order {
         probe.variable_groups = order
@@ -675,6 +779,51 @@ pub fn evaluate_in_process(problem: &Problem) -> Evaluation {
     }
 }
 
+/// Outcome of the candidate enumeration, normally from a killable worker.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct Enumeration {
+    /// Worker status: completed, timeout, memory_limit, failed, ...
+    pub status: String,
+    pub wall_seconds: f64,
+    pub cpu_seconds: f64,
+    pub peak_rss_kib: u64,
+    pub plan: Option<CandidatePlan>,
+    pub message: Option<String>,
+}
+
+/// Run `plan_candidates` in this process, without a hard budget (see
+/// `evaluate_in_process`). Useful for tests and trusted small inputs.
+pub fn enumerate_in_process(problem: &Problem) -> Enumeration {
+    let started = Instant::now();
+    match plan_candidates(problem) {
+        Ok(plan) => Enumeration {
+            status: "completed".into(),
+            wall_seconds: started.elapsed().as_secs_f64(),
+            plan: Some(plan),
+            ..Default::default()
+        },
+        Err(error) => Enumeration {
+            status: "failed".into(),
+            wall_seconds: started.elapsed().as_secs_f64(),
+            message: Some(format!("{error:#}")),
+            ..Default::default()
+        },
+    }
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct EnumerationRecord {
+    /// completed, timeout, memory_limit, failed, or rejected (a malformed
+    /// plan, see `check_plan`).
+    pub status: String,
+    pub budget_seconds: f64,
+    pub wall_seconds: f64,
+    pub cpu_seconds: f64,
+    pub peak_rss_kib: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub message: Option<String>,
+}
+
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct CandidateRecord {
     pub candidate: Candidate,
@@ -700,6 +849,12 @@ pub struct PortfolioReport {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub reason: Option<String>,
     pub input_anchor: Option<String>,
+    /// `portfolio_fixed_budgets`: every candidate had the same budget.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub fixed_budgets: bool,
+    /// The bounded candidate enumeration (absent when not applicable).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub enumeration: Option<EnumerationRecord>,
     /// See `decoupled_kinematics`; their dominated orders are not probed.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub decoupled_kinematic_variables: Vec<String>,
@@ -715,7 +870,9 @@ pub struct PortfolioReport {
     pub candidate_budget_seconds: f64,
     /// Portfolio clock time after which no alternative starts: the default
     /// probe plus `portfolio_lifting_budget_factor` times its estimated
-    /// lifting time. `None` without an estimate.
+    /// lifting time, or times its own probe time when it was not scored.
+    /// `None` without such a bound (no estimate, a default probe over the
+    /// memory limit, or fixed budgets).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub alternatives_budget_seconds: Option<f64>,
     pub total_budget_seconds: f64,
@@ -751,13 +908,41 @@ fn default_resolution(problem: &Problem, report: &mut PortfolioReport) -> Proble
     resolved
 }
 
-/// Choose an anchor and order. `evaluate` receives each candidate's probe
-/// problem, whose `limits.wall_time_secs` is that candidate's hard budget
-/// and whose `portfolio_kinematic_cell_cap` bounds the count. The returned
-/// problem has an explicit `given` order (or the unchanged MODS default) and
-/// is solved and verified exactly like any other input.
+/// The unchanged MODS default with a recorded reason, for a supervisor that
+/// could not run the portfolio at all (for example a temporary-file error).
+/// An explicit order stays binding.
+pub fn fallback(problem: &Problem, reason: String) -> (Problem, PortfolioReport) {
+    let mut report = PortfolioReport {
+        policy: POLICY.into(),
+        base_ordering: BASE_ORDERING.into(),
+        input_anchor: problem.solver.homogeneous_anchor.clone(),
+        reason: Some(reason),
+        ..Default::default()
+    };
+    if !problem.solver.order.is_empty() {
+        let mut resolved = problem.clone();
+        resolved.solver.ordering = "given".into();
+        report.order = problem.solver.order.clone();
+        report.anchor = problem.solver.homogeneous_anchor.clone();
+        return (resolved, report);
+    }
+    let resolved = default_resolution(problem, &mut report);
+    (resolved, report)
+}
+
+/// Choose an anchor and order without any algebra in this process.
+/// `enumerate` receives the input with `limits.wall_time_secs` set to the
+/// enumeration budget and returns the candidate plan (`plan_candidates`);
+/// `evaluate` receives each candidate's probe problem, whose
+/// `limits.wall_time_secs` is that candidate's hard budget and whose
+/// `portfolio_kinematic_cell_cap` bounds the count. The CLI runs both in
+/// killable workers. The returned problem has an explicit `given` order (or
+/// the unchanged MODS default) and is solved and verified exactly like any
+/// other input; it differs from the input only in `solver.ordering`,
+/// `solver.order` and `solver.homogeneous_anchor`.
 pub fn resolve(
     problem: &Problem,
+    enumerate: impl FnOnce(&Problem) -> Result<Enumeration>,
     mut evaluate: impl FnMut(&Problem) -> Result<Evaluation>,
 ) -> Result<(Problem, PortfolioReport)> {
     let started = Instant::now();
@@ -788,9 +973,7 @@ pub fn resolve(
         }
     };
     report.applicable = true;
-    report.decoupled_kinematic_variables = decoupled_kinematics(problem, &layout)?
-        .into_iter()
-        .collect();
+    report.fixed_budgets = options.portfolio_fixed_budgets;
     let wall = problem.limits.wall_time_secs;
     report.default_budget_seconds = options
         .portfolio_default_budget_secs
@@ -800,10 +983,68 @@ pub fn resolve(
         .portfolio_total_budget_secs
         .unwrap_or(wall * 0.25)
         .min(wall);
+
+    // Candidate enumeration runs exact algebra, so it has its own bounded
+    // worker; if it does not finish, the default runs unchanged.
+    let enumeration_budget = report
+        .default_budget_seconds
+        .min(report.total_budget_seconds);
+    let mut enumeration_problem = problem.clone();
+    enumeration_problem.solver.checkpoint_dir = None;
+    enumeration_problem.limits.wall_time_secs = enumeration_budget;
+    let outcome = enumerate(&enumeration_problem).unwrap_or_else(|error| Enumeration {
+        status: "failed".into(),
+        message: Some(format!("{error:#}")),
+        ..Default::default()
+    });
+    let mut enumeration = EnumerationRecord {
+        status: outcome.status.clone(),
+        budget_seconds: enumeration_budget,
+        wall_seconds: outcome.wall_seconds,
+        cpu_seconds: outcome.cpu_seconds,
+        peak_rss_kib: outcome.peak_rss_kib,
+        message: outcome.message.clone(),
+    };
+    let plan = match (outcome.status.as_str(), outcome.plan) {
+        ("completed", Some(plan)) => match check_plan(problem, &layout, &plan) {
+            Ok(()) => Some(plan),
+            Err(reason) => {
+                enumeration.status = "rejected".into();
+                enumeration.message = Some(reason);
+                None
+            }
+        },
+        ("completed", None) => {
+            enumeration.status = "failed".into();
+            None
+        }
+        _ => None,
+    };
+    let enumeration_status = enumeration.status.clone();
+    report.enumeration = Some(enumeration);
+    let Some(plan) = plan else {
+        report.reason = Some(format!("candidate enumeration {enumeration_status}"));
+        let resolved = default_resolution(problem, &mut report);
+        report.total_seconds = started.elapsed().as_secs_f64();
+        return Ok((resolved, report));
+    };
+    report.decoupled_kinematic_variables = plan.decoupled_kinematic_variables.clone();
+    let count = plan.candidates.len();
+    // Fixed budgets: one budget for every candidate, sized so that all of
+    // them fit in the total budget with one budget of slack for worker
+    // start-up and kill latency. Never shortened; a candidate that no longer
+    // fits is skipped (only possible after an unusually slow enumeration).
+    let fixed_budget = report
+        .default_budget_seconds
+        .min(report.total_budget_seconds / (count + 1) as f64);
+    if report.fixed_budgets {
+        report.candidate_budget_seconds = fixed_budget;
+    }
     let depth = layout.kinematic_variables();
+    let mut default_scored = false;
     // MODS Feynman orders already obtained per anchor (see feynman_mods_order).
     let mut tails: Vec<(Option<String>, Vec<String>)> = Vec::new();
-    for (index, candidate) in candidates(problem, &layout)?.into_iter().enumerate() {
+    for (index, candidate) in plan.candidates.into_iter().enumerate() {
         let mut probe_problem = candidate_problem(problem, &layout, &candidate);
         let known = candidate.kinematic_order.as_ref().and_then(|kinematic| {
             let (_, tail) = tails.iter().find(|(a, _)| *a == candidate.anchor)?;
@@ -827,12 +1068,19 @@ pub fn resolve(
             probe_problem.solver.order = order;
         }
         let elapsed = started.elapsed().as_secs_f64();
-        let remaining = (report.total_budget_seconds - elapsed)
-            .min(report.alternatives_budget_seconds.unwrap_or(f64::INFINITY) - elapsed);
+        let total_left = report.total_budget_seconds - elapsed;
+        let remaining =
+            total_left.min(report.alternatives_budget_seconds.unwrap_or(f64::INFINITY) - elapsed);
         let best_index = select(&report.candidates);
-        let budget = if index == 0 {
-            report.default_budget_seconds
-        } else {
+        let budget = if report.fixed_budgets {
+            if total_left >= fixed_budget {
+                fixed_budget
+            } else {
+                0.0
+            }
+        } else if index == 0 {
+            report.default_budget_seconds.min(remaining)
+        } else if default_scored {
             // Tighten once a candidate beats the default: a probe slower than
             // `factor` times the best probe so far is not paid for in full.
             let best_wall = best_index
@@ -844,8 +1092,16 @@ pub fn resolve(
                 ),
                 None => report.candidate_budget_seconds,
             }
-        }
-        .min(remaining);
+            .min(remaining)
+        } else {
+            // No reference time: the unprobed candidates share what is left
+            // of the alternatives' budget evenly.
+            let left = (count - index) as f64;
+            report
+                .candidate_budget_seconds
+                .min((remaining / left).max(options.portfolio_min_budget_secs))
+                .min(remaining)
+        };
         let best = best_index.and_then(|i| report.candidates[i].score.as_ref());
         let cap = match best {
             Some(score) if !score.kinematic_cells_capped => score
@@ -866,7 +1122,7 @@ pub fn resolve(
         } else {
             probe_problem.limits.wall_time_secs = budget;
             probe_problem.solver.portfolio_kinematic_cell_cap = cap;
-            if index > 0 {
+            if index > 0 || report.fixed_budgets {
                 probe_problem.solver.portfolio_fiber_samples = 0;
             }
             let evaluation = evaluate(&probe_problem).unwrap_or_else(|error| Evaluation {
@@ -893,27 +1149,31 @@ pub fn resolve(
                 ));
             }
         }
-        if index == 0 {
-            // Bounded regret: alternatives may use at most the estimated
-            // lifting time of the default, the part they could save.
-            let estimate = record
-                .score
-                .as_ref()
-                .filter(|_| record.status == "scored")
-                .and_then(|score| score.lifting_estimate.as_ref());
-            report.alternatives_budget_seconds = estimate.map(|e| {
-                started.elapsed().as_secs_f64()
-                    + (options.portfolio_lifting_budget_factor * e.estimated_lifting_seconds)
-                        .max(options.portfolio_min_budget_secs)
-            });
-            report.candidate_budget_seconds = if record.status == "scored" {
-                (options.portfolio_budget_factor * record.wall_seconds)
-                    .max(options.portfolio_min_budget_secs)
+        if index == 0 && !report.fixed_budgets {
+            // Bounded regret: alternatives may use at most what choosing one
+            // could save. A scored default bounds this by its estimated
+            // lifting time (its projection is paid by the final solve either
+            // way). An unscored default solve costs at least its probe time,
+            // unless the probe exceeded the memory limit, which the default
+            // solve would exceed as well: then no bound but the total.
+            let now = started.elapsed().as_secs_f64();
+            let floor = options.portfolio_min_budget_secs;
+            let factor = options.portfolio_lifting_budget_factor;
+            default_scored = record.status == "scored";
+            if default_scored {
+                let estimate = record
+                    .score
+                    .as_ref()
+                    .and_then(|score| score.lifting_estimate.as_ref());
+                report.alternatives_budget_seconds =
+                    estimate.map(|e| now + (factor * e.estimated_lifting_seconds).max(floor));
+                report.candidate_budget_seconds =
+                    (options.portfolio_budget_factor * record.wall_seconds).max(floor);
             } else {
-                report
-                    .default_budget_seconds
-                    .max(options.portfolio_min_budget_secs)
-            };
+                report.alternatives_budget_seconds = (record.status != "memory_limit")
+                    .then(|| now + (factor * record.wall_seconds).max(floor));
+                report.candidate_budget_seconds = report.default_budget_seconds.max(floor);
+            }
         }
         report.candidates.push(record);
     }

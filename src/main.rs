@@ -11,7 +11,7 @@ use std::{
 use symgcad::{
     Problem,
     benchmark::{self, ProcessOutcome},
-    kinematic_portfolio::{self, Evaluation, PortfolioReport},
+    kinematic_portfolio::{self, Enumeration, Evaluation, PortfolioReport},
     output::{SolveResult, Status},
     solver::{prepare_projection, projection_table, selected_order, solve},
 };
@@ -498,36 +498,96 @@ fn enable_search_checkpoints(problem: &mut Problem) {
     }
 }
 
-/// Resolve `ordering = "kinematic_portfolio"` with one killable worker per
-/// candidate probe, each under its own hard wall-time budget.
-fn run_portfolio(problem: &Problem) -> Result<(Problem, PortfolioReport)> {
-    kinematic_portfolio::resolve(problem, |probe| {
-        let (process, path, _) = bounded(probe, "kinematic_probe", None)?;
-        let score = if process.status == "completed" && !process.output_truncated {
-            fs::read(&path)
-                .ok()
-                .and_then(|bytes| serde_json::from_slice(&bytes).ok())
-        } else {
-            None
+/// Run one bounded worker whose output file holds `T` when it completes.
+/// The message is the tail of the worker's stderr (or stdout) otherwise.
+fn bounded_json<T: serde::de::DeserializeOwned>(
+    problem: &Problem,
+    operation: &str,
+) -> Result<(ProcessOutcome, Option<T>, Option<String>)> {
+    let (process, path, _) = bounded(problem, operation, None)?;
+    let value = if process.status == "completed" && !process.output_truncated {
+        fs::read(&path)
+            .ok()
+            .and_then(|bytes| serde_json::from_slice(&bytes).ok())
+    } else {
+        None
+    };
+    let _ = fs::remove_file(&path);
+    let message = value.is_none().then(|| {
+        let text = match process.stderr.trim() {
+            "" => process.stdout.trim(),
+            text => text,
         };
-        let _ = fs::remove_file(&path);
-        let message = score.is_none().then(|| {
-            let text = process.stderr.trim();
-            let start = text.len().saturating_sub(600);
-            let start = (start..=text.len())
-                .find(|&i| text.is_char_boundary(i))
-                .unwrap_or(text.len());
-            text[start..].to_string()
-        });
-        Ok(Evaluation {
-            status: process.status,
-            wall_seconds: process.wall_time_secs,
-            cpu_seconds: process.user_cpu_secs + process.system_cpu_secs,
-            peak_rss_kib: process.peak_rss_kib,
-            score,
-            message,
-        })
+        let start = text.len().saturating_sub(600);
+        let start = (start..=text.len())
+            .find(|&i| text.is_char_boundary(i))
+            .unwrap_or(text.len());
+        text[start..].to_string()
+    });
+    Ok((process, value, message))
+}
+
+/// Resolve `ordering = "kinematic_portfolio"`. The candidate enumeration and
+/// every probe run in killable workers under hard wall and memory limits; this
+/// supervising process does no algebra. Any supervisor error falls back to the
+/// default MODS order with a recorded reason, so a result is always written.
+fn run_portfolio(problem: &Problem) -> (Problem, PortfolioReport) {
+    let started = std::time::Instant::now();
+    let resolved = kinematic_portfolio::resolve(
+        problem,
+        |input| {
+            let (process, plan, message) = bounded_json(input, "kinematic_candidates")?;
+            Ok(Enumeration {
+                status: process.status,
+                wall_seconds: process.wall_time_secs,
+                cpu_seconds: process.user_cpu_secs + process.system_cpu_secs,
+                peak_rss_kib: process.peak_rss_kib,
+                plan,
+                message,
+            })
+        },
+        |probe| {
+            let (process, score, message) = bounded_json(probe, "kinematic_probe")?;
+            Ok(Evaluation {
+                status: process.status,
+                wall_seconds: process.wall_time_secs,
+                cpu_seconds: process.user_cpu_secs + process.system_cpu_secs,
+                peak_rss_kib: process.peak_rss_kib,
+                score,
+                message,
+            })
+        },
+    );
+    resolved.unwrap_or_else(|error| {
+        let (resolved, mut report) =
+            kinematic_portfolio::fallback(problem, format!("portfolio not run: {error:#}"));
+        report.total_seconds = started.elapsed().as_secs_f64();
+        (resolved, report)
     })
+}
+
+/// Resolve a requested portfolio in place and charge its time to the wall
+/// limit left for the following worker (solve, project or order).
+fn apply_portfolio(problem: &mut Problem) -> Option<PortfolioReport> {
+    if problem.solver.ordering != kinematic_portfolio::ORDERING {
+        return None;
+    }
+    let start = std::time::Instant::now();
+    let (resolved, report) = run_portfolio(problem);
+    *problem = resolved;
+    problem.limits.wall_time_secs =
+        (problem.limits.wall_time_secs - start.elapsed().as_secs_f64()).max(0.001);
+    Some(report)
+}
+
+/// Attach a supervisor's portfolio report to a worker's JSON output.
+fn attach_portfolio_value(value: &mut Value, problem: &Problem) -> Result<()> {
+    if let Some(path) = std::env::var_os("SYMGCAD_ORDERING_PORTFOLIO") {
+        let report: Value = serde_json::from_slice(&fs::read(path)?)?;
+        value["homogeneous_anchor"] = json!(problem.solver.homogeneous_anchor);
+        value["ordering_portfolio"] = report;
+    }
+    Ok(())
 }
 
 /// Portfolio time is ordering time; it is counted once in the total.
@@ -558,7 +618,13 @@ fn worker(operation: &str, input: &Path, output: &Path) -> Result<()> {
     }
     let problem: Problem = serde_json::from_slice(&fs::read(input)?)?;
     if let Err(error) = symgcad::problem::normalize(&problem, &problem.variables) {
-        let failure = SolveResult::failure(problem, Status::InvalidInput, format!("{error:#}"));
+        let mut failure = SolveResult::failure(problem, Status::InvalidInput, format!("{error:#}"));
+        if let Some(path) = std::env::var_os("SYMGCAD_SEARCH_REPORT") {
+            attach_search(&mut failure, serde_json::from_slice(&fs::read(path)?)?);
+        }
+        if let Some(path) = std::env::var_os("SYMGCAD_ORDERING_PORTFOLIO") {
+            attach_portfolio(&mut failure, serde_json::from_slice(&fs::read(path)?)?);
+        }
         emit(&failure, Some(output))?;
         return emit(
             &json!({"status":"invalid_input","diagnostic":failure.diagnostic}),
@@ -603,16 +669,20 @@ fn worker(operation: &str, input: &Path, output: &Path) -> Result<()> {
             let order = selected_order(&problem)?;
             let (normalized, projection, optimization) = prepare_projection(&problem, &order)?;
             let (polynomials, levels) = projection_table(&normalized.algebra, &projection);
-            emit(
-                &json!({"schema_version":1,"order":order,"polynomials":polynomials,"levels":levels,"steps":projection.steps,"optimization":optimization}),
-                Some(output),
-            )?;
+            let mut value = json!({"schema_version":1,"order":order,"polynomials":polynomials,"levels":levels,"steps":projection.steps,"optimization":optimization});
+            attach_portfolio_value(&mut value, &problem)?;
+            emit(&value, Some(output))?;
         }
         "order" => {
-            emit(
-                &json!({"schema_version":1,"order":selected_order(&problem)?}),
-                Some(output),
-            )?;
+            let mut value = json!({"schema_version":1,"order":selected_order(&problem)?});
+            attach_portfolio_value(&mut value, &problem)?;
+            emit(&value, Some(output))?;
+        }
+        "kinematic_candidates" => {
+            // Exact algebra (anchor certificates); only a ranking input.
+            let plan = kinematic_portfolio::plan_candidates(&problem)?;
+            emit(&plan, Some(output))?;
+            emit(&json!({"candidates":plan.candidates.len()}), None)?;
         }
         "kinematic_probe" => {
             // Heuristic score only; a killed or failed probe is never evidence.
@@ -691,15 +761,7 @@ fn main() -> Result<()> {
                     (problem.limits.wall_time_secs - start.elapsed().as_secs_f64()).max(0.001);
                 search_metadata = Some(report);
             }
-            let mut portfolio = None;
-            if problem.solver.ordering == kinematic_portfolio::ORDERING {
-                let start = std::time::Instant::now();
-                let (resolved, report) = run_portfolio(&problem)?;
-                problem = resolved;
-                problem.limits.wall_time_secs =
-                    (problem.limits.wall_time_secs - start.elapsed().as_secs_f64()).max(0.001);
-                portfolio = Some(report);
-            }
+            let portfolio = apply_portfolio(&mut problem);
             forward(
                 problem,
                 "solve",
@@ -712,10 +774,8 @@ fn main() -> Result<()> {
             let Some(mut problem) = read_problem(&input, output.as_deref())? else {
                 return Ok(());
             };
-            if problem.solver.ordering == kinematic_portfolio::ORDERING {
-                problem = run_portfolio(&problem)?.0;
-            }
-            forward(problem, "project", output, None, None)
+            let portfolio = apply_portfolio(&mut problem);
+            forward(problem, "project", output, None, portfolio.as_ref())
         }
         Command::Order { input, output } => {
             let Some(mut problem) = read_problem(&input, output.as_deref())? else {
@@ -724,26 +784,9 @@ fn main() -> Result<()> {
             if problem.solver.ordering == "mcts" && problem.solver.order.is_empty() {
                 enable_search_checkpoints(&mut problem);
                 emit(&run_search(&problem)?, output.as_deref())
-            } else if problem.solver.ordering == kinematic_portfolio::ORDERING {
-                let (resolved, report) = run_portfolio(&problem)?;
-                let order = if resolved.solver.order.is_empty() {
-                    // Default fallback: MODS chooses the order in a bounded worker.
-                    let (process, path, _) = bounded(&resolved, "order", None)?;
-                    let value = (process.status == "completed")
-                        .then(|| fs::read(&path).ok())
-                        .flatten()
-                        .and_then(|bytes| serde_json::from_slice::<Value>(&bytes).ok());
-                    fs::remove_file(path)?;
-                    value.map(|v| v["order"].clone()).unwrap_or(Value::Null)
-                } else {
-                    json!(resolved.solver.order)
-                };
-                emit(
-                    &json!({"schema_version":1,"order":order,"homogeneous_anchor":resolved.solver.homogeneous_anchor,"ordering_portfolio":report}),
-                    output.as_deref(),
-                )
             } else {
-                forward(problem, "order", output, None, None)
+                let portfolio = apply_portfolio(&mut problem);
+                forward(problem, "order", output, None, portfolio.as_ref())
             }
         }
         Command::Verify { input } => {

@@ -209,6 +209,12 @@ impl Checker<'_> {
 }
 
 pub fn verify(result: &SolveResult) -> Result<Verification> {
+    // A portfolio result records the resolved problem (explicit order and
+    // anchor, or the MODS fallback); an unresolved request is not replayable.
+    ensure!(
+        !crate::kinematic_portfolio::requested(&result.problem),
+        "result problem still requests ordering \"kinematic_portfolio\"; a solved result records the resolved order"
+    );
     if let Some(evidence) = &result.quadratic_ladder {
         return crate::quadratic_ladder::verify(result, evidence);
     }

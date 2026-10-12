@@ -258,6 +258,12 @@ pub struct SolverOptions {
     /// far, since a larger count can no longer be selected.
     #[serde(skip_serializing_if = "is_default_portfolio_kinematic_cell_cap")]
     pub portfolio_kinematic_cell_cap: usize,
+    /// Give every portfolio candidate the same fixed budget
+    /// `min(default budget, total budget / (candidates + 1))`, with no
+    /// adaptive tightening or lifting-time bound, so that the choice depends
+    /// on wall time only through which probes finish within that budget.
+    #[serde(skip_serializing_if = "is_false")]
+    pub portfolio_fixed_budgets: bool,
 }
 
 pub(crate) const DEFAULT_PORTFOLIO_BUDGET_FACTOR: f64 = 2.0;
@@ -341,6 +347,7 @@ impl Default for SolverOptions {
             portfolio_default_budget_secs: None,
             portfolio_total_budget_secs: None,
             portfolio_kinematic_cell_cap: DEFAULT_PORTFOLIO_KINEMATIC_CELL_CAP,
+            portfolio_fixed_budgets: false,
         }
     }
 }
