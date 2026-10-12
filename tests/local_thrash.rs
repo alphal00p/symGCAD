@@ -212,6 +212,18 @@ fn retention_memory_budget_only_declines_reuse_never_coverage() {
         assert_eq!(r.retained_sibling_budget, 64);
         assert!(r.retained_sibling_peak_weight <= 64);
         declined += r.retained_sibling_budget_drops;
+        // Once the pool refuses children, rounds stop at the ordinary
+        // discovery thresholds again: a binding budget must not make the
+        // search larger than stable samples alone at the same memory limit
+        // (which also sizes the subtree and learned-cut caches).
+        let stable = certified(&p, &options(true, false));
+        eprintln!(
+            "tight retention {} nodes ({} drops); stable {} nodes",
+            r.speculative_nodes,
+            r.retained_sibling_budget_drops,
+            report(&stable).speculative_nodes
+        );
+        assert!(r.speculative_nodes <= report(&stable).speculative_nodes);
     }
     assert!(declined > 0, "fixtures did not exercise the retention budget");
 }
@@ -448,4 +460,56 @@ fn witness_policy_is_recorded_only_when_witnesses_are_enabled() {
             .get("local_pair_witness_min_resultant_terms")
             .is_none()
     );
+}
+
+/// Random review-fuzz seed 25 (a 64-node retention budget binds). Before the
+/// early break was restored under memory refusals, retention finished every
+/// round and needed 14,609 speculative nodes against 8,585 for stable samples
+/// alone at the same memory limit; it must not exceed the latter now.
+#[test]
+fn binding_retention_budget_keeps_the_ordinary_early_break() {
+    let mut p = problem(
+        &["x", "y", "z"],
+        &["-1-3*x+3*x+2*z > 0"],
+        &[
+            "-3*x^3+x*y^2-y^2*z+z",
+            "x+2*y+z",
+            "2*y^2+2*x-3*x*y-2*x^2+z",
+            "-1-x+z",
+        ],
+    );
+    p.solver.engine = "local".into();
+    p.solver.ordering = "given".into();
+    p.solver.order = ["x", "y", "z"].map(String::from).to_vec();
+    p.solver.local_stable_samples = true;
+    p.limits.memory_mib = 1;
+    let solve = |p: &Problem| {
+        let result = symgcad::solver::solve(p).unwrap();
+        assert_eq!(result.status, Status::CompleteGeneric, "{:?}", result.diagnostic);
+        assert!(symgcad::verify::verify(&result).unwrap().verified);
+        result
+    };
+    let local_report = |result: &SolveResult| {
+        let Some(LocalEvidence::Local { report, .. }) = result.local.as_deref() else {
+            panic!("missing local proof")
+        };
+        report.clone()
+    };
+    let stable = solve(&p);
+    p.solver.local_retain_siblings = true;
+    let retained = solve(&p);
+    let (s, r) = (local_report(&stable), local_report(&retained));
+    eprintln!(
+        "retained {} nodes ({} reuses, {} budget drops); stable {} nodes",
+        r.speculative_nodes,
+        r.retained_sibling_proofs,
+        r.retained_sibling_budget_drops,
+        s.speculative_nodes
+    );
+    assert_eq!(r.retained_sibling_budget, 64);
+    assert!(r.retained_sibling_budget_drops > 0);
+    assert!(r.speculative_nodes <= s.speculative_nodes);
+    // Both are independently verified; an exact common refinement of these
+    // 3,344-cell decompositions takes minutes, so only the counts are compared.
+    assert_eq!(retained.cells.len(), stable.cells.len());
 }
