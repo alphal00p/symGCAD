@@ -903,9 +903,29 @@ fn cli_portfolio_records_scores_and_solves_a_verified_order() {
         let value: serde_json::Value = serde_json::from_slice(&fs::read(&output).unwrap()).unwrap();
         let recorded: PortfolioReport =
             serde_json::from_value(value["ordering_portfolio"].clone()).unwrap();
+        // `project` reports the projection `solve` lifts: with an anchor its
+        // `order` is the reduced order, and the chosen original lifting order
+        // is `homogeneous.original_order`.
+        let lifting_order = if operation == "project" && !value["homogeneous"].is_null() {
+            assert_eq!(
+                value["homogeneous"]["anchor"],
+                serde_json::json!(recorded.anchor),
+                "{operation}"
+            );
+            let reduced: Vec<_> = recorded
+                .order
+                .iter()
+                .filter(|v| Some(*v) != recorded.anchor.as_ref())
+                .cloned()
+                .collect();
+            assert_eq!(value["order"], serde_json::json!(reduced), "{operation}");
+            &value["homogeneous"]["original_order"]
+        } else {
+            &value["order"]
+        };
         assert_eq!(
-            value["order"],
-            serde_json::json!(recorded.order),
+            lifting_order,
+            &serde_json::json!(recorded.order),
             "{operation}"
         );
         assert_eq!(
