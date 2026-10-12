@@ -3290,10 +3290,11 @@ pub fn solve_local(problem: &Problem, options: &LocalOptions) -> Result<LocalSol
         base_typed: BTreeSet::new(),
         base_retained_bits: 0,
         thrash: thrash_diag::ThrashDiag::enabled().then(thrash_diag::ThrashDiag::default),
-        // A conservative 2 KiB per retained proof node, so retained siblings
-        // may use about a quarter of the process memory limit.
+        // About 5 KiB of resident memory per retained proof node was measured
+        // (6.45 GB for 1,048,576 nodes); 8 KiB keeps retained siblings near a
+        // quarter of the process memory limit.
         retention_budget: sibling_pool::RetentionBudget::new(
-            (problem.limits.memory_mib as usize).saturating_mul(1024 * 1024 / 4 / 2048),
+            (problem.limits.memory_mib as usize).saturating_mul(1024 * 1024 / 4 / 8192),
         ),
     };
     builder.report.active_phase = "input_factorization".into();

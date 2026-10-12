@@ -291,9 +291,10 @@ Fixes, all checked by the unchanged independent replay:
   lemma above; new sectors are subsets of old ones because cuts only grow).
   Obligations are merged exactly as for a fresh child, rounds finish their
   siblings before restarting, and the deferred discovery loop does the same.
-  Retained pools share a node budget of about a quarter of `memory_mib`;
-  declined children are merely revisited. Without the budget, retention plus
-  the historical witness policy exhausted 8 GiB after 169 s.
+  Retained pools share a node budget (a quarter of `memory_mib` at 8 KiB per
+  node); declined children are merely revisited. Without the budget, retention
+  plus the historical witness policy exhausted 8 GiB after 169 s; with a
+  1,048,576-node budget the same run stayed at 6.45 GB for 300 s.
 * Pair-witness admission: a new template needs a dense resultant monomial
   bound above `local_pair_witness_min_resultant_terms` (default 4096 when
   witnesses are on, 0 = historical); `local_pair_witness_axis_budget` caps new

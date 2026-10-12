@@ -204,13 +204,13 @@ fn retention_memory_budget_only_declines_reuse_never_coverage() {
     let mut declined = 0;
     for mut p in fixtures() {
         let unlimited = certified(&p, &options(true, true));
-        // One MiB of process memory allows 128 retained proof nodes in total.
+        // One MiB of process memory allows 32 retained proof nodes in total.
         p.limits.memory_mib = 1;
         let tight = certified(&p, &options(true, true));
         equivalent(&tight, &unlimited);
         let r = report(&tight);
-        assert_eq!(r.retained_sibling_budget, 128);
-        assert!(r.retained_sibling_peak_weight <= 128);
+        assert_eq!(r.retained_sibling_budget, 32);
+        assert!(r.retained_sibling_peak_weight <= 32);
         declined += r.retained_sibling_budget_drops;
     }
     assert!(declined > 0, "fixtures did not exercise the retention budget");
